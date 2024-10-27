@@ -66,7 +66,7 @@ use tower_http::{
 };
 use tracing::{error, info};
 use crate::coal_utils::proof_pubkey;
-
+use ore_utils::{get_ore_auth_ix, get_ore_mine_ix, get_ore_register_ix};
 mod app_database;
 mod app_rr_database;
 mod message;
@@ -177,6 +177,7 @@ pub struct Config {
 }
 
 mod coal_utils;
+mod ore_utils;
 
 #[derive(Parser, Debug)]
 #[command(version, author, about, long_about = None)]
@@ -221,7 +222,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv::dotenv().ok();
     let args = Args::parse();
 
-    let server_logs = tracing_appender::rolling::daily("./logs", "coal-hq-server.log");
+    let server_logs = tracing_appender::rolling::daily("./logs", "coal-pool-server.log");
     let (server_logs, _guard) = tracing_appender::non_blocking(server_logs);
     let server_log_layer = tracing_subscriber::fmt::layer()
         .with_writer(server_logs)
@@ -229,7 +230,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             metadata.target() == "server_log"
         }));
 
-    let submission_logs = tracing_appender::rolling::daily("./logs", "coal-hq-submissions.log");
+    let submission_logs = tracing_appender::rolling::daily("./logs", "coal-pool-submissions.log");
     let (submission_logs, _guard) = tracing_appender::non_blocking(submission_logs);
     let submission_log_layer = tracing_subscriber::fmt::layer()
         .with_writer(submission_logs)
@@ -316,13 +317,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         error!(target: "server_log", "Failed to load proof.");
         info!(target: "server_log", "Creating proof account...");
 
-        let ix = get_register_ix(wallet.pubkey());
+        let coal_register_ix = get_register_ix(wallet.pubkey());
+        let ore_register_ix = get_ore_register_ix(wallet.pubkey());
 
         if let Ok((hash, _slot)) = rpc_client
             .get_latest_blockhash_with_commitment(rpc_client.commitment())
             .await
         {
-            let mut tx = Transaction::new_with_payer(&[ix], Some(&wallet.pubkey()));
+            let mut tx = Transaction::new_with_payer(&[coal_register_ix, ore_register_ix], Some(&wallet.pubkey()));
 
             tx.sign(&[&wallet], hash);
 

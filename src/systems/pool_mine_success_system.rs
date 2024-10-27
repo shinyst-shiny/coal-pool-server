@@ -16,8 +16,8 @@ use tokio::{
 use tracing::info;
 
 use crate::{
-    app_database::AppDatabase, message::ServerMessagePoolSubmissionResult, ore_utils::
-        ORE_TOKEN_DECIMALS, AppState, ClientVersion, Config, InsertEarning, InsertSubmission, MessageInternalMineSuccess, UpdateReward, WalletExtension
+    app_database::AppDatabase, message::ServerMessagePoolSubmissionResult, coal_utils::
+        COAL_TOKEN_DECIMALS, AppState, ClientVersion, Config, InsertEarning, InsertSubmission, MessageInternalMineSuccess, UpdateReward, WalletExtension
 };
 
 pub async fn pool_mine_success_system(
@@ -53,7 +53,7 @@ pub async fn pool_mine_success_system(
                         .saturating_mul(1_000_000)
                         .saturating_div(msg.total_hashpower as u128);
 
-                    let decimals = 10f64.powf(ORE_TOKEN_DECIMALS as f64);
+                    let decimals = 10f64.powf(COAL_TOKEN_DECIMALS as f64);
                     let earned_rewards = hashpower_percent
                         .saturating_mul(total_rewards as u128)
                         .saturating_div(1_000_000)
@@ -92,7 +92,7 @@ pub async fn pool_mine_success_system(
                         0.0 // Handle the case where pool_rewards_dec is 0 to avoid division by zero
                     };
 
-                    let top_stake = if let Some(config) = msg.ore_config {
+                    let top_stake = if let Some(config) = msg.coal_config {
                         (config.top_balance as f64).div(decimals)
                     } else {
                         1.0f64
@@ -105,7 +105,7 @@ pub async fn pool_mine_success_system(
                             match client_connection.client_version {
                                 ClientVersion::V1 => {
                                     let message = format!(
-                                        "Pool Submitted Difficulty: {}\nPool Earned:  {:.11} ORE\nPool Balance: {:.11} ORE\nTop Stake:    {:.11} ORE\nPool Multiplier: {:.2}x\n----------------------\nActive Miners: {}\n----------------------\nMiner Submitted Difficulty: {}\nMiner Earned: {:.11} ORE\n{:.2}% of total pool reward",
+                                        "Pool Submitted Difficulty: {}\nPool Earned:  {:.11} coal\nPool Balance: {:.11} coal\nTop Stake:    {:.11} coal\nPool Multiplier: {:.2}x\n----------------------\nActive Miners: {}\n----------------------\nMiner Submitted Difficulty: {}\nMiner Earned: {:.11} coal\n{:.2}% of total pool reward",
                                         msg.difficulty,
                                         pool_rewards_dec,
                                         msg.total_balance,

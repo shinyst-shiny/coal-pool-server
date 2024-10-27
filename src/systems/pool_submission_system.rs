@@ -8,7 +8,7 @@ use std::{
 };
 
 use base64::{prelude::BASE64_STANDARD, Engine};
-use ore_api::{consts::BUS_COUNT, event::MineEvent, state::Proof};
+use coal_api::{consts::BUS_COUNT, event::MineEvent, state::Proof};
 use rand::Rng;
 use solana_client::{
     nonblocking::rpc_client::RpcClient,
@@ -32,8 +32,8 @@ use tokio::{
 use tracing::info;
 
 use crate::{
-    app_database::AppDatabase, ore_utils::{
-        get_auth_ix, get_cutoff, get_mine_ix, get_proof, get_proof_and_config_with_busses, get_reset_ix, MineEventWithBoosts, ORE_TOKEN_DECIMALS
+    app_database::AppDatabase, coal_utils::{
+        get_auth_ix, get_cutoff, get_mine_ix, get_proof, get_proof_and_config_with_busses, get_reset_ix, MineEventWithBoosts, COAL_TOKEN_DECIMALS
     }, Config, EpochHashes, InsertChallenge, InsertEarning, InsertTxn, MessageInternalAllClients, MessageInternalMineSuccess, SubmissionWindow, UpdateReward, WalletExtension
 };
 
@@ -649,7 +649,7 @@ pub async fn pool_submission_system(
 
                                                             let latest_proof = { app_proof.lock().await.clone() };
                                                             let balance = (latest_proof.balance as f64)
-                                                                / 10f64.powf(ORE_TOKEN_DECIMALS as f64);
+                                                                / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
 
 
                                                             let multiplier = if let Some(config) = loaded_config {
@@ -674,7 +674,7 @@ pub async fn pool_submission_system(
                                                                     challenge: old_proof.challenge,
                                                                     best_nonce: u64::from_le_bytes(best_solution.n),
                                                                     total_hashpower,
-                                                                    ore_config: loaded_config,
+                                                                    coal_config: loaded_config,
                                                                     multiplier,
                                                                     submissions,
                                                                 },
@@ -768,7 +768,7 @@ pub async fn pool_submission_system(
                                                                 tokio::time::sleep(Duration::from_millis(1000)).await;
                                                                 let latest_proof = { app_proof.lock().await.clone() };
                                                                 let balance = (latest_proof.balance as f64)
-                                                                    / 10f64.powf(ORE_TOKEN_DECIMALS as f64);
+                                                                    / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
 
 
                                                                 let multiplier = if let Some(config) = loaded_config {
@@ -792,7 +792,7 @@ pub async fn pool_submission_system(
                                                                         challenge: old_proof.challenge,
                                                                         best_nonce: u64::from_le_bytes(best_solution.n),
                                                                         total_hashpower,
-                                                                        ore_config: loaded_config,
+                                                                        coal_config: loaded_config,
                                                                         multiplier,
                                                                         submissions,
                                                                     },

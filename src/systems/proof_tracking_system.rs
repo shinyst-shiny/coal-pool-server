@@ -2,14 +2,13 @@ use std::{sync::Arc, time::Duration};
 
 use base64::{prelude::BASE64_STANDARD, Engine};
 use futures::StreamExt;
-use ore_api::state::Proof;
-use ore_utils::AccountDeserialize;
+use coal_api::state::Proof;
+use coal_utils::AccountDeserialize;
 use solana_account_decoder::UiAccountEncoding;
 use solana_client::{nonblocking::pubsub_client::PubsubClient, rpc_config::RpcAccountInfoConfig};
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair, signer::Signer};
 use tokio::sync::Mutex;
-
-use crate::ore_utils::get_proof_pda;
+use crate::coal_utils::proof_pubkey;
 
 pub async fn proof_tracking_system(
     ws_url: String,
@@ -33,7 +32,7 @@ pub async fn proof_tracking_system(
         let app_wallet = wallet.clone();
         if let Ok(ps_client) = ps_client {
             let ps_client = Arc::new(ps_client);
-            let account_pubkey = get_proof_pda(app_wallet.pubkey());
+            let account_pubkey = proof_pubkey(app_wallet.pubkey());
             let pubsub = ps_client
                 .account_subscribe(
                     &account_pubkey,
@@ -54,8 +53,8 @@ pub async fn proof_tracking_system(
                         // if let Ok(bus) = Bus::try_from_bytes(&data_bytes) {
                         //     let _ = sender.send(AccountUpdatesData::BusData(*bus));
                         // }
-                        // if let Ok(ore_config) = ore_api::state::Config::try_from_bytes(&data_bytes) {
-                        //     let _ = sender.send(AccountUpdatesData::TreasuryConfigData(*ore_config));
+                        // if let Ok(coal_config) = coal_api::state::Config::try_from_bytes(&data_bytes) {
+                        //     let _ = sender.send(AccountUpdatesData::TreasuryConfigData(*coal_config));
                         // }
                         if let Ok(new_proof) = Proof::try_from_bytes(&data_bytes) {
                             tracing::info!(target: "server_log", "Got new proof data");

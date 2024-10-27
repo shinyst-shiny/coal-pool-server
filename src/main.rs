@@ -16,7 +16,6 @@ use systems::{
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
 use crate::{
-    ore_utils::{get_managed_proof_token_ata, get_proof_pda},
     systems::{message_text_all_clients_system::message_text_all_clients_system, pool_mine_success_system::pool_mine_success_system, pool_submission_system::pool_submission_system},
 };
 
@@ -38,10 +37,10 @@ use base64::{prelude::BASE64_STANDARD, Engine};
 use clap::Parser;
 use drillx::Solution;
 use futures::{stream::SplitSink, SinkExt, StreamExt};
-use ore_utils::{
-    get_config, get_delegated_stake_account, get_ore_mint,
+use coal_utils::{
+    get_config, get_coal_mint,
     get_original_proof, get_proof, get_register_ix,
-    ORE_TOKEN_DECIMALS,
+    COAL_TOKEN_DECIMALS,
 };
 use routes::{get_challenges, get_latest_mine_txn, get_pool_balance};
 use serde::Deserialize;
@@ -66,6 +65,7 @@ use tower_http::{
     trace::{DefaultMakeSpan, TraceLayer},
 };
 use tracing::{error, info};
+use crate::coal_utils::proof_pubkey;
 
 mod app_database;
 mod app_rr_database;
@@ -139,7 +139,7 @@ pub struct MessageInternalMineSuccess {
     challenge: [u8; 32],
     best_nonce: u64,
     total_hashpower: u64,
-    ore_config: Option<ore_api::state::Config>,
+    coal_config: Option<coal_api::state::Config>,
     multiplier: f64,
     submissions: HashMap<Pubkey, InternalMessageSubmission>,
 }
@@ -176,7 +176,7 @@ pub struct Config {
     commissions_miner_id: i32,
 }
 
-mod ore_utils;
+mod coal_utils;
 
 #[derive(Parser, Debug)]
 #[command(version, author, about, long_about = None)]
@@ -221,7 +221,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv::dotenv().ok();
     let args = Args::parse();
 
-    let server_logs = tracing_appender::rolling::daily("./logs", "ore-hq-server.log");
+    let server_logs = tracing_appender::rolling::daily("./logs", "coal-hq-server.log");
     let (server_logs, _guard) = tracing_appender::non_blocking(server_logs);
     let server_log_layer = tracing_subscriber::fmt::layer()
         .with_writer(server_logs)
@@ -229,7 +229,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             metadata.target() == "server_log"
         }));
 
-    let submission_logs = tracing_appender::rolling::daily("./logs", "ore-hq-submissions.log");
+    let submission_logs = tracing_appender::rolling::daily("./logs", "coal-hq-submissions.log");
     let (submission_logs, _guard) = tracing_appender::non_blocking(submission_logs);
     let submission_log_layer = tracing_subscriber::fmt::layer()
         .with_writer(submission_logs)
@@ -347,7 +347,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         proof
     };
 
-    info!(target: "server_log", "Validating miners delegate stake account is created");
+    /*info!(target: "server_log", "Validating miners delegate stake account is created");
     match get_delegated_stake_account(&rpc_client, wallet.pubkey(), wallet.pubkey()).await {
         Ok(data) => {
             info!(target: "server_log", "Miner Delegated Stake Account: {:?}", data);
@@ -355,7 +355,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Err(_) => {
             info!(target: "server_log", "Creating miner delegate stake account");
-            let ix = ore_miner_delegation::instruction::init_delegate_stake(
+            let ix = coal_miner_delegation::instruction::init_delegate_stake(
                 wallet.pubkey(),
                 wallet.pubkey(),
                 wallet.pubkey(),
@@ -393,7 +393,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(target: "server_log", "Validating managed proof token account is created");
     let managed_proof = Pubkey::find_program_address(
         &[b"managed-proof-account", wallet.pubkey().as_ref()],
-        &ore_miner_delegation::id(),
+        &coal_miner_delegation::id(),
     );
 
     let managed_proof_token_account_addr = get_managed_proof_token_ata(wallet.pubkey());
@@ -409,7 +409,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let ix = create_associated_token_account(
                 &wallet.pubkey(),
                 &managed_proof.0,
-                &ore_api::consts::MINT_ADDRESS,
+                &coal_api::consts::MINT_ADDRESS,
                 &spl_token::id(),
             );
 
@@ -442,17 +442,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let miner_ore_token_account_addr =
-        get_associated_token_address(&wallet.pubkey(), &ore_api::consts::MINT_ADDRESS);
+    let miner_coal_token_account_addr =
+        get_associated_token_address(&wallet.pubkey(), &coal_api::consts::MINT_ADDRESS);
     let token_balance = if let Ok(token_balance) = rpc_client
-        .get_token_account_balance(&miner_ore_token_account_addr)
+        .get_token_account_balance(&miner_coal_token_account_addr)
         .await
     {
         let bal = token_balance.ui_amount.unwrap() * 10f64.powf(token_balance.decimals as f64);
         bal as u64
     } else {
-        error!(target: "server_log", "Failed to get miner ORE token account balance");
-        panic!("Failed to get ORE token account balance.");
+        error!(target: "server_log", "Failed to get miner coal token account balance");
+        panic!("Failed to get coal token account balance.");
     };
 
     if args.migrate {
@@ -464,7 +464,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 panic!("Failed to get original proof!");
             };
         if original_proof.balance > 0 || token_balance > 0 {
-            info!(target: "server_log", "Proof balance has {} tokens. Miner ORE token account has {} tokens.\nMigrating...", original_proof.balance, token_balance);
+            info!(target: "server_log", "Proof balance has {} tokens. Miner coal token account has {} tokens.\nMigrating...", original_proof.balance, token_balance);
             if let Err(e) = proof_migration::migrate(
                 &rpc_client,
                 &wallet,
@@ -481,7 +481,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             info!(target: "server_log", "Balances are 0, nothing to migrate.");
         }
-    }
+    }*/
 
     info!(target: "server_log", "Validating pool exists in db");
     let db_pool = app_database
@@ -495,7 +495,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Err(_) => {
             info!(target: "server_log", "Pool missing from database. Inserting...");
-            let proof_pubkey = get_proof_pda(wallet.pubkey());
+            let proof_pubkey = proof_pubkey(wallet.pubkey());
             let result = app_database
                 .add_new_pool(wallet.pubkey().to_string(), proof_pubkey.to_string())
                 .await;
@@ -775,13 +775,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/sol-balance", get(get_sol_balance))
         .route("/claim", post(post_claim))
         .route("/v2/claim", post(post_claim_v2))
-        .route("/stake", post(post_stake))
-        .route("/unstake", post(post_unstake))
+        //.route("/stake", post(post_stake))
+        //.route("/unstake", post(post_unstake))
         .route("/active-miners", get(get_connected_miners))
         .route("/timestamp", get(get_timestamp))
         .route("/miner/balance", get(get_miner_balance))
-        .route("/miner/stake", get(get_miner_stake))
-        .route("/stake-multiplier", get(get_stake_multiplier))
+        //.route("/miner/stake", get(get_miner_stake))
+        //.route("/stake-multiplier", get(get_stake_multiplier))
         // App RR Database routes
         .route(
             "/last-challenge-submissions",
@@ -1083,7 +1083,7 @@ async fn get_miner_rewards(
         match res {
             Ok(rewards) => {
                 let decimal_bal =
-                    rewards.balance as f64 / 10f64.powf(ore_api::consts::TOKEN_DECIMALS as f64);
+                    rewards.balance as f64 / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
                 let response = format!("{}", decimal_bal);
                 return Response::builder()
                     .status(StatusCode::OK)
@@ -1183,7 +1183,7 @@ async fn get_miner_balance(
     Extension(rpc_client): Extension<Arc<RpcClient>>,
 ) -> impl IntoResponse {
     if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
-        let miner_token_account = get_associated_token_address(&user_pubkey, &get_ore_mint());
+        let miner_token_account = get_associated_token_address(&user_pubkey, &get_coal_mint());
         if let Ok(response) = rpc_client
             .get_token_account_balance(&miner_token_account)
             .await
@@ -1206,7 +1206,7 @@ async fn get_miner_balance(
     }
 }
 
-async fn get_miner_stake(
+/*async fn get_miner_stake(
     query_params: Query<PubkeyParam>,
     Extension(rpc_client): Extension<Arc<RpcClient>>,
     Extension(wallet): Extension<Arc<WalletExtension>>,
@@ -1216,7 +1216,7 @@ async fn get_miner_stake(
             get_delegated_stake_account(&rpc_client, user_pubkey, wallet.miner_wallet.pubkey())
                 .await
         {
-            let decimals = 10f64.powf(ORE_TOKEN_DECIMALS as f64);
+            let decimals = 10f64.powf(COAL_TOKEN_DECIMALS as f64);
             let dec_amount = (account.amount as f64).div(decimals);
             return Ok(dec_amount.to_string());
         } else {
@@ -1244,12 +1244,12 @@ async fn get_stake_multiplier(
             let multiplier = 1.0 + (proof.balance as f64 / config.top_balance as f64).min(1.0f64);
             return Ok(Json(multiplier));
         } else {
-            return Err("Failed to get ore config account".to_string());
+            return Err("Failed to get coal config account".to_string());
         }
     } else {
         return Err("Stats not enabled for this server.".to_string());
     }
-}
+}*/
 
 #[derive(Deserialize)]
 struct ConnectedMinersParams {
@@ -1497,7 +1497,7 @@ struct StakeParams {
     amount: u64,
 }
 
-async fn post_stake(
+/*async fn post_stake(
     query_params: Query<StakeParams>,
     Extension(rpc_client): Extension<Arc<RpcClient>>,
     Extension(wallet): Extension<Arc<WalletExtension>>,
@@ -1529,7 +1529,7 @@ async fn post_stake(
             get_delegated_stake_account(&rpc_client, user_pubkey, wallet.miner_wallet.pubkey())
                 .await
         {
-            let init_ix = ore_miner_delegation::instruction::init_delegate_stake(
+            let init_ix = coal_miner_delegation::instruction::init_delegate_stake(
                 user_pubkey,
                 wallet.miner_wallet.pubkey(),
                 wallet.fee_wallet.pubkey(),
@@ -1608,7 +1608,7 @@ async fn post_stake(
             }
         }
 
-        let base_ix = ore_miner_delegation::instruction::delegate_stake(
+        let base_ix = coal_miner_delegation::instruction::delegate_stake(
             user_pubkey,
             wallet.miner_wallet.pubkey(),
             query_params.amount,
@@ -1649,7 +1649,7 @@ async fn post_stake(
             match result {
                 Ok(sig) => {
                     let amount_dec =
-                        query_params.amount as f64 / 10f64.powf(ORE_TOKEN_DECIMALS as f64);
+                        query_params.amount as f64 / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
                     info!(target: "server_log", "Miner {} successfully delegated stake of {}.\nSig: {}", user_pubkey.to_string(), amount_dec, sig.to_string());
                     return Response::builder()
                         .status(StatusCode::OK)
@@ -1673,7 +1673,7 @@ async fn post_stake(
             .body("Invalid Pubkey".to_string())
             .unwrap();
     }
-}
+}*/
 
 #[derive(Deserialize)]
 struct UnstakeParams {
@@ -1681,7 +1681,7 @@ struct UnstakeParams {
     amount: u64,
 }
 
-async fn post_unstake(
+/*async fn post_unstake(
     query_params: Query<UnstakeParams>,
     Extension(rpc_client): Extension<Arc<RpcClient>>,
     Extension(wallet): Extension<Arc<WalletExtension>>,
@@ -1720,9 +1720,9 @@ async fn post_unstake(
                 .unwrap();
         }
 
-        let staker_ata = get_associated_token_address(&user_pubkey, &ore_api::consts::MINT_ADDRESS);
+        let staker_ata = get_associated_token_address(&user_pubkey, &coal_api::consts::MINT_ADDRESS);
 
-        let base_ix = ore_miner_delegation::instruction::undelegate_stake(
+        let base_ix = coal_miner_delegation::instruction::undelegate_stake(
             user_pubkey,
             wallet.miner_wallet.pubkey(),
             staker_ata,
@@ -1764,7 +1764,7 @@ async fn post_unstake(
             match result {
                 Ok(sig) => {
                     let amount_dec =
-                        query_params.amount as f64 / 10f64.powf(ORE_TOKEN_DECIMALS as f64);
+                        query_params.amount as f64 / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
                     info!(target: "server_log", "Miner {} successfully undelegated stake of {}.\nSig: {}", user_pubkey.to_string(), amount_dec, sig.to_string());
                     return Response::builder()
                         .status(StatusCode::OK)
@@ -1788,7 +1788,7 @@ async fn post_unstake(
             .body("Invalid Pubkey".to_string())
             .unwrap();
     }
-}
+}*/
 
 #[derive(Deserialize)]
 struct WsQueryParams {

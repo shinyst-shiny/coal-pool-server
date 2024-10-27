@@ -2,19 +2,19 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use bytemuck::{Pod, Zeroable};
 use drillx::Solution;
-use ore_api::{
-    consts::{BUS_ADDRESSES, CONFIG_ADDRESS, MINT_ADDRESS, PROOF, TOKEN_DECIMALS},
+use coal_api::{
+    consts::{COAL_BUS_ADDRESSES, COAL_CONFIG_ADDRESS, COAL_MINT_ADDRESS, COAL_PROOF, TOKEN_DECIMALS},
     state::{Config, Proof},
-    ID as ORE_ID,
+    instruction,
+    ID as COAL_ID,
 };
-use ore_miner_delegation::{instruction, state::DelegatedStake, utils::AccountDeserialize};
-use ore_utils::event;
-pub use ore_utils::AccountDeserialize as _;
+// use coal_miner_delegation::{instruction, state::DelegatedStake, utils::AccountDeserialize};
+// use coal_utils::event;
+pub use coal_utils::AccountDeserialize as _;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{account::ReadableAccount, instruction::Instruction, pubkey::Pubkey};
-use spl_associated_token_account::get_associated_token_address;
 
-pub const ORE_TOKEN_DECIMALS: u8 = TOKEN_DECIMALS;
+pub const COAL_TOKEN_DECIMALS: u8 = TOKEN_DECIMALS;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
@@ -27,51 +27,51 @@ pub struct MineEventWithBoosts {
     pub boost_3: u64,
 }
 
-event!(MineEventWithBoosts);
+// event!(MineEventWithBoosts);
 
 pub fn get_auth_ix(signer: Pubkey) -> Instruction {
-    let proof = get_proof_pda(signer);
+    let proof = proof_pubkey(signer);
 
-    ore_api::instruction::auth(proof)
+    instruction::auth(proof)
 }
 
 pub fn get_mine_ix(signer: Pubkey, solution: Solution, bus: usize) -> Instruction {
-    instruction::mine(signer, BUS_ADDRESSES[bus], solution)
+    instruction::mine_coal(signer, signer, COAL_BUS_ADDRESSES[bus], solution)
 }
 
 pub fn get_register_ix(signer: Pubkey) -> Instruction {
-    instruction::open_managed_proof(signer)
+    instruction::open_coal(signer, signer, signer)
 }
 
 pub fn get_reset_ix(signer: Pubkey) -> Instruction {
-    ore_api::instruction::reset(signer)
+    coal_api::instruction::reset_coal(signer)
 }
 
 pub fn get_claim_ix(signer: Pubkey, beneficiary: Pubkey, claim_amount: u64) -> Instruction {
-    instruction::undelegate_stake(signer, signer, beneficiary, claim_amount)
+    instruction::claim_coal(signer, beneficiary, claim_amount)
 }
 
 pub fn get_stake_ix(signer: Pubkey, sender: Pubkey, stake_amount: u64) -> Instruction {
-    instruction::delegate_stake(sender, signer, stake_amount)
+    instruction::stake_coal(sender, signer, stake_amount)
 }
 
-pub fn get_ore_mint() -> Pubkey {
-    MINT_ADDRESS
+pub fn get_coal_mint() -> Pubkey {
+    COAL_MINT_ADDRESS
 }
 
-pub fn get_managed_proof_token_ata(miner: Pubkey) -> Pubkey {
+/*pub fn get_managed_proof_token_ata(miner: Pubkey) -> Pubkey {
     let managed_proof = Pubkey::find_program_address(
         &[b"managed-proof-account", miner.as_ref()],
-        &ore_miner_delegation::id(),
+        &coal_miner_delegation::id(),
     );
 
-    get_associated_token_address(&managed_proof.0, &ore_api::consts::MINT_ADDRESS)
+    get_associated_token_address(&managed_proof.0, &coal_api::consts::MINT_ADDRESS)
 }
 
 pub fn get_proof_pda(miner: Pubkey) -> Pubkey {
     let managed_proof = Pubkey::find_program_address(
         &[b"managed-proof-account", miner.as_ref()],
-        &ore_miner_delegation::id(),
+        &coal_miner_delegation::id(),
     );
 
     proof_pubkey(managed_proof.0)
@@ -81,7 +81,7 @@ pub async fn get_delegated_stake_account(
     client: &RpcClient,
     staker: Pubkey,
     miner: Pubkey,
-) -> Result<ore_miner_delegation::state::DelegatedStake, String> {
+) -> Result<coal_miner_delegation::state::DelegatedStake, String> {
     let data = client
         .get_account_data(&get_delegated_stake_pda(staker, miner))
         .await;
@@ -101,7 +101,7 @@ pub async fn get_delegated_stake_account(
 pub fn get_delegated_stake_pda(staker: Pubkey, miner: Pubkey) -> Pubkey {
     let managed_proof = Pubkey::find_program_address(
         &[b"managed-proof-account", miner.as_ref()],
-        &ore_miner_delegation::id(),
+        &coal_miner_delegation::id(),
     );
 
     Pubkey::find_program_address(
@@ -110,13 +110,13 @@ pub fn get_delegated_stake_pda(staker: Pubkey, miner: Pubkey) -> Pubkey {
             staker.as_ref(),
             managed_proof.0.as_ref(),
         ],
-        &ore_miner_delegation::id(),
+        &coal_miner_delegation::id(),
     )
     .0
-}
+}*/
 
-pub async fn get_config(client: &RpcClient) -> Result<ore_api::state::Config, String> {
-    let data = client.get_account_data(&CONFIG_ADDRESS).await;
+pub async fn get_config(client: &RpcClient) -> Result<coal_api::state::Config, String> {
+    let data = client.get_account_data(&COAL_CONFIG_ADDRESS).await;
     match data {
         Ok(data) => {
             let config = Config::try_from_bytes(&data);
@@ -135,20 +135,20 @@ pub async fn get_proof_and_config_with_busses(
     authority: Pubkey,
 ) -> (
     Result<Proof, ()>,
-    Result<ore_api::state::Config, ()>,
-    Result<Vec<Result<ore_api::state::Bus, ()>>, ()>,
+    Result<coal_api::state::Config, ()>,
+    Result<Vec<Result<coal_api::state::Bus, ()>>, ()>,
 ) {
     let account_pubkeys = vec![
-        get_proof_pda(authority),
-        CONFIG_ADDRESS,
-        BUS_ADDRESSES[0],
-        BUS_ADDRESSES[1],
-        BUS_ADDRESSES[2],
-        BUS_ADDRESSES[3],
-        BUS_ADDRESSES[4],
-        BUS_ADDRESSES[5],
-        BUS_ADDRESSES[6],
-        BUS_ADDRESSES[7],
+        proof_pubkey(authority),
+        COAL_CONFIG_ADDRESS,
+        COAL_BUS_ADDRESSES[0],
+        COAL_BUS_ADDRESSES[1],
+        COAL_BUS_ADDRESSES[2],
+        COAL_BUS_ADDRESSES[3],
+        COAL_BUS_ADDRESSES[4],
+        COAL_BUS_ADDRESSES[5],
+        COAL_BUS_ADDRESSES[6],
+        COAL_BUS_ADDRESSES[7],
     ];
     let datas = client.get_multiple_accounts(&account_pubkeys).await;
     if let Ok(datas) = datas {
@@ -159,55 +159,55 @@ pub async fn get_proof_and_config_with_busses(
         };
 
         let treasury_config = if let Some(data) = &datas[1] {
-            Ok(*ore_api::state::Config::try_from_bytes(data.data())
+            Ok(*coal_api::state::Config::try_from_bytes(data.data())
                 .expect("Failed to parse config account"))
         } else {
             Err(())
         };
         let bus_1 = if let Some(data) = &datas[2] {
-            Ok(*ore_api::state::Bus::try_from_bytes(data.data())
+            Ok(*coal_api::state::Bus::try_from_bytes(data.data())
                 .expect("Failed to parse bus1 account"))
         } else {
             Err(())
         };
         let bus_2 = if let Some(data) = &datas[3] {
-            Ok(*ore_api::state::Bus::try_from_bytes(data.data())
+            Ok(*coal_api::state::Bus::try_from_bytes(data.data())
                 .expect("Failed to parse bus2 account"))
         } else {
             Err(())
         };
         let bus_3 = if let Some(data) = &datas[4] {
-            Ok(*ore_api::state::Bus::try_from_bytes(data.data())
+            Ok(*coal_api::state::Bus::try_from_bytes(data.data())
                 .expect("Failed to parse bus3 account"))
         } else {
             Err(())
         };
         let bus_4 = if let Some(data) = &datas[5] {
-            Ok(*ore_api::state::Bus::try_from_bytes(data.data())
+            Ok(*coal_api::state::Bus::try_from_bytes(data.data())
                 .expect("Failed to parse bus4 account"))
         } else {
             Err(())
         };
         let bus_5 = if let Some(data) = &datas[6] {
-            Ok(*ore_api::state::Bus::try_from_bytes(data.data())
+            Ok(*coal_api::state::Bus::try_from_bytes(data.data())
                 .expect("Failed to parse bus5 account"))
         } else {
             Err(())
         };
         let bus_6 = if let Some(data) = &datas[7] {
-            Ok(*ore_api::state::Bus::try_from_bytes(data.data())
+            Ok(*coal_api::state::Bus::try_from_bytes(data.data())
                 .expect("Failed to parse bus6 account"))
         } else {
             Err(())
         };
         let bus_7 = if let Some(data) = &datas[8] {
-            Ok(*ore_api::state::Bus::try_from_bytes(data.data())
+            Ok(*coal_api::state::Bus::try_from_bytes(data.data())
                 .expect("Failed to parse bus7 account"))
         } else {
             Err(())
         };
         let bus_8 = if let Some(data) = &datas[9] {
-            Ok(*ore_api::state::Bus::try_from_bytes(data.data())
+            Ok(*coal_api::state::Bus::try_from_bytes(data.data())
                 .expect("Failed to parse bus1 account"))
         } else {
             Err(())
@@ -240,7 +240,7 @@ pub async fn get_original_proof(client: &RpcClient, authority: Pubkey) -> Result
 }
 
 pub async fn get_proof(client: &RpcClient, authority: Pubkey) -> Result<Proof, String> {
-    let proof_address = get_proof_pda(authority);
+    let proof_address = proof_pubkey(authority);
     let data = client.get_account_data(&proof_address).await;
     match data {
         Ok(data) => {
@@ -256,7 +256,7 @@ pub async fn get_proof(client: &RpcClient, authority: Pubkey) -> Result<Proof, S
 }
 
 pub fn proof_pubkey(authority: Pubkey) -> Pubkey {
-    Pubkey::find_program_address(&[PROOF, authority.as_ref()], &ORE_ID).0
+    Pubkey::find_program_address(&[COAL_PROOF, authority.as_ref()], &COAL_ID).0
 }
 
 pub fn get_cutoff(proof: Proof, buffer_time: u64) -> i64 {

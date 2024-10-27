@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use axum::extract::ws::Message;
 use futures::SinkExt;
-use ore_api::state::Proof;
+use coal_api::state::Proof;
 use solana_sdk::pubkey::Pubkey;
 use tokio::{
     sync::{mpsc::UnboundedReceiver, Mutex, RwLock},

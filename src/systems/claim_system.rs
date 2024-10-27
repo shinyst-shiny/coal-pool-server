@@ -14,7 +14,7 @@ use tracing::{error, info};
 
 use crate::{
     app_database::AppDatabase,
-    ore_utils::{get_ore_mint, ORE_TOKEN_DECIMALS},
+    coal_utils::{get_coal_mint, COAL_TOKEN_DECIMALS},
     ClaimsQueue, InsertClaim, InsertTxn,
 };
 
@@ -35,9 +35,9 @@ pub async fn claim_system(
 
         if let Some((miner_pubkey, claim_queue_item)) = claim {
             info!(target: "server_log", "Processing claim");
-            let ore_mint = get_ore_mint();
+            let coal_mint = get_coal_mint();
             let receiver_pubkey = claim_queue_item.receiver_pubkey;
-            let receiver_token_account = get_associated_token_address(&receiver_pubkey, &ore_mint);
+            let receiver_token_account = get_associated_token_address(&receiver_pubkey, &coal_mint);
 
             let prio_fee: u32 = 20_000;
 
@@ -57,7 +57,7 @@ pub async fn claim_system(
                         spl_associated_token_account::instruction::create_associated_token_account(
                             &wallet.pubkey(),
                             &receiver_pubkey,
-                            &ore_api::consts::MINT_ADDRESS,
+                            &coal_api::consts::COAL_MINT_ADDRESS,
                             &spl_token::id(),
                         ),
                     )
@@ -69,7 +69,7 @@ pub async fn claim_system(
                     spl_associated_token_account::instruction::create_associated_token_account(
                         &wallet.pubkey(),
                         &receiver_pubkey,
-                        &ore_api::consts::MINT_ADDRESS,
+                        &coal_api::consts::COAL_MINT_ADDRESS,
                         &spl_token::id(),
                     ),
                 )
@@ -83,7 +83,7 @@ pub async fn claim_system(
                 claim_amount = amount - 400_000_000
             }
             let ix =
-                crate::ore_utils::get_claim_ix(wallet.pubkey(), receiver_token_account, claim_amount);
+                crate::coal_utils::get_claim_ix(wallet.pubkey(), receiver_token_account, claim_amount);
             ixs.push(ix);
 
             if let Ok((hash, _slot)) = rpc_client
@@ -138,7 +138,7 @@ pub async fn claim_system(
 
                 match result {
                     Ok(sig) => {
-                        let amount_dec = amount as f64 / 10f64.powf(ORE_TOKEN_DECIMALS as f64);
+                        let amount_dec = amount as f64 / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
                         info!(target: "server_log", "Miner {} successfully claimed {}.\nSig: {}", miner_pubkey.to_string(), amount_dec, sig.to_string());
 
                         // TODO: use transacions, or at least put them into one query

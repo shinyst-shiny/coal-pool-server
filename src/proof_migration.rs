@@ -13,18 +13,18 @@ pub async fn migrate(
     rpc_client: &RpcClient,
     wallet: &Keypair,
     original_proof_balance: u64,
-    ore_token_account_balance: u64,
+    coal_token_account_balance: u64,
 ) -> Result<(), String> {
-    let miner_ore_token_account_addr =
-        get_associated_token_address(&wallet.pubkey(), &ore_api::consts::MINT_ADDRESS);
+    let miner_coal_token_account_addr =
+        get_associated_token_address(&wallet.pubkey(), &coal_api::consts::COAL_MINT_ADDRESS);
 
-    // Claim from original ore proof
+    // Claim from original coal proof
     let mut ixs = Vec::new();
     let prio_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(20_000);
     ixs.push(prio_fee_ix);
-    let claim_ix = ore_api::instruction::claim(
+    let claim_ix = coal_api::instruction::claim_coal(
         wallet.pubkey(),
-        miner_ore_token_account_addr,
+        miner_coal_token_account_addr,
         original_proof_balance,
     );
 
@@ -61,10 +61,10 @@ pub async fn migrate(
     let mut ixs = Vec::new();
     let prio_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(20_000);
     ixs.push(prio_fee_ix);
-    let stake_ix = crate::ore_utils::get_stake_ix(
+    let stake_ix = crate::coal_utils::get_stake_ix(
         wallet.pubkey(),
         wallet.pubkey(),
-        original_proof_balance.saturating_add(ore_token_account_balance),
+        original_proof_balance.saturating_add(coal_token_account_balance),
     );
 
     ixs.push(stake_ix);

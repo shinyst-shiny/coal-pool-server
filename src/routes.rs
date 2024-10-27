@@ -11,7 +11,7 @@ use tracing::error;
 
 use crate::{
     app_rr_database,
-    ore_utils::{get_ore_mint, get_proof},
+    coal_utils::{get_coal_mint, get_proof},
     ChallengeWithDifficulty, Config, Txn,
 };
 use std::{str::FromStr, sync::Arc};
@@ -92,7 +92,7 @@ pub async fn get_pool_balance(
 ) -> impl IntoResponse {
     if app_config.stats_enabled {
         let pubkey = Pubkey::from_str("mineXqpDeBeMR8bPQCyy9UneJZbjFywraS3koWZ8SSH").unwrap();
-        let miner_token_account = get_associated_token_address(&pubkey, &get_ore_mint());
+        let miner_token_account = get_associated_token_address(&pubkey, &get_coal_mint());
         if let Ok(response) = rpc_client
             .get_token_account_balance(&miner_token_account)
             .await

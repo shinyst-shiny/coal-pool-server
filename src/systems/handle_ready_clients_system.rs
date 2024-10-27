@@ -9,11 +9,11 @@ use std::{
 use axum::extract::ws::Message;
 use base64::{prelude::BASE64_STANDARD, Engine};
 use futures::SinkExt;
-use ore_api::state::Proof;
+use coal_api::state::Proof;
 use solana_sdk::pubkey::Pubkey;
 use tokio::sync::{Mutex, RwLock};
 
-use crate::{message::ServerMessageStartMining, ore_utils::get_cutoff, AppState, EpochHashes, SubmissionWindow};
+use crate::{message::ServerMessageStartMining, coal_utils::get_cutoff, AppState, EpochHashes, SubmissionWindow};
 
 pub async fn handle_ready_clients_system(
     app_state: Arc<RwLock<AppState>>,

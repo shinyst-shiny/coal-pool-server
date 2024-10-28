@@ -53,7 +53,7 @@ pub async fn get_pool(
     Extension(app_config): Extension<Arc<Config>>,
 ) -> Result<Json<crate::models::Pool>, String> {
     if app_config.stats_enabled {
-        let pubkey = Pubkey::from_str("mineXqpDeBeMR8bPQCyy9UneJZbjFywraS3koWZ8SSH").unwrap();
+        let pubkey = Pubkey::from_str("6zbGwDbfwVS3hF8r7Yei8HuwSWm2yb541jUtmAZKhFDM").unwrap();
         let res = app_rr_database
             .get_pool_by_authority_pubkey(pubkey.to_string())
             .await;
@@ -72,7 +72,7 @@ pub async fn get_pool_staked(
     Extension(rpc_client): Extension<Arc<RpcClient>>,
 ) -> impl IntoResponse {
     if app_config.stats_enabled {
-        let pubkey = Pubkey::from_str("mineXqpDeBeMR8bPQCyy9UneJZbjFywraS3koWZ8SSH").unwrap();
+        let pubkey = Pubkey::from_str("6zbGwDbfwVS3hF8r7Yei8HuwSWm2yb541jUtmAZKhFDM").unwrap();
         let proof = if let Ok(loaded_proof) = get_proof(&rpc_client, pubkey).await {
             loaded_proof
         } else {
@@ -91,7 +91,7 @@ pub async fn get_pool_balance(
     Extension(rpc_client): Extension<Arc<RpcClient>>,
 ) -> impl IntoResponse {
     if app_config.stats_enabled {
-        let pubkey = Pubkey::from_str("mineXqpDeBeMR8bPQCyy9UneJZbjFywraS3koWZ8SSH").unwrap();
+        let pubkey = Pubkey::from_str("6zbGwDbfwVS3hF8r7Yei8HuwSWm2yb541jUtmAZKhFDM").unwrap();
         let miner_token_account = get_associated_token_address(&pubkey, &get_coal_mint());
         if let Ok(response) = rpc_client
             .get_token_account_balance(&miner_token_account)

@@ -290,7 +290,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let fee_wallet = read_keypair_file(wallet_path)
         .expect("Failed to load keypair from file: {wallet_path_str}");
-    info!(target: "server_log", "loaded fee wallet {}", wallet.pubkey().to_string());
+    info!(target: "server_log", "loaded fee wallet {}", fee_wallet.pubkey().to_string());
 
     info!(target: "server_log", "establishing rpc connection...");
     let rpc_client = RpcClient::new_with_commitment(rpc_url, CommitmentConfig::confirmed());
@@ -1234,7 +1234,7 @@ async fn get_stake_multiplier(
     Extension(app_config): Extension<Arc<Config>>,
 ) -> impl IntoResponse {
     if app_config.stats_enabled {
-        let pubkey = Pubkey::from_str("mineXqpDeBeMR8bPQCyy9UneJZbjFywraS3koWZ8SSH").unwrap();
+        let pubkey = Pubkey::from_str("6zbGwDbfwVS3hF8r7Yei8HuwSWm2yb541jUtmAZKhFDM").unwrap();
         let proof = if let Ok(loaded_proof) = get_proof(&rpc_client, pubkey).await {
             loaded_proof
         } else {

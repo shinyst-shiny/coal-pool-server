@@ -94,10 +94,13 @@ pub async fn pool_submission_system(
                         info!(target: "server_log", "Submission Challenge: {}", BASE64_STANDARD.encode(old_proof.challenge));
                         let mut loaded_config = None;
                         info!(target: "server_log", "Getting latest config and busses data.");
+                        tokio::time::sleep(Duration::from_millis(1000)).await;
                         if let (Ok(p), Ok(config), Ok(_busses)) =
                             get_proof_and_config_with_busses(&rpc_client, signer.pubkey()).await
                         {
                             loaded_config = Some(config);
+
+                            info!(target: "server_log", "Got latest config: {:?}", loaded_config);
 
                             info!(target: "server_log", "Latest Challenge: {}", BASE64_STANDARD.encode(p.challenge));
 
@@ -114,6 +117,7 @@ pub async fn pool_submission_system(
                             .duration_since(UNIX_EPOCH)
                             .expect("Time went backwards")
                             .as_secs();
+
                         let mut ixs = vec![];
                         let mut prio_fee = *app_prio_fee;
 
@@ -121,11 +125,11 @@ pub async fn pool_submission_system(
                             text: String::from("Server is sending mine transaction..."),
                         });
 
-                        let mut cu_limit = 495_000;
+                        let mut cu_limit = 980_000;
                         let should_add_reset_ix = if let Some(config) = loaded_config {
                             let time_until_reset = (config.last_reset_at + 300) - now as i64;
                             if time_until_reset <= 5 {
-                                cu_limit = 500_000;
+                                cu_limit += 20_000;
                                 prio_fee += 50_000;
                                 info!(target: "server_log", "Including reset tx.");
                                 true
@@ -173,6 +177,8 @@ pub async fn pool_submission_system(
                             info!(target: "server_log", "Jito tip: {} SOL", lamports_to_sol(jito_tip));
                         }
 
+                        info!("Signing transaction with: {}", signer.pubkey());
+
                         let ore_noop_ix = get_ore_auth_ix(signer.pubkey());
                         let coal_apinoop_ix = get_auth_ix(signer.pubkey());
                         ixs.push(ore_noop_ix);
@@ -185,8 +191,8 @@ pub async fn pool_submission_system(
 
                         let coal_mine_ix = get_mine_ix(signer.pubkey(), best_solution, bus);
                         let ore_mine_ix = get_ore_mine_ix(signer.pubkey(), best_solution, bus);
-                        ixs.push(coal_mine_ix);
                         ixs.push(ore_mine_ix);
+                        ixs.push(coal_mine_ix);
 
                         if let Ok((hash, _slot)) = rpc_client
                             .get_latest_blockhash_with_commitment(rpc_client.commitment())
@@ -249,7 +255,7 @@ pub async fn pool_submission_system(
                                         break Ok(sig);
                                     }
                                     Err(e) => {
-                                        tracing::error!(target: "server_log", "Failed to send mine tx error: {}", e);
+                                        tracing::error!(target: "server_log", "Failed to send mine tx error: {:?}", e);
                                         tracing::error!(target: "server_log", "Attempt {} Failed to send mine transaction. retrying in 1 seconds...", rpc_send_attempts);
                                         rpc_send_attempts += 1;
 
@@ -1010,6 +1016,7 @@ pub async fn pool_submission_system(
                                 Err(e) => {
                                     tracing::error!(target: "server_log", "Failed to send and confirm txn");
                                     tracing::error!(target: "server_log", "Error: {:?}", e);
+                                    println!("Error: {:?}", e);
                                     // info!(target: "server_log", "increasing prio fees");
                                     // {
                                     //     let mut prio_fee = app_prio_fee.lock().await;

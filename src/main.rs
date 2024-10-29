@@ -186,7 +186,7 @@ struct Args {
         long,
         value_name = "priority fee",
         help = "Number of microlamports to pay as priority fee per transaction",
-        default_value = "0",
+        default_value = "1000",
         global = true
     )]
     priority_fee: u64,
@@ -238,9 +238,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             metadata.target() == "submission_log"
         }));
 
+    // Uncomment if you need console logging
+    /*let console_log_layer = tracing_subscriber::fmt::layer()
+        .with_ansi(false) // disable ANSI color codes
+        .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+            metadata.target() == "server_log" || metadata.target() == "submission_log"
+        }));*/
+
     tracing_subscriber::registry()
         .with(server_log_layer)
         .with(submission_log_layer)
+        //.with(console_log_layer)
         .init();
 
     // load envs

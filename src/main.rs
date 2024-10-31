@@ -239,16 +239,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }));
 
     // Uncomment if you need console logging
-    /*let console_log_layer = tracing_subscriber::fmt::layer()
+    let console_log_layer = tracing_subscriber::fmt::layer()
         .with_ansi(false) // disable ANSI color codes
         .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
             metadata.target() == "server_log" || metadata.target() == "submission_log"
-        }));*/
+        }));
 
     tracing_subscriber::registry()
         .with(server_log_layer)
         .with(submission_log_layer)
-        //.with(console_log_layer)
+        .with(console_log_layer)
         .init();
 
     // load envs

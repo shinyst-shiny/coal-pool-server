@@ -1340,7 +1340,7 @@ async fn post_claim(
         let amount = query_params.amount;
 
         // 0.00500000000
-        if amount < 500_000_000 {
+        if amount < 5 {
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
                 .body("claim minimum is 0.005".to_string())

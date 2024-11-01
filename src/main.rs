@@ -1339,11 +1339,11 @@ async fn post_claim(
 
         let amount = query_params.amount;
 
-        // 0.00500000000
-        if amount < 500_000_000 {
+        // 0.1
+        if amount < 10_000_000_000 {
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
-                .body("claim minimum is 0.005".to_string())
+                .body("claim minimum is 0.1".to_string())
                 .unwrap();
         }
 
@@ -1454,9 +1454,9 @@ async fn post_claim_v2(
 
                 let amount = query_params.amount;
 
-                // 0.00500000000
-                if amount < 500_000_000 {
-                    return Err((StatusCode::BAD_REQUEST, "claim minimum is 0.005".to_string()));
+                // 0.1
+                if amount < 10_000_000_000 {
+                    return Err((StatusCode::BAD_REQUEST, "claim minimum is 0.1".to_string()));
                 }
 
                 if let Ok(miner_rewards) = app_database

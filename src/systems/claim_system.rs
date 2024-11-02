@@ -78,9 +78,9 @@ pub async fn claim_system(
             let amount = claim_queue_item.amount;
 
             let mut claim_amount = amount;
-            // 0.00400000000
+            // 4
             if is_creating_ata {
-                claim_amount = amount - 400_000_000
+                claim_amount = amount - 400_000_000_000
             }
             let ix =
                 crate::coal_utils::get_claim_ix(wallet.pubkey(), receiver_token_account, claim_amount);

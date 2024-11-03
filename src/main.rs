@@ -202,7 +202,7 @@ struct Args {
         long,
         value_name = "signup fee",
         help = "Amount of sol users must send to sign up for the pool",
-        default_value = "0.001",
+        default_value = "0",
         global = true
     )]
     signup_fee: f64,
@@ -791,7 +791,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/timestamp", get(get_timestamp))
         .route("/miner/balance", get(get_miner_balance))
         //.route("/miner/stake", get(get_miner_stake))
-        //.route("/stake-multiplier", get(get_stake_multiplier))
+        .route("/stake-multiplier", get(get_stake_multiplier))
         // App RR Database routes
         .route(
             "/last-challenge-submissions",
@@ -1235,7 +1235,7 @@ async fn get_miner_balance(
     } else {
         return Err("Invalid pubkey".to_string());
     }
-}
+}*/
 
 async fn get_stake_multiplier(
     Extension(rpc_client): Extension<Arc<RpcClient>>,
@@ -1259,7 +1259,7 @@ async fn get_stake_multiplier(
     } else {
         return Err("Stats not enabled for this server.".to_string());
     }
-}*/
+}
 
 #[derive(Deserialize)]
 struct ConnectedMinersParams {

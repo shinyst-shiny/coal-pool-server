@@ -67,6 +67,8 @@ use tower_http::{
 use tracing::{error, info};
 use crate::coal_utils::proof_pubkey;
 use ore_utils::{get_ore_auth_ix, get_ore_mine_ix, get_ore_register_ix};
+use crate::routes::get_guild_address;
+
 mod app_database;
 mod app_rr_database;
 mod message;
@@ -174,6 +176,7 @@ pub struct Config {
     signup_fee: f64,
     commissions_pubkey: String,
     commissions_miner_id: i32,
+    guild_address: String
 }
 
 mod coal_utils;
@@ -270,6 +273,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Ok(())
         }
     };
+    let guild_env = std::env::var("GUILD_ADDRESS").expect("GUILD_ADDRESS must be set.");
 
     let app_database = Arc::new(AppDatabase::new(database_url));
     let app_rr_database = Arc::new(AppRRDatabase::new(database_rr_url));
@@ -581,6 +585,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         signup_fee: args.signup_fee,
         commissions_pubkey: commission_pubkey.to_string(),
         commissions_miner_id: commission_miner_id,
+        guild_address: guild_env
     });
 
     let epoch_hashes = Arc::new(RwLock::new(EpochHashes {
@@ -805,6 +810,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/pool/staked", get(routes::get_pool_staked))
         .route("/pool/balance", get(get_pool_balance))
         .route("/txns/latest-mine", get(get_latest_mine_txn))
+        .route("/guild/address", get(get_guild_address))
         .with_state(app_shared_state)
         .layer(Extension(app_database))
         .layer(Extension(app_rr_database))

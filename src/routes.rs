@@ -9,11 +9,7 @@ use solana_sdk::pubkey::Pubkey;
 use spl_associated_token_account::get_associated_token_address;
 use tracing::error;
 
-use crate::{
-    app_rr_database,
-    coal_utils::{get_coal_mint, get_proof},
-    ChallengeWithDifficulty, Config, Txn,
-};
+use crate::{app_rr_database, coal_utils::{get_coal_mint, get_proof}, ChallengeWithDifficulty, Config, Txn, WalletExtension};
 use std::{str::FromStr, sync::Arc};
 
 pub async fn get_challenges(
@@ -46,6 +42,13 @@ pub async fn get_latest_mine_txn(
     } else {
         return Err("Stats not enabled for this server.".to_string());
     }
+}
+
+pub async fn get_guild_address(Extension(app_config): Extension<Arc<Config>>) -> Result <String, String> {
+    if app_config.guild_address.is_empty() {
+        return Err("Failed to get guild info".to_string())
+    }
+    Ok(app_config.guild_address.clone())
 }
 
 pub async fn get_pool(

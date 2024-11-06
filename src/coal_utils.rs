@@ -5,8 +5,11 @@ use drillx::Solution;
 use coal_api::{
     consts::{COAL_BUS_ADDRESSES, COAL_CONFIG_ADDRESS, COAL_MINT_ADDRESS, COAL_PROOF, TOKEN_DECIMALS},
     state::{Config, Proof},
-    instruction,
+    instruction as coal_instruction,
     ID as COAL_ID,
+};
+use coal_guilds_api::{
+    prelude as guilds_prelude,
 };
 // use coal_miner_delegation::{instruction, state::DelegatedStake, utils::AccountDeserialize};
 // use coal_utils::event;
@@ -32,15 +35,15 @@ pub struct MineEventWithBoosts {
 pub fn get_auth_ix(signer: Pubkey) -> Instruction {
     let proof = proof_pubkey(signer);
 
-    instruction::auth(proof)
+    coal_instruction::auth(proof)
 }
 
-pub fn get_mine_ix(signer: Pubkey, solution: Solution, bus: usize) -> Instruction {
-    instruction::mine_coal(signer, signer, COAL_BUS_ADDRESSES[bus], solution)
+pub fn get_mine_ix(signer: Pubkey, solution: Solution, bus: usize, guild_proof: (Pubkey, u8), guild_member: (Pubkey, u8)) -> Instruction {
+    coal_instruction::mine_coal(signer, signer, COAL_BUS_ADDRESSES[bus], solution)
 }
 
 pub fn get_register_ix(signer: Pubkey) -> Instruction {
-    instruction::open_coal(signer, signer, signer)
+    coal_instruction::open_coal(signer, signer, signer)
 }
 
 pub fn get_reset_ix(signer: Pubkey) -> Instruction {
@@ -48,16 +51,24 @@ pub fn get_reset_ix(signer: Pubkey) -> Instruction {
 }
 
 pub fn get_claim_ix(signer: Pubkey, beneficiary: Pubkey, claim_amount: u64) -> Instruction {
-    instruction::claim_coal(signer, beneficiary, claim_amount)
+    coal_instruction::claim_coal(signer, beneficiary, claim_amount)
 }
 
 pub fn get_stake_ix(signer: Pubkey, sender: Pubkey, stake_amount: u64) -> Instruction {
-    instruction::stake_coal(sender, signer, stake_amount)
+    coal_instruction::stake_coal(sender, signer, stake_amount)
 }
 
+pub fn get_guild_member(miner: Pubkey) -> (Pubkey, u8) {
+    guilds_prelude::member_pda(miner)
+}
+
+pub fn get_guild_proof(miner: Pubkey) -> (Pubkey, u8) {
+    guilds_prelude::guild_pda(miner)
+}
 pub fn get_coal_mint() -> Pubkey {
     COAL_MINT_ADDRESS
 }
+
 
 /*pub fn get_managed_proof_token_ata(miner: Pubkey) -> Pubkey {
     let managed_proof = Pubkey::find_program_address(

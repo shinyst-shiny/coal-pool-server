@@ -33,7 +33,7 @@ use tracing::info;
 
 use crate::{
     app_database::AppDatabase, coal_utils::{
-        get_auth_ix, get_cutoff, get_mine_ix, get_proof, get_proof_and_config_with_busses, get_reset_ix, MineEventWithBoosts, COAL_TOKEN_DECIMALS
+        get_auth_ix, get_cutoff, get_mine_ix, get_proof, get_proof_and_config_with_busses, get_reset_ix, get_guild_proof, get_guild_member, MineEventWithBoosts, COAL_TOKEN_DECIMALS
     }, Config, EpochHashes, InsertChallenge, InsertEarning, InsertTxn, MessageInternalAllClients, MessageInternalMineSuccess, SubmissionWindow, UpdateReward, WalletExtension
 };
 use crate::ore_utils::{get_ore_auth_ix, get_ore_mine_ix};
@@ -189,7 +189,10 @@ pub async fn pool_submission_system(
                             ixs.push(reset_ix);
                         }
 
-                        let coal_mine_ix = get_mine_ix(signer.pubkey(), best_solution, bus);
+                        let guild_proof = get_guild_proof(signer.pubkey());
+                        let guild_member_proof = get_guild_member(signer.pubkey());
+
+                        let coal_mine_ix = get_mine_ix(signer.pubkey(), best_solution, bus, guild_proof, guild_member_proof);
                         let ore_mine_ix = get_ore_mine_ix(signer.pubkey(), best_solution, bus);
                         ixs.push(ore_mine_ix);
                         ixs.push(coal_mine_ix);

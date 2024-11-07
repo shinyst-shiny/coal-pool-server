@@ -67,7 +67,7 @@ use tower_http::{
 use tracing::{error, info};
 use crate::coal_utils::proof_pubkey;
 use ore_utils::{get_ore_auth_ix, get_ore_mine_ix, get_ore_register_ix};
-use crate::routes::get_guild_address;
+use crate::routes::{get_guild_addresses};
 
 mod app_database;
 mod app_rr_database;
@@ -795,6 +795,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/active-miners", get(get_connected_miners))
         .route("/timestamp", get(get_timestamp))
         .route("/miner/balance", get(get_miner_balance))
+        .route("/v2/miner/balance", get(get_miner_balance_v2))
         //.route("/miner/stake", get(get_miner_stake))
         .route("/stake-multiplier", get(get_stake_multiplier))
         // App RR Database routes
@@ -810,7 +811,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/pool/staked", get(routes::get_pool_staked))
         .route("/pool/balance", get(get_pool_balance))
         .route("/txns/latest-mine", get(get_latest_mine_txn))
-        .route("/guild/address", get(get_guild_address))
+        .route("/guild/addresses", get(get_guild_addresses))
         .with_state(app_shared_state)
         .layer(Extension(app_database))
         .layer(Extension(app_rr_database))
@@ -2184,5 +2185,51 @@ async fn ping_check_system(shared_state: &Arc<RwLock<AppState>>) {
         }
 
         tokio::time::sleep(Duration::from_secs(30)).await;
+    }
+}
+
+#[derive(Deserialize)]
+struct PubkeyMintParam {
+    pubkey: String,
+    mint: String,
+}
+
+async fn get_miner_balance_v2(
+    query_params: Query<PubkeyMintParam>,
+    Extension(rpc_client): Extension<Arc<RpcClient>>,
+) -> impl IntoResponse {
+    let mint = match Pubkey::from_str(&query_params.mint) {
+        Ok(pk) => {
+            pk
+        },
+        Err(_) => {
+            error!(target: "server_log", "get_miner_balance_v2 - Failed to parse mint");
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body("Invalid Mint".to_string())
+                .unwrap();
+        }
+    };
+    if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
+        let miner_token_account = get_associated_token_address(&user_pubkey, &mint);
+        if let Ok(response) = rpc_client
+            .get_token_account_balance(&miner_token_account)
+            .await
+        {
+            return Response::builder()
+                .status(StatusCode::OK)
+                .body(response.ui_amount_string)
+                .unwrap();
+        } else {
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body("Failed to get token account balance".to_string())
+                .unwrap();
+        }
+    } else {
+        return Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body("Invalid public key".to_string())
+            .unwrap();
     }
 }

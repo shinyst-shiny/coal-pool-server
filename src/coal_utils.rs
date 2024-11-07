@@ -9,7 +9,7 @@ use coal_api::{
     ID as COAL_ID,
 };
 use coal_guilds_api::{
-    prelude as guilds_prelude,
+    state as guilds_state,
 };
 // use coal_miner_delegation::{instruction, state::DelegatedStake, utils::AccountDeserialize};
 // use coal_utils::event;
@@ -59,11 +59,11 @@ pub fn get_stake_ix(signer: Pubkey, sender: Pubkey, stake_amount: u64) -> Instru
 }
 
 pub fn get_guild_member(miner: Pubkey) -> (Pubkey, u8) {
-    guilds_prelude::member_pda(miner)
+    guilds_state::member_pda(miner)
 }
 
 pub fn get_guild_proof(miner: Pubkey) -> (Pubkey, u8) {
-    guilds_prelude::guild_pda(miner)
+    guilds_state::guild_pda(miner)
 }
 pub fn get_coal_mint() -> Pubkey {
     COAL_MINT_ADDRESS

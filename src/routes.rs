@@ -8,9 +8,12 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
 use spl_associated_token_account::get_associated_token_address;
 use tracing::error;
+use steel::AccountDeserialize;
 
 use crate::{app_rr_database, coal_utils::{get_coal_mint, get_proof}, ChallengeWithDifficulty, Config, Txn, WalletExtension};
 use std::{str::FromStr, sync::Arc};
+use coal_guilds_api::state::Guild;
+use crate::models::PoolGuild;
 
 pub async fn get_challenges(
     Extension(app_rr_database): Extension<Arc<AppRRDatabase>>,
@@ -44,11 +47,23 @@ pub async fn get_latest_mine_txn(
     }
 }
 
-pub async fn get_guild_address(Extension(app_config): Extension<Arc<Config>>) -> Result <String, String> {
+pub async fn get_guild_addresses(Extension(app_config): Extension<Arc<Config>>,
+                                 Extension(rpc_client): Extension<Arc<RpcClient>>) -> Result<Json<PoolGuild>, String> {
     if app_config.guild_address.is_empty() {
         return Err("Failed to get guild info".to_string())
     }
-    Ok(app_config.guild_address.clone())
+    let guild_address = app_config.guild_address.clone();
+    let guild_data = rpc_client.get_account_data(&Pubkey::from_str(&guild_address).unwrap()).await;
+
+    if let Ok(guild_data) = guild_data {
+        let guild = Guild::try_from_bytes(&guild_data)?.unwrap();
+        guild = PoolGuild {
+            authority: guild.authority,
+            pubkey: guild_address
+        }
+    } else {
+        Err("Failed to get guild info".to_string())
+    }
 }
 
 pub async fn get_pool(

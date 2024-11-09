@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     net::SocketAddr,
-    ops::{ControlFlow, Div},
+    ops::{ControlFlow},
     path::Path,
     str::FromStr,
     sync::Arc,
@@ -17,7 +17,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
 use crate::systems::{message_text_all_clients_system::message_text_all_clients_system, pool_mine_success_system::pool_mine_success_system, pool_submission_system::pool_submission_system};
 
-use steel::{AccountDeserialize, Instruction};
+use steel::{AccountDeserialize};
 
 use self::models::*;
 use crate::coal_utils::proof_pubkey;
@@ -40,26 +40,22 @@ use clap::Parser;
 use coal_guilds_api::state::member_pda;
 use coal_guilds_api::state::Member;
 use coal_utils::{
-    get_coal_mint, get_config,
-    get_original_proof, get_proof, get_register_ix,
+    get_coal_mint, get_config, get_proof, get_register_ix,
     COAL_TOKEN_DECIMALS,
 };
 use drillx::Solution;
 use futures::{stream::SplitSink, SinkExt, StreamExt};
-use ore_utils::{get_ore_auth_ix, get_ore_mine_ix, get_ore_register_ix};
+use ore_utils::{get_ore_register_ix};
 use routes::{get_challenges, get_latest_mine_txn, get_pool_balance};
 use serde::{Deserialize, Serialize};
 use solana_client::{
     nonblocking::rpc_client::RpcClient,
-    rpc_client::SerializableTransaction,
-    rpc_config::RpcSendTransactionConfig,
 };
 use solana_sdk::{
-    commitment_config::{CommitmentConfig, CommitmentLevel}, compute_budget::ComputeBudgetInstruction, native_token::{lamports_to_sol, LAMPORTS_PER_SOL}, pubkey::Pubkey, signature::{read_keypair_file, Keypair, Signature}, signer::Signer, transaction::Transaction,
+    commitment_config::{CommitmentConfig}, native_token::{lamports_to_sol, LAMPORTS_PER_SOL}, pubkey::Pubkey, signature::{read_keypair_file, Keypair, Signature}, signer::Signer, transaction::Transaction,
 };
-use solana_transaction_status::TransactionConfirmationStatus;
 use spl_associated_token_account::{
-    get_associated_token_address, instruction::create_associated_token_account,
+    get_associated_token_address,
 };
 use tokio::{
     sync::{mpsc::UnboundedSender, Mutex, RwLock},

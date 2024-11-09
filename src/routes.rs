@@ -10,8 +10,7 @@ use spl_associated_token_account::get_associated_token_address;
 use steel::AccountDeserialize;
 use tracing::error;
 
-use crate::{app_rr_database, coal_utils::{get_coal_mint, get_proof}, ChallengeWithDifficulty, Config, PoolGuild, PubkeyMintParam, Txn, WalletExtension};
-use axum::extract::Query;
+use crate::{app_rr_database, coal_utils::{get_coal_mint, get_proof}, ChallengeWithDifficulty, Config, PoolGuild, Txn};
 use coal_guilds_api::state::Guild;
 use std::{str::FromStr, sync::Arc};
 

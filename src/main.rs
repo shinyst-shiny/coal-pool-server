@@ -15,11 +15,13 @@ use systems::{
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
-use crate::{
-    systems::{message_text_all_clients_system::message_text_all_clients_system, pool_mine_success_system::pool_mine_success_system, pool_submission_system::pool_submission_system},
-};
+use crate::systems::{message_text_all_clients_system::message_text_all_clients_system, pool_mine_success_system::pool_mine_success_system, pool_submission_system::pool_submission_system};
+
+use steel::{AccountDeserialize, Instruction};
 
 use self::models::*;
+use crate::coal_utils::proof_pubkey;
+use crate::routes::get_guild_addresses;
 use app_database::{AppDatabase, AppDatabaseError};
 use app_rr_database::AppRRDatabase;
 use axum::{
@@ -35,22 +37,25 @@ use axum::{
 use axum_extra::{headers::authorization::Basic, TypedHeader};
 use base64::{prelude::BASE64_STANDARD, Engine};
 use clap::Parser;
-use drillx::Solution;
-use futures::{stream::SplitSink, SinkExt, StreamExt};
+use coal_guilds_api::state::member_pda;
+use coal_guilds_api::state::Member;
 use coal_utils::{
-    get_config, get_coal_mint,
+    get_coal_mint, get_config,
     get_original_proof, get_proof, get_register_ix,
     COAL_TOKEN_DECIMALS,
 };
+use drillx::Solution;
+use futures::{stream::SplitSink, SinkExt, StreamExt};
+use ore_utils::{get_ore_auth_ix, get_ore_mine_ix, get_ore_register_ix};
 use routes::{get_challenges, get_latest_mine_txn, get_pool_balance};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use solana_client::{
     nonblocking::rpc_client::RpcClient,
     rpc_client::SerializableTransaction,
     rpc_config::RpcSendTransactionConfig,
 };
 use solana_sdk::{
-    commitment_config::{CommitmentConfig, CommitmentLevel}, compute_budget::ComputeBudgetInstruction, native_token::{lamports_to_sol, LAMPORTS_PER_SOL}, pubkey::Pubkey, signature::{read_keypair_file, Keypair, Signature}, signer::Signer, transaction::Transaction
+    commitment_config::{CommitmentConfig, CommitmentLevel}, compute_budget::ComputeBudgetInstruction, native_token::{lamports_to_sol, LAMPORTS_PER_SOL}, pubkey::Pubkey, signature::{read_keypair_file, Keypair, Signature}, signer::Signer, transaction::Transaction,
 };
 use solana_transaction_status::TransactionConfirmationStatus;
 use spl_associated_token_account::{
@@ -65,9 +70,6 @@ use tower_http::{
     trace::{DefaultMakeSpan, TraceLayer},
 };
 use tracing::{error, info};
-use crate::coal_utils::proof_pubkey;
-use ore_utils::{get_ore_auth_ix, get_ore_mine_ix, get_ore_register_ix};
-use crate::routes::{get_guild_addresses};
 
 mod app_database;
 mod app_rr_database;
@@ -109,7 +111,7 @@ struct AppState {
 #[derive(Clone, Copy)]
 struct ClaimsQueueItem {
     receiver_pubkey: Pubkey,
-    amount: u64
+    amount: u64,
 }
 
 struct ClaimsQueue {
@@ -176,7 +178,7 @@ pub struct Config {
     signup_fee: f64,
     commissions_pubkey: String,
     commissions_miner_id: i32,
-    guild_address: String
+    guild_address: String,
 }
 
 mod coal_utils;
@@ -267,10 +269,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let commission_pubkey = match Pubkey::from_str(&commission_env) {
         Ok(pk) => {
             pk
-        },
+        }
         Err(_) => {
             println!("Invalid COMMISSION_PUBKEY");
-            return Ok(())
+            return Ok(());
         }
     };
     let guild_env = std::env::var("GUILD_ADDRESS").expect("GUILD_ADDRESS must be set.");
@@ -540,7 +542,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         panic!("Failed to get commission miner id")
                     }
-                },
+                }
                 Err(_) => {
                     panic!("Failed to insert comissions receiver account")
                 }
@@ -585,7 +587,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         signup_fee: args.signup_fee,
         commissions_pubkey: commission_pubkey.to_string(),
         commissions_miner_id: commission_miner_id,
-        guild_address: guild_env
+        guild_address: guild_env,
     });
 
     let epoch_hashes = Arc::new(RwLock::new(EpochHashes {
@@ -638,7 +640,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_wallet.miner_wallet.clone(),
             app_app_database,
         )
-        .await;
+            .await;
     });
 
     // Track client pong timings
@@ -657,7 +659,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             rpc_ws_url,
             app_wallet.miner_wallet.clone(),
             app_proof,
-            app_last_challenge
+            app_last_challenge,
         ).await;
     });
 
@@ -683,7 +685,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_pongs,
             app_submission_window,
         )
-        .await;
+            .await;
     });
 
     // Handle ready clients
@@ -704,7 +706,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_client_nonce_ranges,
             app_submission_window,
         )
-        .await;
+            .await;
     });
 
     let (mine_success_sender, mine_success_receiver) =
@@ -745,7 +747,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_client_nonce_ranges,
             app_last_challenge,
         )
-        .await;
+            .await;
     });
 
     let app_shared_state = shared_state.clone();
@@ -767,7 +769,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(async move {
         message_text_all_clients_system(
             app_shared_state,
-            all_clients_receiver
+            all_clients_receiver,
         ).await;
     });
 
@@ -812,6 +814,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/pool/balance", get(get_pool_balance))
         .route("/txns/latest-mine", get(get_latest_mine_txn))
         .route("/guild/addresses", get(get_guild_addresses))
+        .route("/guild/check-member", get(get_guild_check_member))
+        .route("guild/stake", post(post_guild_stake))
         .with_state(app_shared_state)
         .layer(Extension(app_database))
         .layer(Extension(app_rr_database))
@@ -842,8 +846,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
-    .await
-    .unwrap();
+        .await
+        .unwrap();
 
     Ok(())
 }
@@ -959,7 +963,7 @@ async fn post_signup(
                     .header("Content-Type", "text/text")
                     .body("SUCCESS".to_string())
                     .unwrap();
-            },
+            }
             Err(_) => {
                 error!(target: "server_log", "Failed to add miner to database");
                 return Response::builder()
@@ -1025,7 +1029,7 @@ async fn post_signup_v2(
                     .header("Content-Type", "text/text")
                     .body("SUCCESS".to_string())
                     .unwrap();
-            },
+            }
             Err(_) => {
                 error!(target: "server_log", "Failed to add miner to database");
                 return Response::builder()
@@ -1381,7 +1385,7 @@ async fn post_claim(
             }
 
             let mut writer = claims_queue.queue.write().await;
-            writer.insert(miner_pubkey, ClaimsQueueItem{
+            writer.insert(miner_pubkey, ClaimsQueueItem {
                 receiver_pubkey: miner_pubkey,
                 amount,
             });
@@ -1435,7 +1439,7 @@ async fn post_claim_v2(
     let receiver_pubkey = match Pubkey::from_str(&query_params.receiver_pubkey) {
         Ok(pubkey) => {
             pubkey
-        },
+        }
         Err(_) => {
             return Err((StatusCode::BAD_REQUEST, "Invalid receiver_pubkey provided.".to_string()))
         }
@@ -1450,7 +1454,6 @@ async fn post_claim_v2(
             signed_msg.extend(amount.to_le_bytes());
 
             if signature.verify(&miner_pubkey.to_bytes(), &signed_msg) {
-
                 let reader = claims_queue.queue.read().await;
                 let queue = reader.clone();
                 drop(reader);
@@ -1487,7 +1490,7 @@ async fn post_claim_v2(
                     }
 
                     let mut writer = claims_queue.queue.write().await;
-                    writer.insert(miner_pubkey, ClaimsQueueItem{
+                    writer.insert(miner_pubkey, ClaimsQueueItem {
                         receiver_pubkey,
                         amount,
                     });
@@ -1509,10 +1512,70 @@ async fn post_claim_v2(
 }
 
 #[derive(Deserialize)]
+struct GuildStakeParams {
+    pubkey: String,
+    amount: u64,
+    mint: String,
+}
+async fn post_guild_stake(
+    query_params: Query<GuildStakeParams>,
+    Extension(rpc_client): Extension<Arc<RpcClient>>,
+    Extension(wallet): Extension<Arc<WalletExtension>>,
+    body: String,
+) -> impl IntoResponse {
+    if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
+        let serialized_tx = BASE64_STANDARD.decode(body.clone()).unwrap();
+        let mut tx: Transaction = if let Ok(tx) = bincode::deserialize(&serialized_tx) {
+            tx
+        } else {
+            error!(target: "server_log", "Failed to deserialize tx");
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body("Invalid Tx".to_string())
+                .unwrap();
+        };
+
+        // Sign the transaction
+        tx.sign(&[&*wallet.miner_wallet], tx.message.recent_blockhash);
+
+        // Send the transaction
+        return match rpc_client.send_and_confirm_transaction_with_spinner_and_commitment(
+            &tx,
+            CommitmentConfig::confirmed(),
+        ).await {
+            Ok(signature) => {
+                // Transaction successful
+                let amount_dec =
+                    query_params.amount as f64 / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
+                info!(target: "server_log", "Miner {} successfully staked to the guild {}.\nSig: {}", user_pubkey.to_string(), amount_dec, signature.to_string());
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .body("SUCCESS".to_string())
+                    .unwrap()
+            }
+            Err(e) => {
+                // Transaction failed
+                error!(target: "server_log", "Server Failed to sign guild stake tx. Error: {}", e);
+                Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(format!("Server Failed to sign tx. Error: {}", e))
+                    .unwrap()
+            }
+        };
+    } else {
+        error!(target: "server_log", "Stake with invalid pubkey");
+        return Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body("Invalid public key".to_string())
+            .unwrap();
+    }
+}
+
+/*#[derive(Deserialize)]
 struct StakeParams {
     pubkey: String,
     amount: u64,
-}
+}*/
 
 /*async fn post_stake(
     query_params: Query<StakeParams>,
@@ -1692,11 +1755,11 @@ struct StakeParams {
     }
 }*/
 
-#[derive(Deserialize)]
+/*#[derive(Deserialize)]
 struct UnstakeParams {
     pubkey: String,
     amount: u64,
-}
+}*/
 
 /*async fn post_unstake(
     query_params: Query<UnstakeParams>,
@@ -2035,7 +2098,7 @@ async fn handle_socket(
             }
         }
     })
-    .await;
+        .await;
 
     let mut app_state = rw_app_state.write().await;
     app_state.sockets.remove(&who);
@@ -2194,6 +2257,13 @@ struct PubkeyMintParam {
     mint: String,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct PoolGuild {
+    pub pubkey: String,
+    pub authority: String,
+}
+
+
 async fn get_miner_balance_v2(
     query_params: Query<PubkeyMintParam>,
     Extension(rpc_client): Extension<Arc<RpcClient>>,
@@ -2201,7 +2271,7 @@ async fn get_miner_balance_v2(
     let mint = match Pubkey::from_str(&query_params.mint) {
         Ok(pk) => {
             pk
-        },
+        }
         Err(_) => {
             error!(target: "server_log", "get_miner_balance_v2 - Failed to parse mint");
             return Response::builder()
@@ -2216,15 +2286,62 @@ async fn get_miner_balance_v2(
             .get_token_account_balance(&miner_token_account)
             .await
         {
-            return Response::builder()
+            Response::builder()
                 .status(StatusCode::OK)
                 .body(response.ui_amount_string)
-                .unwrap();
+                .unwrap()
         } else {
-            return Response::builder()
+            Response::builder()
                 .status(StatusCode::BAD_REQUEST)
                 .body("Failed to get token account balance".to_string())
-                .unwrap();
+                .unwrap()
+        }
+    } else {
+        Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body("Invalid public key".to_string())
+            .unwrap()
+    }
+}
+
+pub async fn get_guild_check_member(
+    query_params: Query<PubkeyParam>,
+    Extension(app_config): Extension<Arc<Config>>,
+    Extension(rpc_client): Extension<Arc<RpcClient>>) -> impl IntoResponse {
+    if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
+        let member = member_pda(user_pubkey);
+        let member_data = rpc_client.get_account_data(&member.0).await;
+
+        // let's check guild that the user is in, if any
+        match member_data {
+            Err(_) => {
+                return Response::builder()
+                    .status(StatusCode::NOT_FOUND)
+                    .body("User not in any guild".to_string())
+                    .unwrap();
+            }
+            Ok(data) => {
+                if let Ok(member) = Member::try_from_bytes(&data) {
+                    return if app_config.guild_address.eq(&member.guild.to_string()) {
+                        Response::builder()
+                            .status(StatusCode::OK)
+                            .header("Content-Type", "text/text")
+                            .body("SUCCESS".to_string())
+                            .unwrap()
+                    } else {
+                        Response::builder()
+                            .status(StatusCode::BAD_REQUEST)
+                            .body("Public key already in another guild. Leave it first before joining another guild".to_string())
+                            .unwrap()
+                    };
+                } else {
+                    println!("Failed to parse member data");
+                    return Response::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .body("Invalid public key".to_string())
+                        .unwrap();
+                }
+            }
         }
     } else {
         return Response::builder()

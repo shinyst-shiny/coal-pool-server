@@ -199,8 +199,3 @@ pub struct InsertEarning {
     pub amount: u64,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct PoolGuild {
-    pub pubkey: String,
-    pub authority: String
-}

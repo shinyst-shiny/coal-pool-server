@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     net::SocketAddr,
-    ops::{ControlFlow},
+    ops::ControlFlow,
     path::Path,
     str::FromStr,
     sync::Arc,
@@ -17,7 +17,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
 use crate::systems::{message_text_all_clients_system::message_text_all_clients_system, pool_mine_success_system::pool_mine_success_system, pool_submission_system::pool_submission_system};
 
-use steel::{AccountDeserialize};
+use steel::AccountDeserialize;
 
 use self::models::*;
 use crate::coal_utils::proof_pubkey;
@@ -45,18 +45,14 @@ use coal_utils::{
 };
 use drillx::Solution;
 use futures::{stream::SplitSink, SinkExt, StreamExt};
-use ore_utils::{get_ore_register_ix};
+use ore_utils::get_ore_register_ix;
 use routes::{get_challenges, get_latest_mine_txn, get_pool_balance};
 use serde::{Deserialize, Serialize};
-use solana_client::{
-    nonblocking::rpc_client::RpcClient,
-};
+use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
-    commitment_config::{CommitmentConfig}, native_token::{lamports_to_sol, LAMPORTS_PER_SOL}, pubkey::Pubkey, signature::{read_keypair_file, Keypair, Signature}, signer::Signer, transaction::Transaction,
+    commitment_config::CommitmentConfig, compute_budget::ComputeBudgetInstruction, native_token::{lamports_to_sol, LAMPORTS_PER_SOL}, pubkey::Pubkey, signature::{read_keypair_file, Keypair, Signature}, signer::Signer, transaction::Transaction,
 };
-use spl_associated_token_account::{
-    get_associated_token_address,
-};
+use spl_associated_token_account::get_associated_token_address;
 use tokio::{
     sync::{mpsc::UnboundedSender, Mutex, RwLock},
     time::Instant,
@@ -1513,59 +1509,102 @@ struct GuildStakeParams {
     amount: u64,
     mint: String,
 }
+
 async fn post_guild_stake(
     query_params: Query<GuildStakeParams>,
     Extension(rpc_client): Extension<Arc<RpcClient>>,
     Extension(wallet): Extension<Arc<WalletExtension>>,
     body: String,
 ) -> impl IntoResponse {
+    const MAX_RETRIES: u32 = 5; // Maximum number of retry attempts
+    const BASE_DELAY: u64 = 500; // Base delay in milliseconds
+    const PRIORITY_FEE_LAMPORTS_PER_UNIT: u64 = 5000; // Adjust this based on desired priority level
+
     if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
-        let serialized_tx = BASE64_STANDARD.decode(body.clone()).unwrap();
-        let mut tx: Transaction = if let Ok(tx) = bincode::deserialize(&serialized_tx) {
-            tx
-        } else {
-            error!(target: "server_log", "Failed to deserialize tx");
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("Invalid Tx".to_string())
-                .unwrap();
-        };
-
-        // Sign the transaction
-        tx.sign(&[&*wallet.miner_wallet], tx.message.recent_blockhash);
-
-        // Send the transaction
-        return match rpc_client.send_and_confirm_transaction_with_spinner_and_commitment(
-            &tx,
-            CommitmentConfig::confirmed(),
-        ).await {
-            Ok(signature) => {
-                // Transaction successful
-                let amount_dec =
-                    query_params.amount as f64 / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
-                info!(target: "server_log", "Miner {} successfully staked to the guild {}.\nSig: {}", user_pubkey.to_string(), amount_dec, signature.to_string());
-                Response::builder()
-                    .status(StatusCode::OK)
-                    .body("SUCCESS".to_string())
-                    .unwrap()
-            }
+        let serialized_tx = match BASE64_STANDARD.decode(&body) {
+            Ok(tx) => tx,
             Err(e) => {
-                // Transaction failed
-                error!(target: "server_log", "Server Failed to sign guild stake tx. Error: {}", e);
-                Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(format!("Server Failed to sign tx. Error: {}", e))
-                    .unwrap()
+                error!(target: "server_log", "Failed to decode transaction: {}", e);
+                return Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body("Invalid Tx encoding".to_string())
+                    .unwrap();
             }
         };
+
+        let mut tx: Transaction = match bincode::deserialize(&serialized_tx) {
+            Ok(tx) => tx,
+            Err(_) => {
+                error!(target: "server_log", "Failed to deserialize tx");
+                return Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body("Invalid Tx format".to_string())
+                    .unwrap();
+            }
+        };
+
+        // Add priority fee with ComputeBudgetInstruction
+        let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_price(PRIORITY_FEE_LAMPORTS_PER_UNIT);
+
+        // Create a new message with the priority fee instruction at the beginning
+        let mut instructions = vec![compute_budget_ix];
+        instructions.extend(tx.message.instructions.clone()); // Append existing instructions
+
+        // Update the transaction with the new message
+        let message = solana_sdk::message::Message::new(&instructions, Some(&wallet.miner_wallet.pubkey()));
+        tx = Transaction::new(&[&*wallet.miner_wallet], message, tx.message.recent_blockhash);
+
+        // Retry mechanism for sending the transaction
+        for attempt in 0..=MAX_RETRIES {
+            match rpc_client.send_and_confirm_transaction_with_spinner_and_commitment(
+                &tx,
+                CommitmentConfig::confirmed(),
+            ) {
+                Ok(signature) => {
+                    // Transaction successful
+                    let amount_dec =
+                        query_params.amount as f64 / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
+                    info!(target: "server_log", "Miner {} successfully staked to the guild {}.\nSig: {}", user_pubkey, amount_dec, signature);
+                    return Response::builder()
+                        .status(StatusCode::OK)
+                        .body("SUCCESS".to_string())
+                        .unwrap();
+                }
+                Err(e) => {
+                    // Log the error and retry
+                    error!(target: "server_log", "Attempt {}: Failed to send transaction. Error: {}", attempt + 1, e);
+
+                    if attempt == MAX_RETRIES {
+                        // Maximum retries reached
+                        error!(target: "server_log", "Max retries reached. Transaction failed.");
+                        return Response::builder()
+                            .status(StatusCode::INTERNAL_SERVER_ERROR)
+                            .body(format!("Transaction failed after {} attempts. Error: {}", MAX_RETRIES, e))
+                            .unwrap();
+                    }
+
+                    // Exponential backoff delay
+                    let delay = BASE_DELAY * 2_u64.pow(attempt);
+                    info!(target: "server_log", "Retrying in {} ms...", delay);
+                    tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                }
+            }
+        }
     } else {
-        error!(target: "server_log", "Stake with invalid pubkey");
+        error!(target: "server_log", "Invalid pubkey in stake request");
         return Response::builder()
             .status(StatusCode::BAD_REQUEST)
-            .body("Invalid public key".to_string())
+            .body("Invalid pubkey".to_string())
             .unwrap();
     }
+
+    // Fallback in case all attempts fail
+    Response::builder()
+        .status(StatusCode::INTERNAL_SERVER_ERROR)
+        .body("Transaction failed unexpectedly.".to_string())
+        .unwrap()
 }
+
 
 /*#[derive(Deserialize)]
 struct StakeParams {

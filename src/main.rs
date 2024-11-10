@@ -1622,9 +1622,8 @@ async fn post_guild_stake(
 
         // Retry mechanism for sending the transaction
         //for attempt in 0..=MAX_RETRIES {
-        match rpc_client.send_and_confirm_transaction_with_spinner_and_commitment(
+        match rpc_client.simulate_transaction(
             &tx,
-            CommitmentConfig::confirmed(),
         ).await {
             Ok(signature) => {
                 // Transaction successful

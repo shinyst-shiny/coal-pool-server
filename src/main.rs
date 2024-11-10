@@ -807,7 +807,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/txns/latest-mine", get(get_latest_mine_txn))
         .route("/guild/addresses", get(get_guild_addresses))
         .route("/guild/check-member", get(get_guild_check_member))
-        .route("guild/stake", post(post_guild_stake))
+        .route("/guild/stake", post(post_guild_stake))
         .with_state(app_shared_state)
         .layer(Extension(app_database))
         .layer(Extension(app_rr_database))

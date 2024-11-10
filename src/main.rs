@@ -20,7 +20,7 @@ use crate::systems::{message_text_all_clients_system::message_text_all_clients_s
 use steel::AccountDeserialize;
 
 use self::models::*;
-use crate::coal_utils::proof_pubkey;
+use crate::coal_utils::{proof_pubkey, Resource};
 use crate::routes::get_guild_addresses;
 use app_database::{AppDatabase, AppDatabaseError};
 use app_rr_database::AppRRDatabase;
@@ -183,7 +183,7 @@ struct Args {
         long,
         value_name = "priority fee",
         help = "Number of microlamports to pay as priority fee per transaction",
-        default_value = "1000",
+        default_value = "30000",
         global = true
     )]
     priority_fee: u64,
@@ -503,7 +503,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Err(_) => {
             info!(target: "server_log", "Pool missing from database. Inserting...");
-            let proof_pubkey = proof_pubkey(wallet.pubkey());
+            let proof_pubkey = proof_pubkey(wallet.pubkey(), Resource::Coal);
             let result = app_database
                 .add_new_pool(wallet.pubkey().to_string(), proof_pubkey.to_string())
                 .await;
@@ -1519,7 +1519,6 @@ async fn post_guild_stake(
 ) -> impl IntoResponse {
     const MAX_RETRIES: u32 = 5; // Maximum number of retry attempts
     const BASE_DELAY: u64 = 500; // Base delay in milliseconds
-    const PRIORITY_FEE_LAMPORTS_PER_UNIT: u64 = 5000; // Adjust this based on desired priority level
 
     if let (Ok(user_pubkey), Ok(guild_pubkey)) = (Pubkey::from_str(&query_params.pubkey), Pubkey::from_str(&app_config.guild_address)) {
         let serialized_tx = match BASE64_STANDARD.decode(&body) {
@@ -1553,17 +1552,40 @@ async fn post_guild_stake(
                 .unwrap();
         }
 
-        // Ensure that the priority fee are exactly PRIORITY_FEE_LAMPORTS_PER_UNIT
-        /*if tx.message.header..eq(&PRIORITY_FEE_LAMPORTS_PER_UNIT) {
-            error!(target: "server_log", "Guild stake: Wrong priority fee detected in transaction.");
+        // check if the only transactions are new_member, stake, and delegate. None is mandatory
+        if tx.message.instructions.len() == 0 {
+            error!(target: "server_log", "Guild stake: No instructions detected in transaction.");
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
-                .body("Insufficient priority fee".to_string())
+                .body("Instructions error".to_string())
                 .unwrap();
-        }*/
+        }
+        if tx.message.instructions.len() > 3 {
+            error!(target: "server_log", "Guild stake: Too many instructions detected in transaction. Count: {}.", tx.message.instructions.len());
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body("Instructions error".to_string())
+                .unwrap();
+        }
 
-        // There should be either 2 or 3 instructions: initialize (optional), stake, and delegate
-        /*if tx.message.instructions.len() < 2 || tx.message.instructions.len() > 3 {
+        // check that only the new_member, stake, and delegate instructions are present not only with id but checking the specific tx action, regardless of the position of the tx
+        let mut instruction_index = 0;
+        let mut program_id = tx.message.account_keys[tx.message.instructions[instruction_index].program_id_index as usize];
+        while instruction_index < tx.message.instructions.len() {
+            if program_id != coal_guilds_api::ID {
+                error!(target: "server_log", "Guild stake: Wrong program detected in transaction. Program: {}.", program_id);
+                return Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body("Wrong program".to_string())
+                    .unwrap();
+            }
+            program_id = tx.message.account_keys[tx.message.instructions[instruction_index].program_id_index as usize];
+            instruction_index += 1;
+        }
+
+
+        /*// There should be either 2 or 3 instructions: initialize (optional), stake, and delegate
+        if tx.message.instructions.len() < 2 || tx.message.instructions.len() > 3 {
             error!(target: "server_log", "Guild stake: Wrong priority fee detected in transaction. Count: {}.", tx.message.instructions.len());
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
@@ -1580,7 +1602,7 @@ async fn post_guild_stake(
 
             // Check if it's an initialize instruction from the correct program
             if program_id != coal_guilds_api::ID
-                || init_ix.data != coal_guilds_api::sdk::initialize(user_pubkey).data {
+                || init_ix.data != coal_guilds_api::sdk::new_member(user_pubkey).data {
                 error!(target: "server_log", "Guild stake: Wrong initialize instruction detected in transaction.");
                 return Response::builder()
                     .status(StatusCode::BAD_REQUEST)
@@ -1618,12 +1640,11 @@ async fn post_guild_stake(
         // Sign the transaction
         tx.sign(&[&*wallet.fee_wallet], tx.message.recent_blockhash);
 
-        info!(target: "server_log", "TX --->: {:?}", tx);
-
         // Retry mechanism for sending the transaction
         //for attempt in 0..=MAX_RETRIES {
-        match rpc_client.simulate_transaction(
+        match rpc_client.send_and_confirm_transaction_with_spinner_and_commitment(
             &tx,
+            CommitmentConfig::confirmed(),
         ).await {
             Ok(signature) => {
                 // Transaction successful
@@ -2412,6 +2433,7 @@ async fn get_miner_balance_v2(
 
 pub async fn get_guild_check_member(
     query_params: Query<PubkeyParam>,
+    Extension(app_config): Extension<Arc<Config>>,
     Extension(rpc_client): Extension<Arc<RpcClient>>) -> impl IntoResponse {
     if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
         let member = member_pda(user_pubkey);
@@ -2432,6 +2454,13 @@ pub async fn get_guild_check_member(
                         info!(target: "server_log", "Pubkey: {} without any guild. We can continue with the flow without any extra", user_pubkey.to_string());
                         return Response::builder()
                             .status(StatusCode::OK)
+                            .header("Content-Type", "text/text")
+                            .body("SUCCESS".to_string())
+                            .unwrap();
+                    } else if member.guild.to_string().eq(&app_config.guild_address.to_string()) {
+                        info!(target: "server_log", "Pubkey: {} is already in the guild. No extra steps needed", user_pubkey.to_string());
+                        return Response::builder()
+                            .status(StatusCode::FOUND)
                             .header("Content-Type", "text/text")
                             .body("SUCCESS".to_string())
                             .unwrap();

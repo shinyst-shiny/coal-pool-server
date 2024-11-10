@@ -1,14 +1,14 @@
 use std::{sync::Arc, time::Duration};
 
+use crate::coal_utils::{proof_pubkey, Resource};
 use base64::{prelude::BASE64_STANDARD, Engine};
-use futures::StreamExt;
 use coal_api::state::Proof;
 use coal_utils::AccountDeserialize;
+use futures::StreamExt;
 use solana_account_decoder::UiAccountEncoding;
 use solana_client::{nonblocking::pubsub_client::PubsubClient, rpc_config::RpcAccountInfoConfig};
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair, signer::Signer};
 use tokio::sync::Mutex;
-use crate::coal_utils::proof_pubkey;
 
 pub async fn proof_tracking_system(
     ws_url: String,
@@ -32,7 +32,7 @@ pub async fn proof_tracking_system(
         let app_wallet = wallet.clone();
         if let Ok(ps_client) = ps_client {
             let ps_client = Arc::new(ps_client);
-            let account_pubkey = proof_pubkey(app_wallet.pubkey());
+            let account_pubkey = proof_pubkey(app_wallet.pubkey(), Resource::Coal);
             let pubsub = ps_client
                 .account_subscribe(
                     &account_pubkey,

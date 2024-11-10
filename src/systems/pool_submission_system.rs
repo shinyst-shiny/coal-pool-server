@@ -31,6 +31,7 @@ use tokio::{
 };
 use tracing::info;
 
+use crate::coal_utils::{deserialize_config, deserialize_guild, deserialize_guild_config, deserialize_guild_member, deserialize_tool, get_config_pubkey, get_tool_pubkey, Resource, ToolType};
 use crate::ore_utils::{get_ore_auth_ix, get_ore_mine_ix};
 use crate::{
     app_database::AppDatabase, coal_utils::{
@@ -125,7 +126,7 @@ pub async fn pool_submission_system(
                             text: String::from("Server is sending mine transaction..."),
                         });
 
-                        let mut cu_limit = 980_000;
+                        let mut cu_limit = 500_000;
                         let should_add_reset_ix = if let Some(config) = loaded_config {
                             let time_until_reset = (config.last_reset_at + 300) - now as i64;
                             if time_until_reset <= 5 {
@@ -182,21 +183,77 @@ pub async fn pool_submission_system(
                         let ore_noop_ix = get_ore_auth_ix(signer.pubkey());
                         let coal_apinoop_ix = get_auth_ix(signer.pubkey());
                         ixs.push(ore_noop_ix);
-                        ixs.push(coal_apinoop_ix);
+                        ixs.push(coal_apinoop_ix.clone());
 
                         if should_add_reset_ix {
                             let reset_ix = get_reset_ix(signer.pubkey());
                             ixs.push(reset_ix);
                         }
 
-                        //let guild_proof = get_guild_proof(signer.pubkey());
-                        //let guild_member_proof = get_guild_member(signer.pubkey());
+                        // Fetch coal_proof
+                        let config_address = get_config_pubkey(&Resource::Coal);
+                        let tool_address = get_tool_pubkey(signer.pubkey(), &Resource::Coal);
+                        let guild_config_address = coal_guilds_api::state::config_pda().0;
+                        let guild_member_address = coal_guilds_api::state::member_pda(signer.pubkey()).0;
 
-                        let guild_pubkey = Pubkey::from_str(config.guild_address.as_str()).unwrap();
+                        let mut accounts: Vec<Pubkey> = vec![config_address, tool_address, guild_config_address, guild_member_address];
+                        let accounts = rpc_client.get_multiple_accounts(&accounts).await.unwrap();
 
-                        let coal_mine_ix = get_mine_ix(signer.pubkey(), best_solution, bus, guild_pubkey, signer.pubkey());
-                        let ore_mine_ix = get_ore_mine_ix(signer.pubkey(), best_solution, bus);
-                        ixs.push(ore_mine_ix);
+                        let mut tool: Option<ToolType> = None;
+                        let mut member: Option<coal_guilds_api::state::Member> = None;
+                        let mut guild_config: Option<coal_guilds_api::state::Config> = None;
+                        let mut guild: Option<coal_guilds_api::state::Guild> = None;
+                        let mut guild_address: Option<Pubkey> = None;
+
+                        if accounts.len() > 1 {
+                            if accounts[1].as_ref().is_some() {
+                                tool = Some(deserialize_tool(&accounts[1].as_ref().unwrap().data, &Resource::Coal));
+                            }
+
+                            if accounts.len() > 2 && accounts[2].as_ref().is_some() {
+                                guild_config = Some(deserialize_guild_config(&accounts[2].as_ref().unwrap().data));
+                            }
+
+                            if accounts.len() > 3 && accounts[3].as_ref().is_some() {
+                                member = Some(deserialize_guild_member(&accounts[3].as_ref().unwrap().data));
+                            }
+
+                            if accounts.len() > 4 && accounts[4].as_ref().is_some() {
+                                guild = Some(deserialize_guild(&accounts[4].as_ref().unwrap().data));
+                            }
+                        }
+
+                        if member.is_some() && member.unwrap().guild.ne(&coal_guilds_api::ID) && guild_address.is_none() {
+                            let guild_data = rpc_client.get_account_data(&member.unwrap().guild).await.unwrap();
+                            guild = Some(deserialize_guild(&guild_data));
+                            guild_address = Some(member.unwrap().guild);
+                        }
+
+                        info!(target: "server_log","Using for the transaction Signer: {:?} tool: {:?}, member: {:?}, guild_address: {:?}", signer.pubkey(), tool_address, guild_member_address, member.unwrap().guild);
+
+                        // let coal_mine_ix = get_mine_ix(signer.pubkey(), best_solution, bus, guild_pubkey, signer.pubkey());
+                        let coal_mine_ix = get_mine_ix(
+                            signer.pubkey(),
+                            best_solution, bus,
+                            match tool {
+                                Some(_) => Some(tool_address),
+                                None => None
+                            },
+                            match member {
+                                Some(_) => Some(guild_member_address),
+                                None => None
+                            },
+                            match member {
+                                Some(member) => if member.guild.eq(&coal_guilds_api::ID) {
+                                    None
+                                } else {
+                                    Some(member.guild)
+                                },
+                                None => None
+                            },
+                        );
+                        // let ore_mine_ix = get_ore_mine_ix(signer.pubkey(), best_solution, bus);
+                        //ixs.push(ore_mine_ix);
                         ixs.push(coal_mine_ix);
 
                         if let Ok((hash, _slot)) = rpc_client

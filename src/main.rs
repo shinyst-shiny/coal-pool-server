@@ -1543,16 +1543,8 @@ async fn post_guild_stake(
             }
         };
 
-        // Add priority fee with ComputeBudgetInstruction
-        let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_price(PRIORITY_FEE_LAMPORTS_PER_UNIT);
-
-        // Create a new message with the priority fee instruction at the beginning
-        let mut instructions = vec![compute_budget_ix];
-        instructions.extend(tx.message.instructions.clone()); // Append existing instructions
-
-        // Update the transaction with the new message
-        let message = solana_sdk::message::Message::new(&instructions, Some(&wallet.miner_wallet.pubkey()));
-        tx = Transaction::new(&[&*wallet.miner_wallet], message, tx.message.recent_blockhash);
+        // Sign the transaction
+        tx.sign(&[&*wallet.miner_wallet], tx.message.recent_blockhash);
 
         // Retry mechanism for sending the transaction
         for attempt in 0..=MAX_RETRIES {
@@ -2341,41 +2333,52 @@ async fn get_miner_balance_v2(
 
 pub async fn get_guild_check_member(
     query_params: Query<PubkeyParam>,
-    Extension(app_config): Extension<Arc<Config>>,
     Extension(rpc_client): Extension<Arc<RpcClient>>) -> impl IntoResponse {
     if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
-        let member = member_pda(user_pubkey);
-        let member_data = rpc_client.get_account_data(&member.0).await;
-
-        // let's check guild that the user is in, if any
-        match member_data {
+        match member_pda(user_pubkey) {
+            Ok(member) => {
+                let member_data = rpc_client.get_account_data(&member.0).await;
+                // let's check guild that the user is in, if any
+                match member_data {
+                    Err(_) => {
+                        info!(target: "server_log", "Pubkey: {} has no member_data. Answering with generation response", user_pubkey.to_string());
+                        return Response::builder()
+                            .status(StatusCode::NOT_FOUND)
+                            .body("User info for guild not found".to_string())
+                            .unwrap();
+                    }
+                    Ok(data) => {
+                        if let Ok(member) = Member::try_from_bytes(&data) {
+                            if member.guild.to_string().is_empty() {
+                                info!(target: "server_log", "Pubkey: {} without any guild. We can continue with the flow without any extra", user_pubkey.to_string());
+                                Response::builder()
+                                    .status(StatusCode::OK)
+                                    .header("Content-Type", "text/text")
+                                    .body("SUCCESS".to_string())
+                                    .unwrap()
+                            } else {
+                                error!(target: "server_log", "Pubkey: {} already in another guild {}. Leave it first before joining", user_pubkey.to_string(), member.guild.to_string());
+                                Response::builder()
+                                    .status(StatusCode::BAD_REQUEST)
+                                    .body("Public key already in another guild. Leave it first before joining".to_string())
+                                    .unwrap()
+                            };
+                        } else {
+                            error!(target: "server_log", "Pubkey: {} Invalid public key", user_pubkey.to_string());
+                            return Response::builder()
+                                .status(StatusCode::BAD_REQUEST)
+                                .body("Invalid public key".to_string())
+                                .unwrap();
+                        }
+                    }
+                }
+            }
             Err(_) => {
+                info!(target: "server_log", "Pubkey: {} has no member PDA. Answering with generation response", user_pubkey.to_string());
                 return Response::builder()
                     .status(StatusCode::NOT_FOUND)
-                    .body("User not in any guild".to_string())
+                    .body("User without guild members info".to_string())
                     .unwrap();
-            }
-            Ok(data) => {
-                if let Ok(member) = Member::try_from_bytes(&data) {
-                    return if app_config.guild_address.eq(&member.guild.to_string()) {
-                        Response::builder()
-                            .status(StatusCode::OK)
-                            .header("Content-Type", "text/text")
-                            .body("SUCCESS".to_string())
-                            .unwrap()
-                    } else {
-                        Response::builder()
-                            .status(StatusCode::BAD_REQUEST)
-                            .body("Public key already in another guild. Leave it first before joining another guild".to_string())
-                            .unwrap()
-                    };
-                } else {
-                    println!("Failed to parse member data");
-                    return Response::builder()
-                        .status(StatusCode::BAD_REQUEST)
-                        .body("Invalid public key".to_string())
-                        .unwrap();
-                }
             }
         }
     } else {

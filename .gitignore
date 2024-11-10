@@ -1,6 +1,7 @@
 /target
 
 .env
+.env_*
 
 whitelist.txt
 

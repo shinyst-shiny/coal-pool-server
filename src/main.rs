@@ -1563,7 +1563,7 @@ async fn post_guild_stake(
         }*/
 
         // There should be either 2 or 3 instructions: initialize (optional), stake, and delegate
-        if tx.message.instructions.len() < 2 || tx.message.instructions.len() > 3 {
+        /*if tx.message.instructions.len() < 2 || tx.message.instructions.len() > 3 {
             error!(target: "server_log", "Guild stake: Wrong priority fee detected in transaction. Count: {}.", tx.message.instructions.len());
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
@@ -1613,7 +1613,7 @@ async fn post_guild_stake(
                 .status(StatusCode::BAD_REQUEST)
                 .body("Wrong instructions".to_string())
                 .unwrap();
-        }
+        }*/
 
         // Sign the transaction
         tx.sign(&[&*wallet.miner_wallet], tx.message.recent_blockhash);

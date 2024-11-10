@@ -1514,13 +1514,14 @@ async fn post_guild_stake(
     query_params: Query<GuildStakeParams>,
     Extension(rpc_client): Extension<Arc<RpcClient>>,
     Extension(wallet): Extension<Arc<WalletExtension>>,
+    Extension(app_config): Extension<Arc<Config>>,
     body: String,
 ) -> impl IntoResponse {
     const MAX_RETRIES: u32 = 5; // Maximum number of retry attempts
     const BASE_DELAY: u64 = 500; // Base delay in milliseconds
     const PRIORITY_FEE_LAMPORTS_PER_UNIT: u64 = 5000; // Adjust this based on desired priority level
 
-    if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
+    if let (Ok(user_pubkey), Ok(guild_pubkey)) = (Pubkey::from_str(&query_params.pubkey), Pubkey::from_str(&app_config.guild_address)) {
         let serialized_tx = match BASE64_STANDARD.decode(&body) {
             Ok(tx) => tx,
             Err(e) => {
@@ -1543,6 +1544,77 @@ async fn post_guild_stake(
             }
         };
 
+        // Verify fee payer and ensure transaction structure
+        if tx.message.account_keys[0] != wallet.fee_wallet.pubkey() {
+            error!(target: "server_log", "Guild stake: Unexpected fee payer detected in transaction.");
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body("Invalid fee payer".to_string())
+                .unwrap();
+        }
+
+        // Ensure that the priority fee are exactly PRIORITY_FEE_LAMPORTS_PER_UNIT
+        /*if tx.message.header..eq(&PRIORITY_FEE_LAMPORTS_PER_UNIT) {
+            error!(target: "server_log", "Guild stake: Wrong priority fee detected in transaction.");
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body("Insufficient priority fee".to_string())
+                .unwrap();
+        }*/
+
+        // There should be either 2 or 3 instructions: initialize (optional), stake, and delegate
+        if tx.message.instructions.len() < 2 || tx.message.instructions.len() > 3 {
+            error!(target: "server_log", "Guild stake: Wrong priority fee detected in transaction. Count: {}.", tx.message.instructions.len());
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body("Wrong instructions number".to_string())
+                .unwrap();
+        }
+
+        // Check for initialize instruction if it's present
+        let mut instruction_index = 0;
+        if tx.message.instructions.len() == 3 {
+            // If there are 3 instructions, the first should be initialize
+            let init_ix = &tx.message.instructions[instruction_index];
+            let program_id = tx.message.account_keys[init_ix.program_id_index as usize];
+
+            // Check if it's an initialize instruction from the correct program
+            if program_id != coal_guilds_api::ID
+                || init_ix.data != coal_guilds_api::sdk::initialize(user_pubkey).data {
+                error!(target: "server_log", "Guild stake: Wrong initialize instruction detected in transaction.");
+                return Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body("Wrong instructions".to_string())
+                    .unwrap();
+            }
+            instruction_index += 1; // Move to the next instruction
+        }
+
+        // Check the stake instruction
+        let stake_ix = &tx.message.instructions[instruction_index];
+        let program_id = tx.message.account_keys[stake_ix.program_id_index as usize];
+        if program_id != coal_guilds_api::ID
+            || stake_ix.data != coal_guilds_api::sdk::stake(user_pubkey, guild_pubkey, query_params.amount).data {
+            error!(target: "server_log", "Guild stake: Wrong stake instruction detected in transaction.");
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body("Wrong instructions".to_string())
+                .unwrap();
+        }
+        instruction_index += 1;
+
+        // Check the delegate instruction
+        let delegate_ix = &tx.message.instructions[instruction_index];
+        let program_id = tx.message.account_keys[delegate_ix.program_id_index as usize];
+        if program_id != coal_guilds_api::ID
+            || delegate_ix.data != coal_guilds_api::sdk::delegate(user_pubkey, guild_pubkey).data {
+            error!(target: "server_log", "Guild stake: Wrong delegate instruction detected in transaction.");
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body("Wrong instructions".to_string())
+                .unwrap();
+        }
+
         // Sign the transaction
         tx.sign(&[&*wallet.miner_wallet], tx.message.recent_blockhash);
 
@@ -1551,7 +1623,7 @@ async fn post_guild_stake(
             match rpc_client.send_and_confirm_transaction_with_spinner_and_commitment(
                 &tx,
                 CommitmentConfig::confirmed(),
-            ) {
+            ).await {
                 Ok(signature) => {
                     // Transaction successful
                     let amount_dec =
@@ -1559,6 +1631,7 @@ async fn post_guild_stake(
                     info!(target: "server_log", "Miner {} successfully staked to the guild {}.\nSig: {}", user_pubkey, amount_dec, signature);
                     return Response::builder()
                         .status(StatusCode::OK)
+                        .header("Content-Type", "text/text")
                         .body("SUCCESS".to_string())
                         .unwrap();
                 }
@@ -2335,55 +2408,49 @@ pub async fn get_guild_check_member(
     query_params: Query<PubkeyParam>,
     Extension(rpc_client): Extension<Arc<RpcClient>>) -> impl IntoResponse {
     if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
-        match member_pda(user_pubkey) {
-            Ok(member) => {
-                let member_data = rpc_client.get_account_data(&member.0).await;
-                // let's check guild that the user is in, if any
-                match member_data {
-                    Err(_) => {
-                        info!(target: "server_log", "Pubkey: {} has no member_data. Answering with generation response", user_pubkey.to_string());
-                        return Response::builder()
-                            .status(StatusCode::NOT_FOUND)
-                            .body("User info for guild not found".to_string())
-                            .unwrap();
-                    }
-                    Ok(data) => {
-                        if let Ok(member) = Member::try_from_bytes(&data) {
-                            if member.guild.to_string().is_empty() {
-                                info!(target: "server_log", "Pubkey: {} without any guild. We can continue with the flow without any extra", user_pubkey.to_string());
-                                Response::builder()
-                                    .status(StatusCode::OK)
-                                    .header("Content-Type", "text/text")
-                                    .body("SUCCESS".to_string())
-                                    .unwrap()
-                            } else {
-                                error!(target: "server_log", "Pubkey: {} already in another guild {}. Leave it first before joining", user_pubkey.to_string(), member.guild.to_string());
-                                Response::builder()
-                                    .status(StatusCode::BAD_REQUEST)
-                                    .body("Public key already in another guild. Leave it first before joining".to_string())
-                                    .unwrap()
-                            };
-                        } else {
-                            error!(target: "server_log", "Pubkey: {} Invalid public key", user_pubkey.to_string());
-                            return Response::builder()
-                                .status(StatusCode::BAD_REQUEST)
-                                .body("Invalid public key".to_string())
-                                .unwrap();
-                        }
-                    }
-                }
-            }
+        let member = member_pda(user_pubkey);
+        let member_data = rpc_client.get_account_data(&member.0).await;
+        // let's check guild that the user is in, if any
+        match member_data {
             Err(_) => {
-                info!(target: "server_log", "Pubkey: {} has no member PDA. Answering with generation response", user_pubkey.to_string());
+                info!(target: "server_log", "Pubkey: {} has no member_data. Answering with generation response", user_pubkey.to_string());
                 return Response::builder()
                     .status(StatusCode::NOT_FOUND)
-                    .body("User without guild members info".to_string())
+                    .header("Content-Type", "text/text")
+                    .body("User info for guild not found".to_string())
                     .unwrap();
+            }
+            Ok(data) => {
+                if let Ok(member) = Member::try_from_bytes(&data) {
+                    if member.guild.to_string().is_empty() {
+                        info!(target: "server_log", "Pubkey: {} without any guild. We can continue with the flow without any extra", user_pubkey.to_string());
+                        return Response::builder()
+                            .status(StatusCode::OK)
+                            .header("Content-Type", "text/text")
+                            .body("SUCCESS".to_string())
+                            .unwrap();
+                    } else {
+                        error!(target: "server_log", "Pubkey: {} already in another guild {}. Leave it first before joining", user_pubkey.to_string(), member.guild.to_string());
+                        return Response::builder()
+                            .status(StatusCode::BAD_REQUEST)
+                            .header("Content-Type", "text/text")
+                            .body("Public key already in another guild. Leave it first before joining".to_string())
+                            .unwrap();
+                    };
+                } else {
+                    error!(target: "server_log", "Pubkey: {} Invalid public key", user_pubkey.to_string());
+                    return Response::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .header("Content-Type", "text/text")
+                        .body("Invalid public key".to_string())
+                        .unwrap();
+                }
             }
         }
     } else {
         return Response::builder()
             .status(StatusCode::BAD_REQUEST)
+            .header("Content-Type", "text/text")
             .body("Invalid public key".to_string())
             .unwrap();
     }

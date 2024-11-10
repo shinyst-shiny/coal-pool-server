@@ -1068,7 +1068,7 @@ pub async fn pool_submission_system(
                 }
                 tokio::time::sleep(Duration::from_millis(500)).await;
             } else {
-                tracing::error!(target: "server_log", "No best solution yet.");
+                // tracing::error!(target: "server_log", "No best solution yet.");
                 tokio::time::sleep(Duration::from_millis(1000)).await;
             }
         } else {

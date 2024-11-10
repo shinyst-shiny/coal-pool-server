@@ -1545,7 +1545,7 @@ async fn post_guild_stake(
         };
 
         // Verify fee payer and ensure transaction structure
-        if tx.message.account_keys[0] != wallet.fee_wallet.pubkey() {
+        if !tx.message.account_keys[0].eq(&wallet.fee_wallet.pubkey()) {
             error!(target: "server_log", "Guild stake: Unexpected fee payer detected in transaction.");
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
@@ -1616,45 +1616,52 @@ async fn post_guild_stake(
         }*/
 
         // Sign the transaction
-        tx.sign(&[&*wallet.miner_wallet], tx.message.recent_blockhash);
+        tx.sign(&[&*wallet.fee_wallet], tx.message.recent_blockhash);
+
+        info!(target: "server_log", "TX --->: {:?}", tx);
 
         // Retry mechanism for sending the transaction
-        for attempt in 0..=MAX_RETRIES {
-            match rpc_client.send_and_confirm_transaction_with_spinner_and_commitment(
-                &tx,
-                CommitmentConfig::confirmed(),
-            ).await {
-                Ok(signature) => {
-                    // Transaction successful
-                    let amount_dec =
-                        query_params.amount as f64 / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
-                    info!(target: "server_log", "Miner {} successfully staked to the guild {}.\nSig: {}", user_pubkey, amount_dec, signature);
+        //for attempt in 0..=MAX_RETRIES {
+        match rpc_client.send_and_confirm_transaction_with_spinner_and_commitment(
+            &tx,
+            CommitmentConfig::confirmed(),
+        ).await {
+            Ok(signature) => {
+                // Transaction successful
+                let amount_dec =
+                    query_params.amount as f64 / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
+                info!(target: "server_log", "Miner {} successfully staked to the guild {}.\nSig: {:?}", user_pubkey, amount_dec, signature);
+                return Response::builder()
+                    .status(StatusCode::OK)
+                    .header("Content-Type", "text/text")
+                    .body("SUCCESS".to_string())
+                    .unwrap();
+            }
+            Err(e) => {
+                // Log the error and retry
+                //error!(target: "server_log", "Attempt {}: Failed to send transaction. Error: {}", attempt + 1, e);
+
+                /*if attempt == MAX_RETRIES {
+                    // Maximum retries reached
+                    error!(target: "server_log", "Max retries reached. Transaction failed.");
                     return Response::builder()
-                        .status(StatusCode::OK)
-                        .header("Content-Type", "text/text")
-                        .body("SUCCESS".to_string())
+                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(format!("Transaction failed after {} attempts. Error: {}", MAX_RETRIES, e))
                         .unwrap();
                 }
-                Err(e) => {
-                    // Log the error and retry
-                    error!(target: "server_log", "Attempt {}: Failed to send transaction. Error: {}", attempt + 1, e);
 
-                    if attempt == MAX_RETRIES {
-                        // Maximum retries reached
-                        error!(target: "server_log", "Max retries reached. Transaction failed.");
-                        return Response::builder()
-                            .status(StatusCode::INTERNAL_SERVER_ERROR)
-                            .body(format!("Transaction failed after {} attempts. Error: {}", MAX_RETRIES, e))
-                            .unwrap();
-                    }
-
-                    // Exponential backoff delay
-                    let delay = BASE_DELAY * 2_u64.pow(attempt);
-                    info!(target: "server_log", "Retrying in {} ms...", delay);
-                    tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
-                }
+                // Exponential backoff delay
+                let delay = BASE_DELAY * 2_u64.pow(attempt);
+                info!(target: "server_log", "Retrying in {} ms...", delay);
+                tokio::time::sleep(std::time::Duration::from_millis(delay)).await;*/
+                error!(target: "server_log", "Failed to send transaction. Error: {:?}", e);
+                return Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(format!("Transaction failed with error: {}", e))
+                    .unwrap();
             }
         }
+        //}
     } else {
         error!(target: "server_log", "Invalid pubkey in stake request");
         return Response::builder()
@@ -1664,10 +1671,10 @@ async fn post_guild_stake(
     }
 
     // Fallback in case all attempts fail
-    Response::builder()
+    /*Response::builder()
         .status(StatusCode::INTERNAL_SERVER_ERROR)
         .body("Transaction failed unexpectedly.".to_string())
-        .unwrap()
+        .unwrap()*/
 }
 
 

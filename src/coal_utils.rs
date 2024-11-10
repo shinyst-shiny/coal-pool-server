@@ -37,7 +37,7 @@ pub fn get_auth_ix(signer: Pubkey) -> Instruction {
 }
 
 pub fn get_mine_ix(signer: Pubkey, solution: Solution, bus: usize, guild_proof: (Pubkey, u8), guild_member: (Pubkey, u8)) -> Instruction {
-    coal_instruction::mine_coal(signer, signer, COAL_BUS_ADDRESSES[bus], Option::None, Some(guild_member.0), Some(guild_proof.0), solution)
+    coal_instruction::mine_coal(signer, signer, COAL_BUS_ADDRESSES[bus], Option::None, Option::None, Option::None, solution)
 }
 
 pub fn get_register_ix(signer: Pubkey) -> Instruction {

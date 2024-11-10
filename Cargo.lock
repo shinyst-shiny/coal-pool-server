@@ -973,12 +973,13 @@ checksum = "1462739cb27611015575c0c11df5df7601141071f07518d56fcc1be504cbec97"
 
 [[package]]
 name = "coal-api"
-version = "2.5.4"
+version = "2.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "997aed600aa1ab7bc645fabb294706f401d9b2c663b2163faa603c36027b7ffc"
+checksum = "c842781fea462e471c388e046914b4236128086ec0c4bfd92413b3f14435ff08"
 dependencies = [
  "array-const-fn-init",
  "bytemuck",
+ "coal-guilds-api",
  "coal-utils",
  "const-crypto",
  "drillx",
@@ -989,6 +990,7 @@ dependencies = [
  "spl-associated-token-account",
  "spl-token",
  "static_assertions",
+ "steel 1.3.0",
  "thiserror",
 ]
 

@@ -1,19 +1,17 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bytemuck::{Pod, Zeroable};
-use drillx::Solution;
 use coal_api::{
     consts::{COAL_BUS_ADDRESSES, COAL_CONFIG_ADDRESS, COAL_MINT_ADDRESS, COAL_PROOF, TOKEN_DECIMALS},
-    state::{Config, Proof},
     instruction as coal_instruction,
+    state::{Config, Proof},
     ID as COAL_ID,
 };
-use coal_guilds_api::{
-    state as guilds_state,
-};
+use coal_guilds_api::state as guilds_state;
 // use coal_miner_delegation::{instruction, state::DelegatedStake, utils::AccountDeserialize};
 // use coal_utils::event;
 pub use coal_utils::AccountDeserialize as _;
+use drillx::Solution;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{account::ReadableAccount, instruction::Instruction, pubkey::Pubkey};
 
@@ -39,7 +37,7 @@ pub fn get_auth_ix(signer: Pubkey) -> Instruction {
 }
 
 pub fn get_mine_ix(signer: Pubkey, solution: Solution, bus: usize, guild_proof: (Pubkey, u8), guild_member: (Pubkey, u8)) -> Instruction {
-    coal_instruction::mine_coal(signer, signer, COAL_BUS_ADDRESSES[bus], solution)
+    coal_instruction::mine_coal(signer, signer, COAL_BUS_ADDRESSES[bus], Option::None, Some(guild_member.0), Some(guild_proof.0), solution)
 }
 
 pub fn get_register_ix(signer: Pubkey) -> Instruction {

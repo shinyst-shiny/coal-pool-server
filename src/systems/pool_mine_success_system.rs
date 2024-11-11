@@ -8,7 +8,7 @@ use std::{
 };
 
 use solana_sdk::
-    signer::Signer
+signer::Signer
 ;
 use tokio::{
     sync::{mpsc::UnboundedReceiver, RwLock}, time::Instant}
@@ -16,8 +16,8 @@ use tokio::{
 use tracing::info;
 
 use crate::{
-    app_database::AppDatabase, message::ServerMessagePoolSubmissionResult, coal_utils::
-        COAL_TOKEN_DECIMALS, AppState, ClientVersion, Config, InsertEarning, InsertSubmission, MessageInternalMineSuccess, UpdateReward, WalletExtension
+    app_database::AppDatabase, coal_utils::
+    COAL_TOKEN_DECIMALS, message::ServerMessagePoolSubmissionResult, AppState, ClientVersion, Config, InsertEarning, InsertSubmission, MessageInternalMineSuccess, UpdateReward, WalletExtension,
 };
 
 pub async fn pool_mine_success_system(
@@ -25,7 +25,7 @@ pub async fn pool_mine_success_system(
     app_database: Arc<AppDatabase>,
     app_config: Arc<Config>,
     app_wallet: Arc<WalletExtension>,
-    mut mine_success_receiver: UnboundedReceiver<MessageInternalMineSuccess>
+    mut mine_success_receiver: UnboundedReceiver<MessageInternalMineSuccess>,
 ) {
     loop {
         while let Some(msg) = mine_success_receiver.recv().await {
@@ -105,16 +105,18 @@ pub async fn pool_mine_success_system(
                             match client_connection.client_version {
                                 ClientVersion::V1 => {
                                     let message = format!(
-                                        "Pool Submitted Difficulty: {}\nPool Earned:  {:.11} coal\nPool Balance: {:.11} coal\nTop Stake:    {:.11} coal\nPool Multiplier: {:.2}x\n----------------------\nActive Miners: {}\n----------------------\nMiner Submitted Difficulty: {}\nMiner Earned: {:.11} coal\n{:.2}% of total pool reward",
+                                        "Pool Submitted Difficulty: {}\nPool Earned:  {:.11} coal\nPool Balance: {:.11} coal\nTop Stake:    {:.11} coal\nPool Multiplier: {:.2}x\nGuild Stake: {}\nGuild Multiplier: {:.2}x\n----------------------\nActive Miners: {}\n----------------------\nMiner Submitted Difficulty: {}\nMiner Earned: {:.11} coal\n{:.2}% of total pool reward",
                                         msg.difficulty,
                                         pool_rewards_dec,
                                         msg.total_balance,
                                         top_stake,
                                         msg.multiplier,
+                                        msg.guild_total_stake,
+                                        msg.guild_multiplier,
                                         len,
                                         msg_submission.supplied_diff,
                                         earned_rewards_dec,
-                                        percentage
+                                        percentage,
                                     );
                                     tokio::spawn(async move {
                                         if let Ok(_) = socket_sender
@@ -122,8 +124,7 @@ pub async fn pool_mine_success_system(
                                             .await
                                             .send(Message::Text(message))
                                             .await
-                                        {
-                                        } else {
+                                        {} else {
                                             tracing::error!(target: "server_log", "Failed to send client text");
                                         }
                                     });
@@ -141,6 +142,8 @@ pub async fn pool_mine_success_system(
                                         msg_submission.supplied_diff as u32,
                                         earned_rewards_dec,
                                         percentage,
+                                        msg.guild_total_stake,
+                                        msg.guild_multiplier,
                                     );
                                     tokio::spawn(async move {
                                         if let Ok(_) = socket_sender
@@ -150,8 +153,7 @@ pub async fn pool_mine_success_system(
                                                 server_message.to_message_binary(),
                                             ))
                                             .await
-                                        {
-                                        } else {
+                                        {} else {
                                             tracing::error!(target: "server_log", "Failed to send client pool submission result binary message");
                                         }
                                     });

@@ -44,6 +44,8 @@ pub struct ServerMessagePoolSubmissionResult {
     miner_supplied_difficulty: u32,
     miner_earned_rewards: f64,
     miner_percentage: f64,
+    guild_total_stake: u64,
+    guild_multiplier: f64,
 }
 
 impl ServerMessagePoolSubmissionResult {
@@ -59,6 +61,8 @@ impl ServerMessagePoolSubmissionResult {
         miner_supplied_difficulty: u32,
         miner_earned_rewards: f64,
         miner_percentage: f64,
+        guild_total_stake: u64,
+        guild_multiplier: f64,
     ) -> Self {
         ServerMessagePoolSubmissionResult {
             difficulty,
@@ -72,6 +76,8 @@ impl ServerMessagePoolSubmissionResult {
             miner_supplied_difficulty,
             miner_earned_rewards,
             miner_percentage,
+            guild_total_stake,
+            guild_multiplier,
         }
     }
 
@@ -89,6 +95,8 @@ impl ServerMessagePoolSubmissionResult {
         bin_data.extend_from_slice(&self.miner_supplied_difficulty.to_le_bytes());
         bin_data.extend_from_slice(&self.miner_earned_rewards.to_le_bytes());
         bin_data.extend_from_slice(&self.miner_percentage.to_le_bytes());
+        bin_data.extend_from_slice(&self.guild_total_stake.to_le_bytes());
+        bin_data.extend_from_slice(&self.guild_multiplier.to_le_bytes());
 
         bin_data
     }

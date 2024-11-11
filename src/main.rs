@@ -138,6 +138,9 @@ pub struct MessageInternalMineSuccess {
     coal_config: Option<coal_api::state::Config>,
     multiplier: f64,
     submissions: HashMap<Pubkey, InternalMessageSubmission>,
+    guild_total_stake: u64,
+    guild_multiplier: f64,
+    guild_last_stake_at: i64,
 }
 
 pub struct LastPong {

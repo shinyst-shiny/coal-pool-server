@@ -31,7 +31,7 @@ use tokio::{
 };
 use tracing::info;
 
-use crate::coal_utils::{deserialize_config, deserialize_guild, deserialize_guild_config, deserialize_guild_member, deserialize_tool, get_config_pubkey, get_tool_pubkey, Resource, ToolType};
+use crate::coal_utils::{amount_u64_to_string, deserialize_config, deserialize_guild, deserialize_guild_config, deserialize_guild_member, deserialize_tool, get_config_pubkey, get_tool_pubkey, Resource, ToolType};
 use crate::ore_utils::{get_ore_auth_ix, get_ore_mine_ix};
 use crate::{
     app_database::AppDatabase, coal_utils::{
@@ -634,6 +634,11 @@ pub async fn pool_submission_system(
                                                         let bytes = BASE64_STANDARD.decode(data.data.0).unwrap();
 
                                                         if let Ok(mine_event) = bytemuck::try_from_bytes::<MineEvent>(&bytes) {
+                                                            let guild_total_stake = amount_u64_to_string(guild.unwrap().total_stake);
+                                                            let guild_multiplier = calculate_guild_multiplier(guild_config.unwrap().total_stake, guild_config.unwrap().total_multiplier, guild.unwrap().total_stake);
+                                                            let guild_last_stake_at = guild.unwrap().last_stake_at;
+
+
                                                             info!(target: "server_log", "MineEvent: {:?}", mine_event);
                                                             info!(target: "submission_log", "MineEvent: {:?}", mine_event);
                                                             info!(target: "server_log", "For Challenge: {:?}", BASE64_STANDARD.encode(old_proof.challenge));
@@ -643,6 +648,9 @@ pub async fn pool_submission_system(
                                                             let rewards = full_rewards - commissions;
                                                             info!(target: "server_log", "Miners Rewards: {}", rewards);
                                                             info!(target: "server_log", "Commission: {}", commissions);
+                                                            info!(target: "server_log", "Guild total stake: {}", guild_total_stake);
+                                                            info!("Guild multiplier: {}", guild_multiplier);
+                                                            info!("Guild last stake at: {}", guild_last_stake_at);
 
                                                             // handle sending mine success message
                                                             let mut total_hashpower: u64 = 0;
@@ -1132,4 +1140,8 @@ pub async fn pool_submission_system(
             tokio::time::sleep(Duration::from_millis(1000)).await;
         };
     }
+}
+
+fn calculate_guild_multiplier(total_stake: u64, total_multiplier: u64, member_stake: u64) -> f64 {
+    total_multiplier as f64 * member_stake as f64 / total_stake as f64
 }

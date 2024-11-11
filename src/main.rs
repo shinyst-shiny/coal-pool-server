@@ -2450,8 +2450,8 @@ pub async fn get_guild_check_member(
             }
             Ok(data) => {
                 if let Ok(member) = Member::try_from_bytes(&data) {
-                    if member.guild.to_string().is_empty() {
-                        info!(target: "server_log", "Pubkey: {} without any guild. We can continue with the flow without any extra", user_pubkey.to_string());
+                    if member.guild.to_string().is_empty() || member.guild.to_string().eq("11111111111111111111111111111111") {
+                        info!(target: "server_log", "Pubkey: {} without any guild. We can continue with the flow without any extra steps", user_pubkey.to_string());
                         return Response::builder()
                             .status(StatusCode::OK)
                             .header("Content-Type", "text/text")

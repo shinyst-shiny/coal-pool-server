@@ -128,7 +128,7 @@ pub async fn pool_submission_system(
 
                         let mut cu_limit = 500_000;
                         let should_add_reset_ix = if let Some(config) = loaded_config {
-                            let time_until_reset = (config.last_reset_at + 300) - now as i64;
+                            let time_until_reset = (config.last_reset_at + 120) - now as i64;
                             if time_until_reset <= 5 {
                                 cu_limit += 20_000;
                                 prio_fee += 50_000;

@@ -11,7 +11,8 @@ pub struct Challenge {
     pub pool_id: i32,
     pub submission_id: Option<i32>,
     pub challenge: Vec<u8>,
-    pub rewards_earned: Option<u64>,
+    pub rewards_earned_coal: Option<u64>,
+    pub rewards_earned_ore: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, Serialize, QueryableByName)]
@@ -32,14 +33,16 @@ pub struct ChallengeWithDifficulty {
 pub struct InsertChallenge {
     pub pool_id: i32,
     pub challenge: Vec<u8>,
-    pub rewards_earned: Option<u64>,
+    pub rewards_earned_coal: Option<u64>,
+    pub rewards_earned_ore: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]
 #[diesel(table_name = crate::schema::challenges)]
 #[diesel(check_for_backend(diesel::mysql::Mysql))]
 pub struct UpdateChallengeRewards {
-    pub rewards_earned: Option<u64>,
+    pub rewards_earned_coal: Option<u64>,
+    pub rewards_earned_ore: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]
@@ -85,7 +88,8 @@ pub struct Pool {
     pub id: i32,
     pub proof_pubkey: String,
     pub authority_pubkey: String,
-    pub total_rewards: u64,
+    pub total_rewards_coal: u64,
+    pub total_rewards_ore: u64,
     pub claimed_rewards: u64,
 }
 
@@ -178,14 +182,16 @@ pub struct InsertReward {
 #[diesel(check_for_backend(diesel::mysql::Mysql))]
 pub struct UpdateReward {
     pub miner_id: i32,
-    pub balance: u64,
+    pub balance_coal: u64,
+    pub balance_ore: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]
 #[diesel(table_name = crate::schema::rewards)]
 #[diesel(check_for_backend(diesel::mysql::Mysql))]
 pub struct Reward {
-    pub balance: u64,
+    pub balance_coal: u64,
+    pub balance_ore: u64,
     pub miner_id: i32,
 }
 
@@ -196,6 +202,7 @@ pub struct InsertEarning {
     pub miner_id: i32,
     pub pool_id: i32,
     pub challenge_id: i32,
-    pub amount: u64,
+    pub amount_coal: u64,
+    pub amount_ore: u64,
 }
 

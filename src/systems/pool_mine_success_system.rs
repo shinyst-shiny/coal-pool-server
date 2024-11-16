@@ -15,6 +15,7 @@ use tokio::{
 ;
 use tracing::info;
 
+use crate::ore_utils::ORE_TOKEN_DECIMALS;
 use crate::{
     app_database::AppDatabase, coal_utils::
     COAL_TOKEN_DECIMALS, message::ServerMessagePoolSubmissionResult, AppState, ClientVersion, Config, InsertEarning, InsertSubmission, MessageInternalMineSuccess, UpdateReward, WalletExtension,
@@ -47,15 +48,26 @@ pub async fn pool_mine_success_system(
 
                 let instant = Instant::now();
                 info!(target: "server_log", "{} - Processing submission results for challenge: {}.", id, c);
-                let total_rewards = msg.rewards - msg.commissions;
+                let total_rewards_ore = msg.rewards_ore - msg.commissions_ore;
+                let total_rewards_coal = msg.rewards_coal - msg.commissions_coal;
                 for (miner_pubkey, msg_submission) in msg.submissions.iter() {
                     let hashpower_percent = (msg_submission.hashpower as u128)
                         .saturating_mul(1_000_000)
                         .saturating_div(msg.total_hashpower as u128);
 
-                    let decimals = 10f64.powf(COAL_TOKEN_DECIMALS as f64);
-                    let earned_rewards = hashpower_percent
-                        .saturating_mul(total_rewards as u128)
+                    let real_hashpower_percent = (msg_submission.real_hashpower as u128)
+                        .saturating_mul(1_000_000)
+                        .saturating_div(msg.total_real_hashpower as u128);
+
+                    let decimals_coal = 10f64.powf(COAL_TOKEN_DECIMALS as f64);
+                    let earned_rewards_coal = hashpower_percent
+                        .saturating_mul(total_rewards_coal as u128)
+                        .saturating_div(1_000_000)
+                        as u64;
+
+                    let decimals_ore = 10f64.powf(ORE_TOKEN_DECIMALS as f64);
+                    let earned_rewards_ore = real_hashpower_percent
+                        .saturating_mul(total_rewards_ore as u128)
                         .saturating_div(1_000_000)
                         as u64;
 
@@ -63,7 +75,8 @@ pub async fn pool_mine_success_system(
                         miner_id: msg_submission.miner_id,
                         pool_id: app_config.pool_id,
                         challenge_id: msg.challenge_id,
-                        amount: earned_rewards,
+                        amount_coal: earned_rewards_coal,
+                        amount_ore: earned_rewards_ore,
                     };
 
                     let new_submission = InsertSubmission {
@@ -75,7 +88,8 @@ pub async fn pool_mine_success_system(
 
                     let new_reward = UpdateReward {
                         miner_id: msg_submission.miner_id,
-                        balance: earned_rewards,
+                        balance_coal: earned_rewards_coal,
+                        balance_ore: earned_rewards_ore,
                     };
 
                     i_earnings.push(new_earning);
@@ -83,17 +97,26 @@ pub async fn pool_mine_success_system(
                     i_submissions.push(new_submission);
                     //let _ = app_database.add_new_earning(new_earning).await.unwrap();
 
-                    let earned_rewards_dec = (earned_rewards as f64).div(decimals);
-                    let pool_rewards_dec = (msg.rewards as f64).div(decimals);
+                    let earned_rewards_dec_coal = (earned_rewards_coal as f64).div(decimals_coal);
+                    let pool_rewards_dec_coal = (msg.rewards_coal as f64).div(decimals_coal);
 
-                    let percentage = if pool_rewards_dec != 0.0 {
-                        (earned_rewards_dec / pool_rewards_dec) * 100.0
+                    let percentage_coal = if pool_rewards_dec_coal != 0.0 {
+                        (earned_rewards_dec_coal / pool_rewards_dec_coal) * 100.0
                     } else {
                         0.0 // Handle the case where pool_rewards_dec is 0 to avoid division by zero
                     };
 
-                    let top_stake = if let Some(config) = msg.coal_config {
-                        (config.top_balance as f64).div(decimals)
+                    let earned_rewards_dec_ore = (earned_rewards_ore as f64).div(decimals_ore);
+                    let pool_rewards_dec_ore = (msg.rewards_ore as f64).div(decimals_ore);
+
+                    let percentage_ore = if pool_rewards_dec_ore != 0.0 {
+                        (earned_rewards_dec_ore / pool_rewards_dec_ore) * 100.0
+                    } else {
+                        0.0 // Handle the case where pool_rewards_dec is 0 to avoid division by zero
+                    };
+
+                    let top_stake_coal = if let Some(config) = msg.coal_config {
+                        (config.top_balance as f64).div(decimals_coal)
                     } else {
                         1.0f64
                     };
@@ -107,16 +130,16 @@ pub async fn pool_mine_success_system(
                                     let message = format!(
                                         "Pool Submitted Difficulty: {}\nPool Earned:  {:.11} coal\nPool Balance: {:.11} coal\nTop Stake:    {:.11} coal\nPool Multiplier: {:.2}x\nGuild Stake: {}\nGuild Multiplier: {:.2}x\n----------------------\nActive Miners: {}\n----------------------\nMiner Submitted Difficulty: {}\nMiner Earned: {:.11} coal\n{:.2}% of total pool reward",
                                         msg.difficulty,
-                                        pool_rewards_dec,
+                                        pool_rewards_dec_coal,
                                         msg.total_balance,
-                                        top_stake,
+                                        top_stake_coal,
                                         msg.multiplier,
                                         msg.guild_total_stake,
                                         msg.guild_multiplier,
                                         len,
                                         msg_submission.supplied_diff,
-                                        earned_rewards_dec,
-                                        percentage,
+                                        earned_rewards_dec_coal,
+                                        percentage_coal,
                                     );
                                     tokio::spawn(async move {
                                         if let Ok(_) = socket_sender
@@ -133,15 +156,15 @@ pub async fn pool_mine_success_system(
                                     let server_message = ServerMessagePoolSubmissionResult::new(
                                         msg.difficulty,
                                         msg.total_balance,
-                                        pool_rewards_dec,
-                                        top_stake,
+                                        pool_rewards_dec_coal,
+                                        top_stake_coal,
                                         msg.multiplier,
                                         len as u32,
                                         msg.challenge,
                                         msg.best_nonce,
                                         msg_submission.supplied_diff as u32,
-                                        earned_rewards_dec,
-                                        percentage,
+                                        earned_rewards_dec_coal,
+                                        percentage_coal,
                                         msg.guild_total_stake,
                                         msg.guild_multiplier,
                                     );
@@ -230,7 +253,8 @@ pub async fn pool_mine_success_system(
                 while let Err(_) = app_database
                     .update_pool_rewards(
                         app_wallet.miner_wallet.pubkey().to_string(),
-                        msg.rewards,
+                        msg.rewards_coal,
+                        msg.rewards_ore,
                     )
                     .await
                 {
@@ -250,11 +274,11 @@ pub async fn pool_mine_success_system(
                     .await
                 {
                     if let Err(_) = app_database
-                        .update_challenge_rewards(msg.challenge.to_vec(), s, msg.rewards)
+                        .update_challenge_rewards(msg.challenge.to_vec(), s, msg.rewards_coal, msg.rewards_ore)
                         .await
                     {
                         tracing::error!(target: "server_log", "{} - Failed to update challenge rewards! Skipping! Devs check!", id);
-                        let err_str = format!("{} - Challenge UPDATE FAILED - Challenge: {:?}\nSubmission ID: {}\nRewards: {}\n", id, msg.challenge.to_vec(), s, msg.rewards);
+                        let err_str = format!("{} - Challenge UPDATE FAILED - Challenge: {:?}\nSubmission ID: {}\nRewards COAL: {}\nRewards ORE: {}\n", id, msg.challenge.to_vec(), s, msg.rewards_coal, msg.rewards_ore);
                         tracing::error!(target: "server_log", err_str);
                     }
                     info!(target: "server_log", "{} - Updated challenge rewards in {}ms", id, instant.elapsed().as_millis());

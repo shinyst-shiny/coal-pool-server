@@ -124,17 +124,21 @@ pub struct InternalMessageSubmission {
     supplied_diff: u32,
     supplied_nonce: u64,
     hashpower: u64,
+    real_hashpower: u64,
 }
 
 pub struct MessageInternalMineSuccess {
     difficulty: u32,
     total_balance: f64,
-    rewards: u64,
-    commissions: u64,
+    rewards_coal: u64,
+    commissions_coal: u64,
+    rewards_ore: u64,
+    commissions_ore: u64,
     challenge_id: i32,
     challenge: [u8; 32],
     best_nonce: u64,
     total_hashpower: u64,
+    total_real_hashpower: u64,
     coal_config: Option<coal_api::state::Config>,
     multiplier: f64,
     submissions: HashMap<Pubkey, InternalMessageSubmission>,
@@ -565,7 +569,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let new_challenge = models::InsertChallenge {
                 pool_id: db_pool.id,
                 challenge: proof.challenge.to_vec(),
-                rewards_earned: None,
+                rewards_earned_coal: None,
+                rewards_earned_ore: None,
             };
             let result = app_database.add_new_challenge(new_challenge).await;
 
@@ -1099,7 +1104,7 @@ async fn get_miner_rewards(
         match res {
             Ok(rewards) => {
                 let decimal_bal =
-                    rewards.balance as f64 / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
+                    rewards.balance_coal as f64 / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
                 let response = format!("{}", decimal_bal);
                 return Response::builder()
                     .status(StatusCode::OK)
@@ -1357,7 +1362,7 @@ async fn post_claim(
             .get_miner_rewards(miner_pubkey.to_string())
             .await
         {
-            if amount > miner_rewards.balance {
+            if amount > miner_rewards.balance_coal {
                 return Response::builder()
                     .status(StatusCode::BAD_REQUEST)
                     .body("claim amount exceeds miner rewards balance".to_string())
@@ -1468,7 +1473,7 @@ async fn post_claim_v2(
                     .get_miner_rewards(miner_pubkey.to_string())
                     .await
                 {
-                    if amount > miner_rewards.balance {
+                    if amount > miner_rewards.balance_coal {
                         return Err((StatusCode::BAD_REQUEST, "claim amount exceeds miner rewards balance.".to_string()));
                     }
 

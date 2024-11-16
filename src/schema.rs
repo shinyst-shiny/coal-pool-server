@@ -7,7 +7,8 @@ diesel::table! {
         submission_id -> Nullable<Integer>,
         #[max_length = 32]
         challenge -> Binary,
-        rewards_earned -> Nullable<Unsigned<Bigint>>,
+        rewards_earned_coal -> Nullable<Unsigned<Bigint>>,
+        rewards_earned_ore -> Nullable<Unsigned<Bigint>>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }
@@ -31,7 +32,8 @@ diesel::table! {
         miner_id -> Integer,
         pool_id -> Integer,
         challenge_id -> Integer,
-        amount -> Unsigned<Bigint>,
+        amount_coal -> Unsigned<Bigint>,
+        amount_ore -> Unsigned<Bigint>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
         created_at_day -> Nullable<Date>,
@@ -56,7 +58,8 @@ diesel::table! {
         proof_pubkey -> Varchar,
         #[max_length = 44]
         authority_pubkey -> Varchar,
-        total_rewards -> Unsigned<Bigint>,
+        total_rewards_coal -> Unsigned<Bigint>,
+        total_rewards_ore -> Unsigned<Bigint>,
         claimed_rewards -> Unsigned<Bigint>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
@@ -68,7 +71,8 @@ diesel::table! {
         id -> Integer,
         miner_id -> Integer,
         pool_id -> Integer,
-        balance -> Unsigned<Bigint>,
+        balance_coal -> Unsigned<Bigint>,
+        balance_ore -> Unsigned<Bigint>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }

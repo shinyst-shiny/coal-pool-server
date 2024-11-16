@@ -614,6 +614,10 @@ pub fn proof_pubkey(authority: Pubkey, resource: Resource) -> Pubkey {
     Pubkey::find_program_address(&[seed, authority.as_ref()], program_id).0
 }
 
+pub fn calculate_guild_multiplier(total_stake: u64, total_multiplier: u64, member_stake: u64) -> f64 {
+    total_multiplier as f64 * member_stake as f64 / total_stake as f64
+}
+
 
 #[derive(Debug, Deserialize)]
 pub struct Tip {

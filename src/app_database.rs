@@ -1,6 +1,6 @@
 use deadpool_diesel::mysql::{Manager, Pool};
 use diesel::{
-    insert_into, sql_types::{BigInt, Binary, Bool, Integer, Nullable, Text, Unsigned}, Connection, MysqlConnection, RunQueryDsl
+    insert_into, sql_types::{BigInt, Binary, Bool, Integer, Nullable, Text, Unsigned}, Connection, MysqlConnection, RunQueryDsl,
 };
 use tokio::time::Instant;
 use tracing::{error, info};
@@ -38,8 +38,8 @@ impl AppDatabase {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn.interact(move |conn: &mut MysqlConnection| {
                 diesel::sql_query("SELECT id, pool_id, submission_id, challenge, rewards_earned FROM challenges WHERE challenges.challenge = ?")
-                .bind::<Binary, _>(challenge)
-                .get_result::<models::Challenge>(conn)
+                    .bind::<Binary, _>(challenge)
+                    .get_result::<models::Challenge>(conn)
             }).await;
 
             match res {
@@ -69,8 +69,8 @@ impl AppDatabase {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn.interact(move |conn: &mut MysqlConnection| {
                 diesel::sql_query("SELECT r.balance, r.miner_id FROM miners m JOIN rewards r ON m.id = r.miner_id WHERE m.pubkey = ?")
-                .bind::<Text, _>(miner_pubkey)
-                .get_result::<models::Reward>(conn)
+                    .bind::<Text, _>(miner_pubkey)
+                    .get_result::<models::Reward>(conn)
             }).await;
 
             match res {
@@ -105,26 +105,38 @@ impl AppDatabase {
             let res = db_conn
                 .interact(move |conn: &mut MysqlConnection| {
                     let query = diesel::sql_query(
-                        "UPDATE rewards SET balance = balance + CASE miner_id ".to_string() +
-                        &rewards
-                            .iter()
-                            .map(|r| format!("WHEN {} THEN {}", r.miner_id, r.balance))
-                            .collect::<Vec<_>>()
-                            .join(" ") +
-                        " END WHERE miner_id IN (" +
-                        &rewards
-                            .iter()
-                            .map(|r| r.miner_id.to_string())
-                            .collect::<Vec<_>>()
-                            .join(",") +
-                        ")"
+                        "UPDATE rewards SET balance_coal = balance_coal + CASE miner_id ".to_string() +
+                            &rewards
+                                .iter()
+                                .map(|r| format!("WHEN {} THEN {}", r.miner_id, r.balance_coal))
+                                .collect::<Vec<_>>()
+                                .join(" ") +
+                            " END WHERE miner_id IN (" +
+                            &rewards
+                                .iter()
+                                .map(|r| r.miner_id.to_string())
+                                .collect::<Vec<_>>()
+                                .join(",") +
+                            ");\n" +
+                            "UPDATE rewards SET balance_ore = balance_ore + CASE miner_id " +
+                            &rewards
+                                .iter()
+                                .map(|r| format!("WHEN {} THEN {}", r.miner_id, r.balance_ore))
+                                .collect::<Vec<_>>()
+                                .join(" ") +
+                            " END WHERE miner_id IN (" +
+                            &rewards
+                                .iter()
+                                .map(|r| r.miner_id.to_string())
+                                .collect::<Vec<_>>()
+                                .join(",") +
+                            ");\n"
                     );
                     query.execute(conn)
                 })
                 .await;
 
             match res {
-
                 Ok(interaction) => match interaction {
                     Ok(_query) => {
                         return Ok(());
@@ -152,7 +164,7 @@ impl AppDatabase {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn
                 .interact(move |conn: &mut MysqlConnection| {
-                    diesel::sql_query("UPDATE rewards SET balance = balance - ? WHERE miner_id = ?")
+                    diesel::sql_query("UPDATE rewards SET balance_coal = balance_coal - ? WHERE miner_id = ?")
                         .bind::<Unsigned<BigInt>, _>(rewards_to_decrease)
                         .bind::<Integer, _>(miner_id)
                         .execute(conn)
@@ -186,8 +198,8 @@ impl AppDatabase {
                     diesel::sql_query(
                         "SELECT id FROM submissions WHERE submissions.nonce = ? ORDER BY id DESC",
                     )
-                    .bind::<Unsigned<BigInt>, _>(nonce)
-                    .get_result::<SubmissionWithId>(conn)
+                        .bind::<Unsigned<BigInt>, _>(nonce)
+                        .get_result::<SubmissionWithId>(conn)
                 })
                 .await;
 
@@ -215,15 +227,17 @@ impl AppDatabase {
         &self,
         challenge: Vec<u8>,
         submission_id: i64,
-        rewards: u64,
+        rewards_coal: u64,
+        rewards_ore: u64,
     ) -> Result<(), AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn.interact(move |conn: &mut MysqlConnection| {
-                diesel::sql_query("UPDATE challenges SET rewards_earned = ?, submission_id = ? WHERE challenge = ?")
-                .bind::<Nullable<Unsigned<BigInt>>, _>(Some(rewards))
-                .bind::<Nullable<BigInt>, _>(submission_id)
-                .bind::<Binary, _>(challenge)
-                .execute(conn)
+                diesel::sql_query("UPDATE challenges SET rewards_earned_coal = ?, rewards_earned_ore = ?, submission_id = ? WHERE challenge = ?")
+                    .bind::<Nullable<Unsigned<BigInt>>, _>(Some(rewards_coal))
+                    .bind::<Nullable<Unsigned<BigInt>>, _>(Some(rewards_ore))
+                    .bind::<Nullable<BigInt>, _>(submission_id)
+                    .bind::<Binary, _>(challenge)
+                    .execute(conn)
             }).await;
 
             match res {
@@ -256,11 +270,12 @@ impl AppDatabase {
     ) -> Result<(), AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn.interact(move |conn: &mut MysqlConnection| {
-                diesel::sql_query("INSERT INTO challenges (pool_id, challenge, rewards_earned) VALUES (?, ?, ?)")
-                .bind::<Integer, _>(challenge.pool_id)
-                .bind::<Binary, _>(challenge.challenge)
-                .bind::<Nullable<Unsigned<BigInt>>, _>(challenge.rewards_earned)
-                .execute(conn)
+                diesel::sql_query("INSERT INTO challenges (pool_id, challenge, rewards_earned_coal, rewards_earned_ore) VALUES (?, ?, ?, ?)")
+                    .bind::<Integer, _>(challenge.pool_id)
+                    .bind::<Binary, _>(challenge.challenge)
+                    .bind::<Nullable<Unsigned<BigInt>>, _>(challenge.rewards_earned_coal)
+                    .bind::<Nullable<Unsigned<BigInt>>, _>(challenge.rewards_earned_ore)
+                    .execute(conn)
             }).await;
 
             match res {
@@ -293,8 +308,8 @@ impl AppDatabase {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn.interact(move |conn: &mut MysqlConnection| {
                 diesel::sql_query("SELECT id, proof_pubkey, authority_pubkey, total_rewards, claimed_rewards FROM pools WHERE pools.authority_pubkey = ?")
-                .bind::<Text, _>(pool_pubkey)
-                .get_result::<models::Pool>(conn)
+                    .bind::<Text, _>(pool_pubkey)
+                    .get_result::<models::Pool>(conn)
             }).await;
 
             match res {
@@ -328,9 +343,9 @@ impl AppDatabase {
                     diesel::sql_query(
                         "INSERT INTO pools (authority_pubkey, proof_pubkey) VALUES (?, ?)",
                     )
-                    .bind::<Text, _>(authority_pubkey)
-                    .bind::<Text, _>(proof_pubkey)
-                    .execute(conn)
+                        .bind::<Text, _>(authority_pubkey)
+                        .bind::<Text, _>(proof_pubkey)
+                        .execute(conn)
                 })
                 .await;
 
@@ -360,14 +375,16 @@ impl AppDatabase {
     pub async fn update_pool_rewards(
         &self,
         pool_authority_pubkey: String,
-        earned_rewards: u64,
+        earned_rewards_coal: u64,
+        earned_rewards_ore: u64,
     ) -> Result<(), AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn.interact(move |conn: &mut MysqlConnection| {
-                diesel::sql_query("UPDATE pools SET total_rewards = total_rewards + ? WHERE authority_pubkey = ?")
-                .bind::<Unsigned<BigInt>, _>(earned_rewards)
-                .bind::<Text, _>(pool_authority_pubkey)
-                .execute(conn)
+                diesel::sql_query("UPDATE pools SET total_rewards_coal = total_rewards_coal + ?, total_rewards_ore = total_rewards_ore + ? WHERE authority_pubkey = ?")
+                    .bind::<Unsigned<BigInt>, _>(earned_rewards_coal)
+                    .bind::<Unsigned<BigInt>, _>(earned_rewards_ore)
+                    .bind::<Text, _>(pool_authority_pubkey)
+                    .execute(conn)
             }).await;
 
             match res {
@@ -402,9 +419,9 @@ impl AppDatabase {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn.interact(move |conn: &mut MysqlConnection| {
                 diesel::sql_query("UPDATE pools SET claimed_rewards = claimed_rewards + ? WHERE authority_pubkey = ?")
-                .bind::<Unsigned<BigInt>, _>(claimed_rewards)
-                .bind::<Text, _>(pool_authority_pubkey)
-                .execute(conn)
+                    .bind::<Unsigned<BigInt>, _>(claimed_rewards)
+                    .bind::<Text, _>(pool_authority_pubkey)
+                    .execute(conn)
             }).await;
 
             match res {
@@ -440,8 +457,8 @@ impl AppDatabase {
                     diesel::sql_query(
                         "SELECT id, pubkey, enabled FROM miners WHERE miners.pubkey = ?",
                     )
-                    .bind::<Text, _>(miner_pubkey)
-                    .get_result::<Miner>(conn)
+                        .bind::<Text, _>(miner_pubkey)
+                        .get_result::<Miner>(conn)
                 })
                 .await;
             match res {
@@ -468,11 +485,11 @@ impl AppDatabase {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn.interact(move |conn: &mut MysqlConnection| {
                 diesel::sql_query("INSERT INTO claims (miner_id, pool_id, txn_id, amount) VALUES (?, ?, ?, ?)")
-                .bind::<Integer, _>(claim.miner_id)
-                .bind::<Integer, _>(claim.pool_id)
-                .bind::<Integer, _>(claim.txn_id)
-                .bind::<Unsigned<BigInt>, _>(claim.amount)
-                .execute(conn)
+                    .bind::<Integer, _>(claim.miner_id)
+                    .bind::<Integer, _>(claim.pool_id)
+                    .bind::<Integer, _>(claim.txn_id)
+                    .bind::<Unsigned<BigInt>, _>(claim.amount)
+                    .execute(conn)
             }).await;
 
             match res {
@@ -505,8 +522,8 @@ impl AppDatabase {
                     diesel::sql_query(
                         "SELECT created_at FROM claims WHERE miner_id = ? ORDER BY id DESC",
                     )
-                    .bind::<Integer, _>(miner_id)
-                    .get_result::<models::LastClaim>(conn)
+                        .bind::<Integer, _>(miner_id)
+                        .get_result::<models::LastClaim>(conn)
                 })
                 .await;
 
@@ -537,10 +554,10 @@ impl AppDatabase {
                     diesel::sql_query(
                         "INSERT INTO txns (txn_type, signature, priority_fee) VALUES (?, ?, ?)",
                     )
-                    .bind::<Text, _>(txn.txn_type)
-                    .bind::<Text, _>(txn.signature)
-                    .bind::<Unsigned<Integer>, _>(txn.priority_fee)
-                    .execute(conn)
+                        .bind::<Text, _>(txn.txn_type)
+                        .bind::<Text, _>(txn.signature)
+                        .bind::<Unsigned<Integer>, _>(txn.priority_fee)
+                        .execute(conn)
                 })
                 .await;
 
@@ -757,8 +774,5 @@ impl AppDatabase {
         } else {
             return Err(AppDatabaseError::FailedToGetConnectionFromPool);
         };
-
-
-
     }
 }

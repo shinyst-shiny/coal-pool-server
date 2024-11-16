@@ -8,8 +8,8 @@ use std::{
 use uuid::Uuid;
 
 use axum::extract::ws::Message;
-use futures::SinkExt;
 use coal_api::state::Proof;
+use futures::SinkExt;
 use solana_sdk::pubkey::Pubkey;
 use tokio::{
     sync::{mpsc::UnboundedReceiver, Mutex, RwLock},
@@ -131,7 +131,8 @@ pub async fn client_message_handler_system(
                         tracing::info!(target: "submission_log", "{} - {} found diff: {}", submission_uuid, pubkey_str, diff);
                         if diff >= MIN_DIFF {
                             // calculate rewards
-                            let mut hashpower = MIN_HASHPOWER * 2u64.pow(diff - MIN_DIFF);
+                            let real_hashpower = MIN_HASHPOWER * 2u64.pow(diff - MIN_DIFF);
+                            let mut hashpower = real_hashpower.clone();
                             if hashpower > 81_920 {
                                 hashpower = 81_920;
                             }
@@ -150,6 +151,7 @@ pub async fn client_message_handler_system(
                                                 supplied_nonce: nonce,
                                                 supplied_diff: diff,
                                                 hashpower,
+                                                real_hashpower,
                                             },
                                         );
                                         if diff > epoch_hashes.best_hash.difficulty {
@@ -170,6 +172,7 @@ pub async fn client_message_handler_system(
                                             supplied_nonce: nonce,
                                             supplied_diff: diff,
                                             hashpower,
+                                            real_hashpower,
                                         },
                                     );
                                     if diff > epoch_hashes.best_hash.difficulty {

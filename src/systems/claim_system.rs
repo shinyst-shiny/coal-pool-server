@@ -12,6 +12,7 @@ use spl_associated_token_account::get_associated_token_address;
 use tokio::time::Instant;
 use tracing::{error, info};
 
+use crate::ore_utils::{get_ore_mint, ORE_TOKEN_DECIMALS};
 use crate::{
     app_database::AppDatabase,
     coal_utils::{get_coal_mint, COAL_TOKEN_DECIMALS},
@@ -36,17 +37,20 @@ pub async fn claim_system(
         if let Some((miner_pubkey, claim_queue_item)) = claim {
             info!(target: "server_log", "Processing claim");
             let coal_mint = get_coal_mint();
+            let ore_mint = get_ore_mint();
             let receiver_pubkey = claim_queue_item.receiver_pubkey;
-            let receiver_token_account = get_associated_token_address(&receiver_pubkey, &coal_mint);
+            let receiver_token_account_coal = get_associated_token_address(&receiver_pubkey, &coal_mint);
+            let receiver_token_account_ore = get_associated_token_address(&receiver_pubkey, &ore_mint);
 
             let prio_fee: u32 = 20_000;
 
-            let mut is_creating_ata = false;
+            let mut is_creating_ata_coal = false;
+            let mut is_creating_ata_ore = false;
             let mut ixs = Vec::new();
             let prio_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(prio_fee as u64);
             ixs.push(prio_fee_ix);
             if let Ok(response) = rpc_client
-                .get_token_account_balance(&receiver_token_account)
+                .get_token_account_balance(&receiver_token_account_coal)
                 .await
             {
                 if let Some(_amount) = response.ui_amount {
@@ -64,7 +68,7 @@ pub async fn claim_system(
                 }
             } else {
                 info!(target: "server_log", "Adding create ata ix for miner claim");
-                is_creating_ata = true;
+                is_creating_ata_coal = true;
                 ixs.push(
                     spl_associated_token_account::instruction::create_associated_token_account(
                         &wallet.pubkey(),
@@ -75,15 +79,56 @@ pub async fn claim_system(
                 )
             }
 
-            let amount = claim_queue_item.amount;
+            if let Ok(response) = rpc_client
+                .get_token_account_balance(&receiver_token_account_ore)
+                .await
+            {
+                if let Some(_amount) = response.ui_amount {
+                    info!(target: "server_log", "miner has valid token account.");
+                } else {
+                    info!(target: "server_log", "will create token account for miner");
+                    ixs.push(
+                        spl_associated_token_account::instruction::create_associated_token_account(
+                            &wallet.pubkey(),
+                            &receiver_pubkey,
+                            &ore_api::consts::MINT_ADDRESS,
+                            &spl_token::id(),
+                        ),
+                    )
+                }
+            } else {
+                info!(target: "server_log", "Adding create ata ix for miner claim");
+                is_creating_ata_ore = true;
+                ixs.push(
+                    spl_associated_token_account::instruction::create_associated_token_account(
+                        &wallet.pubkey(),
+                        &receiver_pubkey,
+                        &ore_api::consts::MINT_ADDRESS,
+                        &spl_token::id(),
+                    ),
+                )
+            }
 
-            let mut claim_amount = amount;
+            let amount_coal = claim_queue_item.amount_coal;
+
+            let mut claim_amount_coal = amount_coal;
             // 4
-            if is_creating_ata {
-                claim_amount = amount - 400_000_000_000
+            if is_creating_ata_coal {
+                claim_amount_coal = amount_coal - 400_000_000_000
             }
             let ix =
-                crate::coal_utils::get_claim_ix(wallet.pubkey(), receiver_token_account, claim_amount);
+                crate::coal_utils::get_claim_ix(wallet.pubkey(), receiver_token_account_coal, claim_amount_coal);
+            ixs.push(ix);
+
+            let amount_ore = claim_queue_item.amount_ore;
+
+            let mut claim_amount_ore = amount_ore;
+            // 0.02
+            if is_creating_ata_ore {
+                claim_amount_ore = amount_ore - 2_000_000_000
+            }
+            let ix =
+                crate::ore_utils::get_claim_ix(wallet.pubkey(), receiver_token_account_coal, claim_amount_coal);
             ixs.push(ix);
 
             if let Ok((hash, _slot)) = rpc_client
@@ -138,8 +183,9 @@ pub async fn claim_system(
 
                 match result {
                     Ok(sig) => {
-                        let amount_dec = amount as f64 / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
-                        info!(target: "server_log", "Miner {} successfully claimed {}.\nSig: {}", miner_pubkey.to_string(), amount_dec, sig.to_string());
+                        let amount_dec_coal = amount_coal as f64 / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
+                        let amount_dec_ore = amount_ore as f64 / 10f64.powf(ORE_TOKEN_DECIMALS as f64);
+                        info!(target: "server_log", "Miner {} successfully claimed {} COAL and {} ORE.\nSig: {}", miner_pubkey.to_string(), amount_dec_coal, amount_dec_ore, sig.to_string());
 
                         // TODO: use transacions, or at least put them into one query
                         let miner = app_database
@@ -151,13 +197,13 @@ pub async fn claim_system(
                             .await
                             .unwrap();
                         while let Err(_) =
-                            app_database.decrease_miner_reward(miner.id, amount).await
+                            app_database.decrease_miner_reward(miner.id, amount_coal, amount_ore).await
                         {
                             error!(target: "server_log", "Failed to decrease miner rewards! Retrying...");
                             tokio::time::sleep(Duration::from_millis(2000)).await;
                         }
                         while let Err(_) = app_database
-                            .update_pool_claimed(wallet.pubkey().to_string(), amount)
+                            .update_pool_claimed(wallet.pubkey().to_string(), amount_coal, amount_ore)
                             .await
                         {
                             error!(target: "server_log", "Failed to increase pool claimed amount! Retrying...");
@@ -189,7 +235,8 @@ pub async fn claim_system(
                             miner_id: miner.id,
                             pool_id: db_pool.id,
                             txn_id,
-                            amount,
+                            amount_coal,
+                            amount_ore,
                         };
                         while let Err(_) = app_database.add_new_claim(iclaim).await {
                             error!(target: "server_log", "Failed add new claim to db! Retrying...");

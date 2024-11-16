@@ -20,7 +20,8 @@ diesel::table! {
         miner_id -> Integer,
         pool_id -> Integer,
         txn_id -> Integer,
-        amount -> Unsigned<Bigint>,
+        amount_coal -> Unsigned<Bigint>,
+        amount_ore -> Unsigned<Bigint>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }
@@ -60,7 +61,8 @@ diesel::table! {
         authority_pubkey -> Varchar,
         total_rewards_coal -> Unsigned<Bigint>,
         total_rewards_ore -> Unsigned<Bigint>,
-        claimed_rewards -> Unsigned<Bigint>,
+        claimed_rewards_coal -> Unsigned<Bigint>,
+        claimed_rewards_ore -> Unsigned<Bigint>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }

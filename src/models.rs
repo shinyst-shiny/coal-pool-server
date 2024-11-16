@@ -20,7 +20,9 @@ pub struct ChallengeWithDifficulty {
     #[diesel(sql_type = Integer)]
     pub id: i32,
     #[diesel(sql_type = Nullable<Unsigned<BigInt>>)]
-    pub rewards_earned: Option<u64>,
+    pub rewards_earned_coal: Option<u64>,
+    #[diesel(sql_type = Nullable<Unsigned<BigInt>>)]
+    pub rewards_earned_ore: Option<u64>,
     #[diesel(sql_type = TinyInt)]
     pub difficulty: i8,
     #[diesel(sql_type = Timestamp)]
@@ -52,7 +54,8 @@ pub struct Claim {
     pub miner_id: i32,
     pub pool_id: i32,
     pub txn_id: i32,
-    pub amount: u64,
+    pub amount_coal: u64,
+    pub amount_ore: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]
@@ -69,7 +72,8 @@ pub struct InsertClaim {
     pub miner_id: i32,
     pub pool_id: i32,
     pub txn_id: i32,
-    pub amount: u64,
+    pub amount_coal: u64,
+    pub amount_ore: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]
@@ -90,7 +94,8 @@ pub struct Pool {
     pub authority_pubkey: String,
     pub total_rewards_coal: u64,
     pub total_rewards_ore: u64,
-    pub claimed_rewards: u64,
+    pub claimed_rewards_coal: u64,
+    pub claimed_rewards_ore: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]

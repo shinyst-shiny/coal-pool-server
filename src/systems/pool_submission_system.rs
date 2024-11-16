@@ -129,7 +129,7 @@ pub async fn pool_submission_system(
                             text: String::from("Server is sending mine transaction..."),
                         });
 
-                        let mut cu_limit = 500_000;
+                        let mut cu_limit = 980_000;
                         let should_add_reset_ix = if let Some(config) = loaded_config {
                             let time_until_reset = (config.last_reset_at + 120) - now as i64;
                             if time_until_reset <= 5 {

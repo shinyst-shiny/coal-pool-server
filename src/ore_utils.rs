@@ -2,7 +2,7 @@ use drillx::Solution;
 use ore_api::consts::TOKEN_DECIMALS;
 use ore_api::state::Proof;
 use ore_api::{
-    consts::{BUS_ADDRESSES, PROOF},
+    consts::{BUS_ADDRESSES, MINT_ADDRESS, PROOF},
     ID as ORE_ID,
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -14,6 +14,14 @@ use spl_token::solana_program;
 use steel::AccountDeserialize;
 
 pub const ORE_TOKEN_DECIMALS: u8 = coal_api::consts::TOKEN_DECIMALS;
+
+pub fn get_ore_mint() -> Pubkey {
+    MINT_ADDRESS
+}
+
+pub fn get_claim_ix(signer: Pubkey, beneficiary: Pubkey, claim_amount: u64) -> Instruction {
+    ore_api::sdk::claim(signer, beneficiary, claim_amount)
+}
 
 pub fn get_ore_auth_ix(signer: Pubkey) -> Instruction {
     let proof = ore_proof_pubkey(signer);

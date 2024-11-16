@@ -103,7 +103,8 @@ struct AppState {
 #[derive(Clone, Copy)]
 struct ClaimsQueueItem {
     receiver_pubkey: Pubkey,
-    amount: u64,
+    amount_coal: u64,
+    amount_ore: u64,
 }
 
 struct ClaimsQueue {
@@ -786,11 +787,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/latest-blockhash", get(get_latest_blockhash))
         .route("/pool/authority/pubkey", get(get_pool_authority_pubkey))
         .route("/pool/fee_payer/pubkey", get(get_pool_fee_payer_pubkey))
-        .route("/signup", post(post_signup))
         .route("/v2/signup", post(post_signup_v2))
         .route("/signup-fee", get(get_signup_fee))
         .route("/sol-balance", get(get_sol_balance))
-        .route("/claim", post(post_claim))
         .route("/v2/claim", post(post_claim_v2))
         //.route("/stake", post(post_stake))
         //.route("/unstake", post(post_unstake))
@@ -918,67 +917,6 @@ async fn post_pause(
 #[derive(Deserialize)]
 struct SignupParams {
     pubkey: String,
-}
-
-async fn post_signup(
-    query_params: Query<SignupParams>,
-    Extension(app_database): Extension<Arc<AppDatabase>>,
-    Extension(wallet): Extension<Arc<WalletExtension>>,
-    _body: String,
-) -> impl IntoResponse {
-    if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
-        let db_miner = app_database
-            .get_miner_by_pubkey_str(user_pubkey.to_string())
-            .await;
-
-        match db_miner {
-            Ok(miner) => {
-                if miner.enabled {
-                    info!(target: "server_log", "Miner account already enabled!");
-                    return Response::builder()
-                        .status(StatusCode::OK)
-                        .header("Content-Type", "text/text")
-                        .body("EXISTS".to_string())
-                        .unwrap();
-                }
-            }
-            Err(AppDatabaseError::FailedToGetConnectionFromPool) => {
-                error!(target: "server_log", "Failed to get database pool connection");
-                return Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body("Failed to get db pool connection".to_string())
-                    .unwrap();
-            }
-            Err(_) => {
-                info!(target: "server_log", "No miner account exists. Signing up new user.");
-            }
-        }
-
-        let res = app_database.signup_user_transaction(user_pubkey.to_string(), wallet.miner_wallet.pubkey().to_string()).await;
-
-        match res {
-            Ok(_) => {
-                return Response::builder()
-                    .status(StatusCode::OK)
-                    .header("Content-Type", "text/text")
-                    .body("SUCCESS".to_string())
-                    .unwrap();
-            }
-            Err(_) => {
-                error!(target: "server_log", "Failed to add miner to database");
-                return Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body("Failed to add user to database".to_string())
-                    .unwrap();
-            }
-        }
-    } else {
-        error!(target: "server_log", "Signup with invalid pubkey");
-        return Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body("Invalid Pubkey".to_string())
-            .unwrap();
-    }
 }
 
 #[derive(Deserialize)]
@@ -1331,89 +1269,12 @@ struct ClaimParams {
     amount: u64,
 }
 
-async fn post_claim(
-    query_params: Query<ClaimParams>,
-    Extension(app_database): Extension<Arc<AppDatabase>>,
-    Extension(claims_queue): Extension<Arc<ClaimsQueue>>,
-) -> impl IntoResponse {
-    if let Ok(miner_pubkey) = Pubkey::from_str(&query_params.pubkey) {
-        let reader = claims_queue.queue.read().await;
-        let queue = reader.clone();
-        drop(reader);
-
-        if queue.contains_key(&miner_pubkey) {
-            return Response::builder()
-                .status(StatusCode::TOO_MANY_REQUESTS)
-                .body("QUEUED".to_string())
-                .unwrap();
-        }
-
-        let amount = query_params.amount;
-
-        // 1
-        if amount < 100_000_000_000 {
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("claim minimum is 1".to_string())
-                .unwrap();
-        }
-
-        if let Ok(miner_rewards) = app_database
-            .get_miner_rewards(miner_pubkey.to_string())
-            .await
-        {
-            if amount > miner_rewards.balance_coal {
-                return Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body("claim amount exceeds miner rewards balance".to_string())
-                    .unwrap();
-            }
-
-            if let Ok(last_claim) = app_database.get_last_claim(miner_rewards.miner_id).await {
-                let last_claim_ts = last_claim.created_at.and_utc().timestamp();
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .expect("Time went backwards")
-                    .as_secs() as i64;
-                let time_difference = now - last_claim_ts;
-                if time_difference <= 1800 {
-                    return Response::builder()
-                        .status(StatusCode::TOO_MANY_REQUESTS)
-                        .body(time_difference.to_string())
-                        .unwrap();
-                }
-            }
-
-            let mut writer = claims_queue.queue.write().await;
-            writer.insert(miner_pubkey, ClaimsQueueItem {
-                receiver_pubkey: miner_pubkey,
-                amount,
-            });
-            drop(writer);
-            return Response::builder()
-                .status(StatusCode::OK)
-                .body("SUCCESS".to_string())
-                .unwrap();
-        } else {
-            return Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body("failed to get miner account from database".to_string())
-                .unwrap();
-        }
-    } else {
-        error!(target: "server_log", "Claim with invalid pubkey");
-        return Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body("Invalid Pubkey".to_string())
-            .unwrap();
-    }
-}
-
 #[derive(Deserialize)]
 struct ClaimParamsV2 {
     timestamp: u64,
     receiver_pubkey: String,
-    amount: u64,
+    amount_coal: u64,
+    amount_ore: u64,
 }
 
 async fn post_claim_v2(
@@ -1447,11 +1308,13 @@ async fn post_claim_v2(
 
     if let Ok(miner_pubkey) = Pubkey::from_str(miner_pubkey_str) {
         if let Ok(signature) = Signature::from_str(signed_msg) {
-            let amount = query_params.amount;
+            let amount_coal = query_params.amount_coal;
+            let amount_ore = query_params.amount_ore;
             let mut signed_msg = vec![];
             signed_msg.extend(msg_timestamp.to_le_bytes());
             signed_msg.extend(receiver_pubkey.to_bytes());
-            signed_msg.extend(amount.to_le_bytes());
+            signed_msg.extend(amount_coal.to_le_bytes());
+            signed_msg.extend(amount_ore.to_le_bytes());
 
             if signature.verify(&miner_pubkey.to_bytes(), &signed_msg) {
                 let reader = claims_queue.queue.read().await;
@@ -1462,19 +1325,27 @@ async fn post_claim_v2(
                     return Err((StatusCode::TOO_MANY_REQUESTS, "QUEUED".to_string()));
                 }
 
-                let amount = query_params.amount;
+                let amount_coal = query_params.amount_coal;
 
                 // 1
-                if amount < 100_000_000_000 {
-                    return Err((StatusCode::BAD_REQUEST, "claim minimum is 1".to_string()));
+                if amount_coal < 100_000_000_000 {
+                    return Err((StatusCode::BAD_REQUEST, "claim minimum is 1 for COAL".to_string()));
+                }
+
+                // 0.05
+                if amount_ore < 5_000_000_000 {
+                    return Err((StatusCode::BAD_REQUEST, "claim minimum is 0.05 for ORE".to_string()));
                 }
 
                 if let Ok(miner_rewards) = app_database
                     .get_miner_rewards(miner_pubkey.to_string())
                     .await
                 {
-                    if amount > miner_rewards.balance_coal {
-                        return Err((StatusCode::BAD_REQUEST, "claim amount exceeds miner rewards balance.".to_string()));
+                    if amount_coal > miner_rewards.balance_coal {
+                        return Err((StatusCode::BAD_REQUEST, "claim amount for COAL exceeds miner rewards balance.".to_string()));
+                    }
+                    if amount_ore > miner_rewards.balance_ore {
+                        return Err((StatusCode::BAD_REQUEST, "claim amount for ORE exceeds miner rewards balance.".to_string()));
                     }
 
                     if let Ok(last_claim) = app_database.get_last_claim(miner_rewards.miner_id).await {
@@ -1492,7 +1363,8 @@ async fn post_claim_v2(
                     let mut writer = claims_queue.queue.write().await;
                     writer.insert(miner_pubkey, ClaimsQueueItem {
                         receiver_pubkey,
-                        amount,
+                        amount_coal,
+                        amount_ore,
                     });
                     drop(writer);
                     return Ok((StatusCode::OK, "SUCCESS"));

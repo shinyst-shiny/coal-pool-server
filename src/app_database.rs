@@ -159,13 +159,15 @@ impl AppDatabase {
     pub async fn decrease_miner_reward(
         &self,
         miner_id: i32,
-        rewards_to_decrease: u64,
+        rewards_to_decrease_coal: u64,
+        rewards_to_decrease_ore: u64,
     ) -> Result<(), AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn
                 .interact(move |conn: &mut MysqlConnection| {
-                    diesel::sql_query("UPDATE rewards SET balance_coal = balance_coal - ? WHERE miner_id = ?")
-                        .bind::<Unsigned<BigInt>, _>(rewards_to_decrease)
+                    diesel::sql_query("UPDATE rewards SET balance_coal = balance_coal - ?, balance_ore = balance_ore - ? WHERE miner_id = ?")
+                        .bind::<Unsigned<BigInt>, _>(rewards_to_decrease_coal)
+                        .bind::<Unsigned<BigInt>, _>(rewards_to_decrease_ore)
                         .bind::<Integer, _>(miner_id)
                         .execute(conn)
                 })
@@ -414,12 +416,14 @@ impl AppDatabase {
     pub async fn update_pool_claimed(
         &self,
         pool_authority_pubkey: String,
-        claimed_rewards: u64,
+        claimed_rewards_coal: u64,
+        claimed_rewards_ore: u64,
     ) -> Result<(), AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn.interact(move |conn: &mut MysqlConnection| {
-                diesel::sql_query("UPDATE pools SET claimed_rewards = claimed_rewards + ? WHERE authority_pubkey = ?")
-                    .bind::<Unsigned<BigInt>, _>(claimed_rewards)
+                diesel::sql_query("UPDATE pools SET claimed_rewards_coal = claimed_rewards_coal + ?, claimed_rewards_ore = claimed_rewards_ore + ? WHERE authority_pubkey = ?")
+                    .bind::<Unsigned<BigInt>, _>(claimed_rewards_coal)
+                    .bind::<Unsigned<BigInt>, _>(claimed_rewards_ore)
                     .bind::<Text, _>(pool_authority_pubkey)
                     .execute(conn)
             }).await;
@@ -484,11 +488,12 @@ impl AppDatabase {
     pub async fn add_new_claim(&self, claim: models::InsertClaim) -> Result<(), AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn.interact(move |conn: &mut MysqlConnection| {
-                diesel::sql_query("INSERT INTO claims (miner_id, pool_id, txn_id, amount) VALUES (?, ?, ?, ?)")
+                diesel::sql_query("INSERT INTO claims (miner_id, pool_id, txn_id, amount_coal) VALUES (?, ?, ?, ?, ?)")
                     .bind::<Integer, _>(claim.miner_id)
                     .bind::<Integer, _>(claim.pool_id)
                     .bind::<Integer, _>(claim.txn_id)
-                    .bind::<Unsigned<BigInt>, _>(claim.amount)
+                    .bind::<Unsigned<BigInt>, _>(claim.amount_coal)
+                    .bind::<Unsigned<BigInt>, _>(claim.amount_ore)
                     .execute(conn)
             }).await;
 

@@ -193,10 +193,10 @@ pub async fn pool_submission_system(
                         // Fetch coal_proof
                         let config_address = get_config_pubkey(&Resource::Coal);
                         let tool_address = get_tool_pubkey(signer.pubkey(), &Resource::Coal);
-                        let guild_config_address = coal_guilds_api::state::config_pda().0;
-                        let guild_member_address = coal_guilds_api::state::member_pda(signer.pubkey()).0;
+                        // let guild_config_address = coal_guilds_api::state::config_pda().0;
+                        // let guild_member_address = coal_guilds_api::state::member_pda(signer.pubkey()).0;
 
-                        let mut accounts: Vec<Pubkey> = vec![config_address, tool_address, guild_config_address, guild_member_address];
+                        let mut accounts: Vec<Pubkey> = vec![config_address, tool_address];
                         let accounts = rpc_client.get_multiple_accounts(&accounts).await.unwrap();
 
                         let mut tool: Option<ToolType> = None;
@@ -229,7 +229,7 @@ pub async fn pool_submission_system(
                             guild_address = Some(member.unwrap().guild);
                         }
 
-                        info!(target: "server_log","Using for the transaction Signer: {:?} tool: {:?}, member: {:?}, guild_address: {:?}", signer.pubkey(), tool_address, guild_member_address, member.unwrap().guild);
+                        info!(target: "server_log","Using for the transaction Signer: {:?} tool: {:?}", signer.pubkey(), tool_address);
 
                         // let coal_mine_ix = get_mine_ix(signer.pubkey(), best_solution, bus, guild_pubkey, signer.pubkey());
                         let coal_mine_ix = get_mine_ix(
@@ -240,15 +240,11 @@ pub async fn pool_submission_system(
                                 None => None
                             },
                             match member {
-                                Some(_) => Some(guild_member_address),
+                                Some(_) => None,
                                 None => None
                             },
                             match member {
-                                Some(member) => if member.guild.eq(&coal_guilds_api::ID) {
-                                    None
-                                } else {
-                                    Some(member.guild)
-                                },
+                                Some(_) => None,
                                 None => None
                             },
                         );

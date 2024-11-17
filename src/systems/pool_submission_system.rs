@@ -32,10 +32,10 @@ use tokio::{
 use tracing::info;
 
 use crate::coal_utils::{amount_u64_to_string, calculate_guild_multiplier, deserialize_config, deserialize_guild, deserialize_guild_config, deserialize_guild_member, deserialize_tool, get_config_pubkey, get_tool_pubkey, Resource, ToolType};
-use crate::ore_utils::{get_ore_auth_ix, get_ore_balance, get_ore_mine_ix, get_reset_ix as get_reset_ix_ore, ORE_TOKEN_DECIMALS};
+use crate::ore_utils::{get_ore_auth_ix, get_ore_balance, get_ore_mine_ix, get_proof_and_config_with_busses as get_proof_and_config_with_busses_ore, get_reset_ix as get_reset_ix_ore, ORE_TOKEN_DECIMALS};
 use crate::{
     app_database::AppDatabase, coal_utils::{
-        get_auth_ix, get_cutoff, get_guild_member, get_guild_proof, get_mine_ix, get_proof, get_proof_and_config_with_busses, get_reset_ix as get_reset_ix_coal, MineEventWithBoosts, COAL_TOKEN_DECIMALS,
+        get_auth_ix, get_cutoff, get_guild_member, get_guild_proof, get_mine_ix, get_proof, get_proof_and_config_with_busses as get_proof_and_config_with_busses_coal, get_reset_ix as get_reset_ix_coal, MineEventWithBoosts, COAL_TOKEN_DECIMALS,
     }, Config, EpochHashes, InsertChallenge, InsertEarning, InsertTxn, MessageInternalAllClients, MessageInternalMineSuccess, SubmissionWindow, UpdateReward, WalletExtension,
 };
 
@@ -96,15 +96,15 @@ pub async fn pool_submission_system(
                             i, difficulty
                         );
                         info!(target: "server_log", "Submission Challenge: {}", BASE64_STANDARD.encode(old_proof.challenge));
-                        let mut loaded_config = None;
+                        let mut loaded_config_coal = None;
                         info!(target: "server_log", "Getting latest config and busses data.");
                         tokio::time::sleep(Duration::from_millis(1000)).await;
                         if let (Ok(p), Ok(config), Ok(_busses)) =
-                            get_proof_and_config_with_busses(&rpc_client, signer.pubkey()).await
+                            get_proof_and_config_with_busses_coal(&rpc_client, signer.pubkey()).await
                         {
-                            loaded_config = Some(config);
+                            loaded_config_coal = Some(config);
 
-                            info!(target: "server_log", "Got latest config: {:?}", loaded_config);
+                            info!(target: "server_log", "Got latest config COAL: {:?}", loaded_config_coal);
 
                             info!(target: "server_log", "Latest Challenge: {}", BASE64_STANDARD.encode(p.challenge));
 
@@ -116,6 +116,14 @@ pub async fn pool_submission_system(
                                 drop(lock);
                                 break;
                             }
+                        }
+                        let mut loaded_config_ore = None;
+                        if let (Ok(p), Ok(config), Ok(_busses)) =
+                            get_proof_and_config_with_busses_ore(&rpc_client, signer.pubkey()).await
+                        {
+                            loaded_config_ore = Some(config);
+
+                            info!(target: "server_log", "Got latest config ORE: {:?}", loaded_config_ore);
                         }
                         let now = SystemTime::now()
                             .duration_since(UNIX_EPOCH)
@@ -130,7 +138,7 @@ pub async fn pool_submission_system(
                         });
 
                         let mut cu_limit = 980_000;
-                        let should_add_reset_ix_coal = if let Some(config) = loaded_config {
+                        let should_add_reset_ix_coal = if let Some(config) = loaded_config_coal {
                             let time_until_reset = (config.last_reset_at + 120) - now as i64;
                             if time_until_reset <= 5 {
                                 cu_limit += 50_000;
@@ -143,8 +151,9 @@ pub async fn pool_submission_system(
                         } else {
                             false
                         };
-                        let should_add_reset_ix_ore = if let Some(config) = loaded_config {
+                        let should_add_reset_ix_ore = if let Some(config) = loaded_config_ore {
                             let time_until_reset = (config.last_reset_at + 300) - now as i64;
+                            info!(target: "server_log", "time_until_reset ORE {}",time_until_reset);
                             if time_until_reset <= 5 {
                                 cu_limit += 50_000;
                                 prio_fee += 50_000;
@@ -198,7 +207,7 @@ pub async fn pool_submission_system(
 
                         let ore_noop_ix = get_ore_auth_ix(signer.pubkey());
                         let coal_apinoop_ix = get_auth_ix(signer.pubkey());
-                        ixs.push(ore_noop_ix);
+                        ixs.push(ore_noop_ix.clone());
                         ixs.push(coal_apinoop_ix.clone());
 
                         if should_add_reset_ix_coal {
@@ -252,6 +261,7 @@ pub async fn pool_submission_system(
 
                         info!(target: "server_log","Using for the transaction Signer: {:?} tool: {:?}, member: {:?}, guild_address: {:?}", signer.pubkey(), tool_address, guild_member_address, member.unwrap().guild);
 
+                        info!(target: "server_log", "best_solution COAL: {:?}",best_solution);
                         // let coal_mine_ix = get_mine_ix(signer.pubkey(), best_solution, bus, guild_pubkey, signer.pubkey());
                         let coal_mine_ix = get_mine_ix(
                             signer.pubkey(),
@@ -273,6 +283,7 @@ pub async fn pool_submission_system(
                                 None => None
                             },
                         );
+                        info!(target: "server_log", "best_solution ORE: {:?}",best_solution);
                         let ore_mine_ix = get_ore_mine_ix(signer.pubkey(), best_solution, bus);
                         ixs.push(ore_mine_ix);
                         ixs.push(coal_mine_ix);
@@ -773,11 +784,20 @@ pub async fn pool_submission_system(
                                                             let balance_ore = get_ore_balance(app_wallet.miner_wallet.pubkey(), &rpc_client.clone()).await as f64
                                                                 / 10f64.powf(ORE_TOKEN_DECIMALS as f64);
 
-                                                            let multiplier = if let Some(config) = loaded_config {
+                                                            let multiplier = if let Some(config) = loaded_config_coal {
                                                                 if config.top_balance > 0 {
                                                                     1.0 + (latest_proof.balance as f64 / config.top_balance as f64).min(1.0f64)
                                                                 } else {
                                                                     1.0f64
+                                                                }
+                                                            } else {
+                                                                1.0f64
+                                                            };
+                                                            let tool_multiplier = if let Some(toolInfo) = tool {
+                                                                if toolInfo.multiplier > 0 {
+                                                                    toolInfo.multiplier().min(1.0u64)
+                                                                } else {
+                                                                    1.0u64
                                                                 }
                                                             } else {
                                                                 1.0f64
@@ -799,12 +819,12 @@ pub async fn pool_submission_system(
                                                                     best_nonce: u64::from_le_bytes(best_solution.n),
                                                                     total_hashpower,
                                                                     total_real_hashpower,
-                                                                    coal_config: loaded_config,
+                                                                    coal_config: loaded_config_coal,
                                                                     multiplier,
                                                                     submissions,
                                                                     guild_total_stake,
                                                                     guild_multiplier,
-                                                                    guild_last_stake_at,
+                                                                    tool_multiplier,
                                                                 },
                                                             );
                                                             tokio::time::sleep(Duration::from_millis(200)).await;

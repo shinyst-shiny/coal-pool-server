@@ -45,6 +45,7 @@ use coal_utils::{
 };
 use drillx::Solution;
 use futures::{stream::SplitSink, SinkExt, StreamExt};
+use ore_api::prelude::Proof;
 use ore_utils::get_ore_register_ix;
 use routes::{get_challenges, get_latest_mine_txn, get_pool_balance};
 use serde::{Deserialize, Serialize};
@@ -145,7 +146,7 @@ pub struct MessageInternalMineSuccess {
     submissions: HashMap<Pubkey, InternalMessageSubmission>,
     guild_total_stake: u64,
     guild_multiplier: f64,
-    guild_last_stake_at: i64,
+    tool_multiplier: u64,
 }
 
 pub struct LastPong {
@@ -2239,7 +2240,7 @@ pub async fn get_guild_check_member(
                     .unwrap();
             }
             Ok(data) => {
-                if let Ok(member) = Member::try_from_bytes(&data) {
+                if let Ok(member) = bytemuck::try_from_bytes::<Member>(&data[8..]) {
                     if member.guild.to_string().is_empty() || member.guild.to_string().eq("11111111111111111111111111111111") {
                         info!(target: "server_log", "Pubkey: {} without any guild. We can continue with the flow without any extra steps", user_pubkey.to_string());
                         return Response::builder()

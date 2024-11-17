@@ -12,6 +12,7 @@ use tracing::error;
 
 use crate::coal_utils::Resource;
 use crate::{app_rr_database, coal_utils::{get_coal_mint, get_proof}, ChallengeWithDifficulty, Config, PoolGuild, Txn};
+use coal_guilds_api::prelude::Member;
 use coal_guilds_api::state::Guild;
 use std::{str::FromStr, sync::Arc};
 
@@ -56,7 +57,7 @@ pub async fn get_guild_addresses(Extension(app_config): Extension<Arc<Config>>,
     let guild_data = rpc_client.get_account_data(&Pubkey::from_str(&guild_address).unwrap()).await;
 
     if let Ok(guild_data) = guild_data {
-        let guild = Guild::try_from_bytes(&guild_data).unwrap();
+        let guild = bytemuck::try_from_bytes::<Guild>(&guild_data[8..]).unwrap();
 
         return Ok(Json(PoolGuild {
             authority: guild.authority.to_string(),

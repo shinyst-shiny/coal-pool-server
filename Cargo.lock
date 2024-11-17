@@ -1044,7 +1044,7 @@ dependencies = [
  "solana-transaction-status",
  "spl-associated-token-account",
  "spl-token",
- "steel 1.3.0",
+ "steel 2.1.1",
  "tokio",
  "tower 0.4.13",
  "tower-http",

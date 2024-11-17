@@ -40,15 +40,15 @@ pub struct MineEventWithBoosts {
 
 
 pub fn deserialize_guild_config(data: &[u8]) -> coal_guilds_api::state::Config {
-    *coal_guilds_api::state::Config::try_from_bytes(data).unwrap()
+    *bytemuck::try_from_bytes::<coal_guilds_api::state::Config>(&data[8..]).unwrap()
 }
 
 pub fn deserialize_guild_member(data: &[u8]) -> coal_guilds_api::state::Member {
-    *coal_guilds_api::state::Member::try_from_bytes(data).unwrap()
+    *bytemuck::try_from_bytes::<coal_guilds_api::state::Member>(&data[8..]).unwrap()
 }
 
 pub fn deserialize_guild(data: &[u8]) -> coal_guilds_api::state::Guild {
-    *coal_guilds_api::state::Guild::try_from_bytes(data).unwrap()
+    *bytemuck::try_from_bytes::<coal_guilds_api::state::Guild>(&data[8..]).unwrap()
 }
 
 pub fn get_auth_ix(signer: Pubkey) -> Instruction {

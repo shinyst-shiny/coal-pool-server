@@ -126,37 +126,13 @@ pub async fn pool_mine_success_system(
                             let socket_sender = client_connection.socket.clone();
 
                             match client_connection.client_version {
-                                ClientVersion::V1 => {
-                                    let message = format!(
-                                        "Pool Submitted Difficulty: {}\nPool Earned:  {:.11} coal\nPool Balance: {:.11} coal\nTop Stake:    {:.11} coal\nPool Multiplier: {:.2}x\nGuild Stake: {}\nGuild Multiplier: {:.2}x\n----------------------\nActive Miners: {}\n----------------------\nMiner Submitted Difficulty: {}\nMiner Earned: {:.11} coal\n{:.2}% of total pool reward",
-                                        msg.difficulty,
-                                        pool_rewards_dec_coal,
-                                        msg.total_balance,
-                                        top_stake_coal,
-                                        msg.multiplier,
-                                        msg.guild_total_stake,
-                                        msg.guild_multiplier,
-                                        len,
-                                        msg_submission.supplied_diff,
-                                        earned_rewards_dec_coal,
-                                        percentage_coal,
-                                    );
-                                    tokio::spawn(async move {
-                                        if let Ok(_) = socket_sender
-                                            .lock()
-                                            .await
-                                            .send(Message::Text(message))
-                                            .await
-                                        {} else {
-                                            tracing::error!(target: "server_log", "Failed to send client text");
-                                        }
-                                    });
-                                }
                                 ClientVersion::V2 => {
                                     let server_message = ServerMessagePoolSubmissionResult::new(
                                         msg.difficulty,
-                                        msg.total_balance,
+                                        msg.total_balance_coal,
+                                        msg.total_balance_ore,
                                         pool_rewards_dec_coal,
+                                        pool_rewards_dec_ore,
                                         top_stake_coal,
                                         msg.multiplier,
                                         len as u32,
@@ -164,7 +140,9 @@ pub async fn pool_mine_success_system(
                                         msg.best_nonce,
                                         msg_submission.supplied_diff as u32,
                                         earned_rewards_dec_coal,
+                                        earned_rewards_dec_ore,
                                         percentage_coal,
+                                        percentage_ore,
                                         msg.guild_total_stake,
                                         msg.guild_multiplier,
                                     );

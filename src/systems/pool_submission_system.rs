@@ -32,10 +32,10 @@ use tokio::{
 use tracing::info;
 
 use crate::coal_utils::{amount_u64_to_string, calculate_guild_multiplier, deserialize_config, deserialize_guild, deserialize_guild_config, deserialize_guild_member, deserialize_tool, get_config_pubkey, get_tool_pubkey, Resource, ToolType};
-use crate::ore_utils::{get_ore_auth_ix, get_ore_balance, get_ore_mine_ix};
+use crate::ore_utils::{get_ore_auth_ix, get_ore_balance, get_ore_mine_ix, get_reset_ix as get_reset_ix_ore, ORE_TOKEN_DECIMALS};
 use crate::{
     app_database::AppDatabase, coal_utils::{
-        get_auth_ix, get_cutoff, get_guild_member, get_guild_proof, get_mine_ix, get_proof, get_proof_and_config_with_busses, get_reset_ix, MineEventWithBoosts, COAL_TOKEN_DECIMALS,
+        get_auth_ix, get_cutoff, get_guild_member, get_guild_proof, get_mine_ix, get_proof, get_proof_and_config_with_busses, get_reset_ix as get_reset_ix_coal, MineEventWithBoosts, COAL_TOKEN_DECIMALS,
     }, Config, EpochHashes, InsertChallenge, InsertEarning, InsertTxn, MessageInternalAllClients, MessageInternalMineSuccess, SubmissionWindow, UpdateReward, WalletExtension,
 };
 
@@ -130,12 +130,25 @@ pub async fn pool_submission_system(
                         });
 
                         let mut cu_limit = 980_000;
-                        let should_add_reset_ix = if let Some(config) = loaded_config {
+                        let should_add_reset_ix_coal = if let Some(config) = loaded_config {
                             let time_until_reset = (config.last_reset_at + 120) - now as i64;
                             if time_until_reset <= 5 {
-                                cu_limit += 20_000;
+                                cu_limit += 50_000;
                                 prio_fee += 50_000;
-                                info!(target: "server_log", "Including reset tx.");
+                                info!(target: "server_log", "Including reset tx COAL.");
+                                true
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+                        let should_add_reset_ix_ore = if let Some(config) = loaded_config {
+                            let time_until_reset = (config.last_reset_at + 300) - now as i64;
+                            if time_until_reset <= 5 {
+                                cu_limit += 50_000;
+                                prio_fee += 50_000;
+                                info!(target: "server_log", "Including reset tx ORE.");
                                 true
                             } else {
                                 false
@@ -188,8 +201,13 @@ pub async fn pool_submission_system(
                         ixs.push(ore_noop_ix);
                         ixs.push(coal_apinoop_ix.clone());
 
-                        if should_add_reset_ix {
-                            let reset_ix = get_reset_ix(signer.pubkey());
+                        if should_add_reset_ix_coal {
+                            let reset_ix = get_reset_ix_coal(signer.pubkey());
+                            ixs.push(reset_ix);
+                        }
+
+                        if should_add_reset_ix_ore {
+                            let reset_ix = get_reset_ix_ore(signer.pubkey());
                             ixs.push(reset_ix);
                         }
 
@@ -749,9 +767,11 @@ pub async fn pool_submission_system(
                                                             tokio::time::sleep(Duration::from_millis(200)).await;
 
                                                             let latest_proof = { app_proof.lock().await.clone() };
-                                                            let balance = (latest_proof.balance as f64)
+                                                            let balance_coal = (latest_proof.balance as f64)
                                                                 / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
 
+                                                            let balance_ore = get_ore_balance(app_wallet.miner_wallet.pubkey(), &rpc_client.clone()).await as f64
+                                                                / 10f64.powf(ORE_TOKEN_DECIMALS as f64);
 
                                                             let multiplier = if let Some(config) = loaded_config {
                                                                 if config.top_balance > 0 {
@@ -768,10 +788,11 @@ pub async fn pool_submission_system(
                                                             let _ = mine_success_sender.send(
                                                                 MessageInternalMineSuccess {
                                                                     difficulty,
-                                                                    total_balance: balance,
+                                                                    total_balance_coal: balance_coal,
+                                                                    total_balance_ore: balance_ore,
                                                                     rewards_coal: full_rewards_coal,
-                                                                    commissions_coal: commissions_coal,
                                                                     rewards_ore: full_rewards_ore,
+                                                                    commissions_coal: commissions_coal,
                                                                     commissions_ore: commissions_ore,
                                                                     challenge_id: challenge.id,
                                                                     challenge: old_proof.challenge,

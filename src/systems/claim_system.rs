@@ -128,7 +128,7 @@ pub async fn claim_system(
                 claim_amount_ore = amount_ore - 2_000_000_000
             }
             let ix =
-                crate::ore_utils::get_claim_ix(wallet.pubkey(), receiver_token_account_coal, claim_amount_coal);
+                crate::ore_utils::get_claim_ix(wallet.pubkey(), receiver_token_account_coal, claim_amount_ore);
             ixs.push(ix);
 
             if let Ok((hash, _slot)) = rpc_client

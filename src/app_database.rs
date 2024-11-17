@@ -37,7 +37,7 @@ impl AppDatabase {
     ) -> Result<models::Challenge, AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn.interact(move |conn: &mut MysqlConnection| {
-                diesel::sql_query("SELECT id, pool_id, submission_id, challenge, rewards_earned FROM challenges WHERE challenges.challenge = ?")
+                diesel::sql_query("SELECT id, pool_id, submission_id, challenge, rewards_earned_coal, rewards_earned_ore FROM challenges WHERE challenges.challenge = ?")
                     .bind::<Binary, _>(challenge)
                     .get_result::<models::Challenge>(conn)
             }).await;
@@ -309,7 +309,7 @@ impl AppDatabase {
     ) -> Result<models::Pool, AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn.interact(move |conn: &mut MysqlConnection| {
-                diesel::sql_query("SELECT id, proof_pubkey, authority_pubkey, total_rewards, claimed_rewards FROM pools WHERE pools.authority_pubkey = ?")
+                diesel::sql_query("SELECT id, proof_pubkey, authority_pubkey, total_rewards_coal, total_rewards_ore, claimed_rewards_coal, claimed_rewards_ore FROM pools WHERE pools.authority_pubkey = ?")
                     .bind::<Text, _>(pool_pubkey)
                     .get_result::<models::Pool>(conn)
             }).await;
@@ -744,7 +744,7 @@ impl AppDatabase {
                             .bind::<Text, _>(&user_pubkey)
                             .get_result(conn)?;
 
-                        let pool: models::Pool = diesel::sql_query("SELECT id, proof_pubkey, authority_pubkey, total_rewards, claimed_rewards FROM pools WHERE pools.authority_pubkey = ?")
+                        let pool: models::Pool = diesel::sql_query("SELECT id, proof_pubkey, authority_pubkey, total_rewards_coal, total_rewards_ore, claimed_rewards_coal, claimed_rewards_ore FROM pools WHERE pools.authority_pubkey = ?")
                             .bind::<Text, _>(&pool_authority_pubkey)
                             .get_result(conn)?;
 

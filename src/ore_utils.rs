@@ -11,7 +11,6 @@ use solana_sdk::{
     pubkey::Pubkey,
 };
 use spl_token::solana_program;
-use steel::AccountDeserialize;
 
 pub const ORE_TOKEN_DECIMALS: u8 = coal_api::consts::TOKEN_DECIMALS;
 
@@ -54,6 +53,10 @@ pub async fn get_proof(client: &RpcClient, address: Pubkey) -> Proof {
 pub async fn get_proof_with_authority(client: &RpcClient, authority: Pubkey) -> Proof {
     let proof_address = proof_pubkey(authority);
     get_proof(client, proof_address).await
+}
+
+pub fn get_reset_ix(signer: Pubkey) -> Instruction {
+    ore_api::sdk::reset(signer)
 }
 
 pub async fn get_ore_balance(address: Pubkey, client: &RpcClient) -> u64 {

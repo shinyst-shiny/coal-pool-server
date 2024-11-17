@@ -77,7 +77,6 @@ const MIN_HASHPOWER: u64 = 5;
 
 #[derive(Clone)]
 enum ClientVersion {
-    V1,
     V2,
 }
 
@@ -130,7 +129,8 @@ pub struct InternalMessageSubmission {
 
 pub struct MessageInternalMineSuccess {
     difficulty: u32,
-    total_balance: f64,
+    total_balance_coal: f64,
+    total_balance_ore: f64,
     rewards_coal: u64,
     commissions_coal: u64,
     rewards_ore: u64,
@@ -781,7 +781,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client_channel = client_message_sender.clone();
     let app_shared_state = shared_state.clone();
     let app = Router::new()
-        .route("/", get(ws_handler))
         .route("/v2/ws", get(ws_handler_v2))
         .route("/pause", post(post_pause))
         .route("/latest-blockhash", get(get_latest_blockhash))
@@ -1880,95 +1879,6 @@ struct UnstakeParams {
 #[derive(Deserialize)]
 struct WsQueryParams {
     timestamp: u64,
-}
-
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    TypedHeader(auth_header): TypedHeader<axum_extra::headers::Authorization<Basic>>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    State(app_state): State<Arc<RwLock<AppState>>>,
-    //Extension(app_config): Extension<Arc<Config>>,
-    Extension(client_channel): Extension<UnboundedSender<ClientMessage>>,
-    Extension(app_database): Extension<Arc<AppDatabase>>,
-    query_params: Query<WsQueryParams>,
-) -> impl IntoResponse {
-    let msg_timestamp = query_params.timestamp;
-
-    let pubkey = auth_header.username();
-    let signed_msg = auth_header.password();
-
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards")
-        .as_secs();
-
-    // Signed authentication message is only valid for 30 seconds
-    if (now - query_params.timestamp) >= 30 {
-        return Err((StatusCode::UNAUTHORIZED, "Timestamp too old."));
-    }
-
-    // verify client
-    if let Ok(user_pubkey) = Pubkey::from_str(pubkey) {
-        let db_miner = app_database
-            .get_miner_by_pubkey_str(pubkey.to_string())
-            .await;
-
-        let miner;
-        match db_miner {
-            Ok(db_miner) => {
-                miner = db_miner;
-            }
-            Err(AppDatabaseError::QueryFailed) => {
-                return Err((
-                    StatusCode::UNAUTHORIZED,
-                    "pubkey is not authorized to mine. please sign up.",
-                ));
-            }
-            Err(AppDatabaseError::InteractionFailed) => {
-                return Err((
-                    StatusCode::UNAUTHORIZED,
-                    "pubkey is not authorized to mine. please sign up.",
-                ));
-            }
-            Err(AppDatabaseError::FailedToGetConnectionFromPool) => {
-                error!(target: "server_log", "Failed to get database pool connection.");
-                return Err((StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error"));
-            }
-            Err(_) => {
-                error!(target: "server_log", "DB Error: Catch all.");
-                return Err((StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error"));
-            }
-        }
-
-        if !miner.enabled {
-            return Err((StatusCode::UNAUTHORIZED, "pubkey is not authorized to mine"));
-        }
-
-        if let Ok(signature) = Signature::from_str(signed_msg) {
-            let ts_msg = msg_timestamp.to_le_bytes();
-
-            if signature.verify(&user_pubkey.to_bytes(), &ts_msg) {
-                info!(target: "server_log", "Client: {addr} connected with pubkey {pubkey}.");
-                return Ok(ws.on_upgrade(move |socket| {
-                    handle_socket(
-                        socket,
-                        addr,
-                        user_pubkey,
-                        miner.id,
-                        ClientVersion::V1,
-                        app_state,
-                        client_channel,
-                    )
-                }));
-            } else {
-                return Err((StatusCode::UNAUTHORIZED, "Sig verification failed"));
-            }
-        } else {
-            return Err((StatusCode::UNAUTHORIZED, "Invalid signature"));
-        }
-    } else {
-        return Err((StatusCode::UNAUTHORIZED, "Invalid pubkey"));
-    }
 }
 
 async fn ws_handler_v2(

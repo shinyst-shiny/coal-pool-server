@@ -21,6 +21,7 @@ use steel::AccountDeserialize;
 
 use self::models::*;
 use crate::coal_utils::{proof_pubkey, Resource};
+use crate::ore_utils::get_ore_mint;
 use crate::routes::get_guild_addresses;
 use app_database::{AppDatabase, AppDatabaseError};
 use app_rr_database::AppRRDatabase;
@@ -49,6 +50,7 @@ use ore_api::prelude::Proof;
 use ore_utils::get_ore_register_ix;
 use routes::{get_challenges, get_latest_mine_txn, get_pool_balance};
 use serde::{Deserialize, Serialize};
+use solana_account_decoder::StringDecimals;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
     commitment_config::CommitmentConfig, compute_budget::ComputeBudgetInstruction, native_token::{lamports_to_sol, LAMPORTS_PER_SOL}, pubkey::Pubkey, signature::{read_keypair_file, Keypair, Signature}, signer::Signer, transaction::Transaction,
@@ -146,7 +148,7 @@ pub struct MessageInternalMineSuccess {
     submissions: HashMap<Pubkey, InternalMessageSubmission>,
     guild_total_stake: u64,
     guild_multiplier: f64,
-    tool_multiplier: u64,
+    tool_multiplier: f64,
 }
 
 pub struct LastPong {
@@ -1030,6 +1032,12 @@ struct PubkeyParam {
     pubkey: String,
 }
 
+#[derive(Deserialize, Serialize)]
+struct MinerRewards {
+    coal: f64,
+    ore: f64,
+}
+
 async fn get_miner_rewards(
     query_params: Query<PubkeyParam>,
     Extension(app_rr_database): Extension<Arc<AppRRDatabase>>,
@@ -1041,27 +1049,23 @@ async fn get_miner_rewards(
 
         match res {
             Ok(rewards) => {
-                let decimal_bal =
+                let decimal_bal_coal =
                     rewards.balance_coal as f64 / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
-                let response = format!("{}", decimal_bal);
-                return Response::builder()
-                    .status(StatusCode::OK)
-                    .body(response)
-                    .unwrap();
+                let decimal_bal_ore =
+                    rewards.balance_ore as f64 / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
+                let response = MinerRewards {
+                    ore: decimal_bal_ore,
+                    coal: decimal_bal_coal,
+                };
+                return Ok(Json(response));
             }
             Err(_) => {
                 error!(target: "server_log", "get_miner_rewards: failed to get rewards balance from db for {}", user_pubkey.to_string());
-                return Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body("Failed to get balance".to_string())
-                    .unwrap();
+                return Err("Failed to get balance".to_string());
             }
         }
     } else {
-        return Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body("Invalid public key".to_string())
-            .unwrap();
+        return Err("Invalid public key".to_string());
     }
 }
 
@@ -1137,31 +1141,34 @@ async fn get_miner_last_claim(
     }
 }
 
+#[derive(Deserialize, Serialize)]
+struct MinerBalance {
+    coal: String,
+    ore: String,
+}
+
 async fn get_miner_balance(
     query_params: Query<PubkeyParam>,
     Extension(rpc_client): Extension<Arc<RpcClient>>,
 ) -> impl IntoResponse {
     if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
-        let miner_token_account = get_associated_token_address(&user_pubkey, &get_coal_mint());
-        if let Ok(response) = rpc_client
-            .get_token_account_balance(&miner_token_account)
-            .await
+        let miner_token_account_coal = get_associated_token_address(&user_pubkey, &get_coal_mint());
+        let miner_token_account_ore = get_associated_token_address(&user_pubkey, &get_ore_mint());
+        if let (Ok(response_coal), Ok(response_ore)) = (
+            rpc_client.get_token_account_balance(&miner_token_account_coal).await,
+            rpc_client.get_token_account_balance(&miner_token_account_ore).await,
+        )
         {
-            return Response::builder()
-                .status(StatusCode::OK)
-                .body(response.ui_amount_string)
-                .unwrap();
+            let resp = MinerBalance {
+                coal: response_coal.ui_amount_string,
+                ore: response_ore.ui_amount_string,
+            };
+            return Ok(Json(resp));
         } else {
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("Failed to get token account balance".to_string())
-                .unwrap();
+            return Err("Failed to get token account balance".to_string());
         }
     } else {
-        return Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body("Invalid public key".to_string())
-            .unwrap();
+        return Err("Invalid public key".to_string());
     }
 }
 
@@ -2240,7 +2247,7 @@ pub async fn get_guild_check_member(
                     .unwrap();
             }
             Ok(data) => {
-                if let Ok(member) = bytemuck::try_from_bytes::<Member>(&data[8..]) {
+                if let Ok(member) = Member::try_from_bytes(&data) {
                     if member.guild.to_string().is_empty() || member.guild.to_string().eq("11111111111111111111111111111111") {
                         info!(target: "server_log", "Pubkey: {} without any guild. We can continue with the flow without any extra steps", user_pubkey.to_string());
                         return Response::builder()

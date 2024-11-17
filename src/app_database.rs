@@ -68,7 +68,7 @@ impl AppDatabase {
     ) -> Result<models::Reward, AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn.interact(move |conn: &mut MysqlConnection| {
-                diesel::sql_query("SELECT r.balance, r.miner_id FROM miners m JOIN rewards r ON m.id = r.miner_id WHERE m.pubkey = ?")
+                diesel::sql_query("SELECT r.balance_coal, r.balance_ore, r.miner_id FROM miners m JOIN rewards r ON m.id = r.miner_id WHERE m.pubkey = ?")
                     .bind::<Text, _>(miner_pubkey)
                     .get_result::<models::Reward>(conn)
             }).await;
@@ -102,8 +102,10 @@ impl AppDatabase {
         tracing::info!(target: "server_log", "{} - Getting db pool connection.", id);
         if let Ok(db_conn) = self.connection_pool.get().await {
             tracing::info!(target: "server_log", "{} - Got db pool connection in {}ms.", id, instant.elapsed().as_millis());
-            let res = db_conn
+            let rewards_1 = rewards.clone();
+            let query_1 = db_conn
                 .interact(move |conn: &mut MysqlConnection| {
+                    let rewards = rewards_1.clone();
                     let query = diesel::sql_query(
                         "UPDATE rewards SET balance_coal = balance_coal + CASE miner_id ".to_string() +
                             &rewards
@@ -117,8 +119,18 @@ impl AppDatabase {
                                 .map(|r| r.miner_id.to_string())
                                 .collect::<Vec<_>>()
                                 .join(",") +
-                            ");\n" +
-                            "UPDATE rewards SET balance_ore = balance_ore + CASE miner_id " +
+                            ");\n"
+                    );
+                    query.execute(conn)
+                })
+                .await;
+
+            let rewards_2 = rewards.clone();
+            let query_2 = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    let rewards = rewards_2.clone();
+                    let query = diesel::sql_query(
+                        "UPDATE rewards SET balance_ore = balance_ore + CASE miner_id ".to_string() +
                             &rewards
                                 .iter()
                                 .map(|r| format!("WHEN {} THEN {}", r.miner_id, r.balance_ore))
@@ -135,6 +147,8 @@ impl AppDatabase {
                     query.execute(conn)
                 })
                 .await;
+
+            let res = query_1.and(query_2);
 
             match res {
                 Ok(interaction) => match interaction {
@@ -392,7 +406,8 @@ impl AppDatabase {
             match res {
                 Ok(interaction) => match interaction {
                     Ok(query) => {
-                        if query != 1 {
+                        info!(target: "server_log", "Query: {}", query);
+                        if query != 2 {
                             return Err(AppDatabaseError::FailedToUpdateRow);
                         }
                         info!(target: "server_log", "Successfully updated pool rewards");

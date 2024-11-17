@@ -57,7 +57,7 @@ pub async fn get_guild_addresses(Extension(app_config): Extension<Arc<Config>>,
     let guild_data = rpc_client.get_account_data(&Pubkey::from_str(&guild_address).unwrap()).await;
 
     if let Ok(guild_data) = guild_data {
-        let guild = bytemuck::try_from_bytes::<Guild>(&guild_data[8..]).unwrap();
+        let guild = Guild::try_from_bytes(&guild_data).unwrap();
 
         return Ok(Json(PoolGuild {
             authority: guild.authority.to_string(),

@@ -145,6 +145,7 @@ pub async fn pool_mine_success_system(
                                         percentage_ore,
                                         msg.guild_total_stake,
                                         msg.guild_multiplier,
+                                        msg.tool_multiplier,
                                     );
                                     tokio::spawn(async move {
                                         if let Ok(_) = socket_sender

@@ -40,15 +40,15 @@ pub struct MineEventWithBoosts {
 
 
 pub fn deserialize_guild_config(data: &[u8]) -> coal_guilds_api::state::Config {
-    *bytemuck::try_from_bytes::<coal_guilds_api::state::Config>(&data[8..]).unwrap()
+    *coal_guilds_api::state::Config::try_from_bytes(&data).unwrap()
 }
 
 pub fn deserialize_guild_member(data: &[u8]) -> coal_guilds_api::state::Member {
-    *bytemuck::try_from_bytes::<coal_guilds_api::state::Member>(&data[8..]).unwrap()
+    *coal_guilds_api::state::Member::try_from_bytes(&data).unwrap()
 }
 
 pub fn deserialize_guild(data: &[u8]) -> coal_guilds_api::state::Guild {
-    *bytemuck::try_from_bytes::<coal_guilds_api::state::Guild>(&data[8..]).unwrap()
+    *coal_guilds_api::state::Guild::try_from_bytes(&data).unwrap()
 }
 
 pub fn get_auth_ix(signer: Pubkey) -> Instruction {
@@ -276,7 +276,7 @@ pub fn get_cutoff(proof: Proof, buffer_time: u64) -> i64 {
         .as_secs() as i64;
     proof
         .last_hash_at
-        .saturating_add(62)
+        .saturating_add(60)
         .saturating_sub(buffer_time as i64)
         .saturating_sub(now)
 }
@@ -628,4 +628,16 @@ pub struct Tip {
     pub landed_tips_95th_percentile: f64,
     pub landed_tips_99th_percentile: f64,
     pub ema_landed_tips_50th_percentile: f64,
+}
+
+pub fn calculate_tool_multiplier(tool: &Option<ToolType>) -> f64 {
+    match tool {
+        Some(tool) => {
+            if tool.durability().gt(&0) {
+                return 1.0 + (tool.multiplier() as f64 / 100.0);
+            }
+            0.0
+        }
+        None => 0.0,
+    }
 }

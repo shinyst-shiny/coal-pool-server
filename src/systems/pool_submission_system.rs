@@ -31,7 +31,7 @@ use tokio::{
 };
 use tracing::info;
 
-use crate::coal_utils::{amount_u64_to_string, calculate_guild_multiplier, deserialize_config, deserialize_guild, deserialize_guild_config, deserialize_guild_member, deserialize_tool, get_config_pubkey, get_tool_pubkey, Resource, ToolType};
+use crate::coal_utils::{amount_u64_to_string, calculate_guild_multiplier, calculate_tool_multiplier, deserialize_config, deserialize_guild, deserialize_guild_config, deserialize_guild_member, deserialize_tool, get_config_pubkey, get_tool_pubkey, Resource, ToolType};
 use crate::ore_utils::{get_ore_auth_ix, get_ore_balance, get_ore_mine_ix, get_proof_and_config_with_busses as get_proof_and_config_with_busses_ore, get_reset_ix as get_reset_ix_ore, ORE_TOKEN_DECIMALS};
 use crate::{
     app_database::AppDatabase, coal_utils::{
@@ -61,7 +61,7 @@ pub async fn pool_submission_system(
         let old_proof = lock.clone();
         drop(lock);
 
-        let cutoff = get_cutoff(old_proof, 0);
+        let cutoff = get_cutoff(old_proof, 3);
         if cutoff <= 0 {
             // process solutions
             let reader = app_epoch_hashes.read().await;
@@ -104,6 +104,8 @@ pub async fn pool_submission_system(
                         {
                             loaded_config_coal = Some(config);
 
+                            info!(target: "server_log", "Got latest proof COAL: {:?}", p);
+
                             info!(target: "server_log", "Got latest config COAL: {:?}", loaded_config_coal);
 
                             info!(target: "server_log", "Latest Challenge: {}", BASE64_STANDARD.encode(p.challenge));
@@ -122,6 +124,8 @@ pub async fn pool_submission_system(
                             get_proof_and_config_with_busses_ore(&rpc_client, signer.pubkey()).await
                         {
                             loaded_config_ore = Some(config);
+
+                            info!(target: "server_log", "Got latest proof ORE: {:?}", p);
 
                             info!(target: "server_log", "Got latest config ORE: {:?}", loaded_config_ore);
                         }
@@ -144,20 +148,6 @@ pub async fn pool_submission_system(
                                 cu_limit += 50_000;
                                 prio_fee += 50_000;
                                 info!(target: "server_log", "Including reset tx COAL.");
-                                true
-                            } else {
-                                false
-                            }
-                        } else {
-                            false
-                        };
-                        let should_add_reset_ix_ore = if let Some(config) = loaded_config_ore {
-                            let time_until_reset = (config.last_reset_at + 300) - now as i64;
-                            info!(target: "server_log", "time_until_reset ORE {}",time_until_reset);
-                            if time_until_reset <= 5 {
-                                cu_limit += 50_000;
-                                prio_fee += 50_000;
-                                info!(target: "server_log", "Including reset tx ORE.");
                                 true
                             } else {
                                 false
@@ -212,11 +202,6 @@ pub async fn pool_submission_system(
 
                         if should_add_reset_ix_coal {
                             let reset_ix = get_reset_ix_coal(signer.pubkey());
-                            ixs.push(reset_ix);
-                        }
-
-                        if should_add_reset_ix_ore {
-                            let reset_ix = get_reset_ix_ore(signer.pubkey());
                             ixs.push(reset_ix);
                         }
 
@@ -586,7 +571,7 @@ pub async fn pool_submission_system(
                             });
 
                             let result: Result<Signature, String> = loop {
-                                if expired_timer.elapsed().as_secs() >= 120 {
+                                if expired_timer.elapsed().as_secs() >= 200 {
                                     break Err("Transaction Expired".to_string());
                                 }
                                 let results = rpc_client.get_signature_statuses(&[signature]).await;
@@ -793,16 +778,9 @@ pub async fn pool_submission_system(
                                                             } else {
                                                                 1.0f64
                                                             };
-                                                            let tool_multiplier = if let Some(toolInfo) = tool {
-                                                                if toolInfo.multiplier > 0 {
-                                                                    toolInfo.multiplier().min(1.0u64)
-                                                                } else {
-                                                                    1.0u64
-                                                                }
-                                                            } else {
-                                                                1.0f64
-                                                            };
+                                                            let tool_multiplier = calculate_tool_multiplier(&tool);
 
+                                                            info!(target: "server_log", "tool_multiplier: {}", tool_multiplier);
 
                                                             info!(target: "server_log", "Sending internal mine success for challenge: {}", BASE64_STANDARD.encode(old_proof.challenge));
                                                             let _ = mine_success_sender.send(

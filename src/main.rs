@@ -1154,19 +1154,25 @@ async fn get_miner_balance(
     if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
         let miner_token_account_coal = get_associated_token_address(&user_pubkey, &get_coal_mint());
         let miner_token_account_ore = get_associated_token_address(&user_pubkey, &get_ore_mint());
-        if let (Ok(response_coal), Ok(response_ore)) = (
-            rpc_client.get_token_account_balance(&miner_token_account_coal).await,
-            rpc_client.get_token_account_balance(&miner_token_account_ore).await,
-        )
+
+        let mut resp = MinerBalance {
+            ore: "0".to_string(),
+            coal: "0".to_string(),
+        };
+
+        if let Ok(response_coal) =
+            rpc_client.get_token_account_balance(&miner_token_account_coal).await
         {
-            let resp = MinerBalance {
-                coal: response_coal.ui_amount_string,
-                ore: response_ore.ui_amount_string,
-            };
-            return Ok(Json(resp));
-        } else {
-            return Err("Failed to get token account balance".to_string());
+            resp.coal = response_coal.ui_amount_string;
         }
+
+        if let Ok(response_ore) =
+            rpc_client.get_token_account_balance(&miner_token_account_ore).await
+        {
+            resp.ore = response_ore.ui_amount_string;
+        }
+
+        return Ok(Json(resp));
     } else {
         return Err("Invalid public key".to_string());
     }

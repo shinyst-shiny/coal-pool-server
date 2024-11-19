@@ -15,6 +15,7 @@ use tokio::{
 ;
 use tracing::info;
 
+use crate::message::{CoalDetails, OreBoost, OreDetails, RewardDetails};
 use crate::ore_utils::ORE_TOKEN_DECIMALS;
 use crate::{
     app_database::AppDatabase, coal_utils::
@@ -127,32 +128,71 @@ pub async fn pool_mine_success_system(
 
                             match client_connection.client_version {
                                 ClientVersion::V2 => {
-                                    let server_message = ServerMessagePoolSubmissionResult::new(
-                                        msg.difficulty,
-                                        msg.total_balance_coal,
-                                        msg.total_balance_ore,
-                                        pool_rewards_dec_coal,
-                                        pool_rewards_dec_ore,
-                                        top_stake_coal,
-                                        msg.multiplier,
-                                        len as u32,
-                                        msg.challenge,
-                                        msg.best_nonce,
-                                        msg_submission.supplied_diff as u32,
-                                        earned_rewards_dec_coal,
-                                        earned_rewards_dec_ore,
-                                        percentage_coal,
-                                        percentage_ore,
-                                        msg.guild_total_stake,
-                                        msg.guild_multiplier,
-                                        msg.tool_multiplier,
-                                    );
+                                    let coal_details = CoalDetails {
+                                        reward_details: RewardDetails {
+                                            total_balance: msg.total_balance_coal,
+                                            miner_earned_rewards: earned_rewards_dec_coal,
+                                            miner_percentage: percentage_coal,
+                                            total_rewards: pool_rewards_dec_coal,
+                                            miner_supplied_difficulty: msg_submission.supplied_diff as u32,
+                                        },
+                                        tool_multiplier: msg.tool_multiplier,
+                                        guild_total_stake: msg.guild_total_stake,
+                                        guild_multiplier: msg.guild_multiplier,
+                                        top_stake: top_stake_coal,
+                                        stake_multiplier: msg.multiplier,
+                                    };
+
+                                    let ore_details = OreDetails {
+                                        reward_details: RewardDetails {
+                                            total_balance: msg.total_balance_ore,
+                                            miner_earned_rewards: earned_rewards_dec_ore,
+                                            miner_percentage: percentage_ore,
+                                            total_rewards: pool_rewards_dec_ore,
+                                            miner_supplied_difficulty: msg_submission.supplied_diff as u32,
+                                        },
+                                        top_stake: 0.0,
+                                        stake_multiplier: 0.0,
+                                        ore_boosts: Vec::from([
+                                            OreBoost {
+                                                stake_multiplier: 0.0,
+                                                top_stake: 0.0,
+                                                total_stake: 0.0,
+                                                name: "".to_string(),
+                                                mint_address: [0; 32],
+                                            },
+                                            OreBoost {
+                                                stake_multiplier: 0.0,
+                                                top_stake: 0.0,
+                                                total_stake: 0.0,
+                                                name: "".to_string(),
+                                                mint_address: [0; 32],
+                                            },
+                                            OreBoost {
+                                                stake_multiplier: 0.0,
+                                                top_stake: 0.0,
+                                                total_stake: 0.0,
+                                                name: "".to_string(),
+                                                mint_address: [0; 32],
+                                            }
+                                        ]),
+                                    };
+
+                                    let server_message = ServerMessagePoolSubmissionResult {
+                                        difficulty: msg.difficulty,
+                                        challenge: msg.challenge,
+                                        best_nonce: msg.best_nonce,
+                                        active_miners: len as u32,
+                                        coal_details,
+                                        ore_details,
+
+                                    };
                                     tokio::spawn(async move {
                                         if let Ok(_) = socket_sender
                                             .lock()
                                             .await
                                             .send(Message::Binary(
-                                                server_message.to_message_binary(),
+                                                server_message.to_binary(),
                                             ))
                                             .await
                                         {} else {

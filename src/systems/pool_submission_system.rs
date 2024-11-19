@@ -655,7 +655,7 @@ pub async fn pool_submission_system(
                                                     .return_data;
 
 
-                                                let guild_total_stake = guild.unwrap().total_stake;
+                                                let guild_total_stake = guild.unwrap().total_stake as f64;
                                                 let guild_multiplier = calculate_guild_multiplier(guild_config.unwrap().total_stake, guild_config.unwrap().total_multiplier, guild.unwrap().total_stake);
                                                 let guild_last_stake_at = guild.unwrap().last_stake_at;
 
@@ -677,7 +677,7 @@ pub async fn pool_submission_system(
                                                             let rewards_ore = full_rewards_ore - commissions_ore;
                                                             info!(target: "server_log", "Miners Rewards COAL: {}", rewards_coal);
                                                             info!(target: "server_log", "Commission COAL: {}", commissions_coal);
-                                                            info!(target: "server_log", "Guild total stake: {}", amount_u64_to_string(guild_total_stake));
+                                                            info!(target: "server_log", "Guild total stake: {}", guild_total_stake);
                                                             info!(target: "server_log", "Guild multiplier: {}", guild_multiplier);
                                                             info!(target: "server_log", "Guild last stake at: {}", guild_last_stake_at);
                                                             info!(target: "server_log", "Miners Rewards ORE: {}", rewards_ore);

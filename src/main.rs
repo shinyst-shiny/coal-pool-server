@@ -75,8 +75,9 @@ mod routes;
 mod schema;
 mod systems;
 
-const MIN_DIFF: u32 = 8;
-const MIN_HASHPOWER: u64 = 5;
+const MIN_DIFF: u32 = 10;
+const MIN_HASHPOWER: u64 = 20; // difficulty 10
+const MAX_CALCULATED_HASHPOWER: u64 = 81_920; // difficulty 22
 
 #[derive(Clone)]
 enum ClientVersion {

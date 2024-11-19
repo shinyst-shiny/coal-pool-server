@@ -16,10 +16,7 @@ use tokio::{
     time::Instant,
 };
 
-use crate::{
-    AppState, ClientMessage, EpochHashes, InternalMessageSubmission, LastPong, SubmissionWindow,
-    MIN_DIFF, MIN_HASHPOWER,
-};
+use crate::{AppState, ClientMessage, EpochHashes, InternalMessageSubmission, LastPong, SubmissionWindow, MAX_CALCULATED_HASHPOWER, MIN_DIFF, MIN_HASHPOWER};
 
 pub async fn client_message_handler_system(
     mut receiver_channel: UnboundedReceiver<ClientMessage>,
@@ -133,8 +130,8 @@ pub async fn client_message_handler_system(
                             // calculate rewards
                             let real_hashpower = MIN_HASHPOWER * 2u64.pow(diff - MIN_DIFF);
                             let mut hashpower = real_hashpower.clone();
-                            if hashpower > 81_920 {
-                                hashpower = 81_920;
+                            if hashpower > MAX_CALCULATED_HASHPOWER {
+                                hashpower = MAX_CALCULATED_HASHPOWER;
                             }
                             {
                                 let reader = epoch_hashes.read().await;

@@ -183,7 +183,8 @@ pub async fn client_message_handler_system(
                                 }
                             }
                         } else {
-                            tracing::error!(target: "server_log", "Diff to low, skipping");
+                            tracing::error!(target: "server_log", "Diff to low, skipping submission");
+                            tracing::error!(target: "server_log", "{} - {} found diff: {}", submission_uuid, pubkey_str, diff);
                         }
                     } else {
                         tracing::error!(target: "server_log", "{} returned an invalid solution!", pubkey);

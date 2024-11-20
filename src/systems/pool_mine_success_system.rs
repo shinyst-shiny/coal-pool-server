@@ -187,12 +187,14 @@ pub async fn pool_mine_success_system(
                                         ore_details,
 
                                     };
+                                    let mut message = vec![1u8];
+                                    message.extend_from_slice(&server_message.to_binary());
                                     tokio::spawn(async move {
                                         if let Ok(_) = socket_sender
                                             .lock()
                                             .await
                                             .send(Message::Binary(
-                                                server_message.to_binary(),
+                                                message
                                             ))
                                             .await
                                         {} else {

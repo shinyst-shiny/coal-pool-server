@@ -11,9 +11,11 @@ use steel::AccountDeserialize;
 use tracing::error;
 
 use crate::coal_utils::Resource;
-use crate::{app_rr_database, coal_utils::{get_coal_mint, get_proof}, ChallengeWithDifficulty, Config, PoolGuild, Txn};
+use crate::ore_utils::get_proof as get_proof_ore;
+use crate::{app_rr_database, coal_utils::{get_coal_mint, get_proof as get_proof_coal}, ChallengeWithDifficulty, Config, PoolGuild, Txn};
 use coal_guilds_api::prelude::Member;
 use coal_guilds_api::state::Guild;
+use serde::{Deserialize, Serialize};
 use std::{str::FromStr, sync::Arc};
 
 pub async fn get_challenges(
@@ -87,50 +89,31 @@ pub async fn get_pool(
     }
 }
 
+#[derive(Serialize)]
+struct BalanceData {
+    coal_balance: u64,
+    ore_balance: u64,
+}
 pub async fn get_pool_staked(
     Extension(app_config): Extension<Arc<Config>>,
     Extension(rpc_client): Extension<Arc<RpcClient>>,
 ) -> impl IntoResponse {
     if app_config.stats_enabled {
         let pubkey = Pubkey::from_str("6zbGwDbfwVS3hF8r7Yei8HuwSWm2yb541jUtmAZKhFDM").unwrap();
-        let proof = if let Ok(loaded_proof) = get_proof(&rpc_client, pubkey).await {
+        let proof_coal = if let Ok(loaded_proof) = get_proof_coal(&rpc_client, pubkey).await {
             loaded_proof
         } else {
             error!("get_pool_staked: Failed to load proof.");
             return Err("Stats not enabled for this server.".to_string());
         };
 
-        return Ok(Json(proof.balance));
+        let proof_ore = get_proof_ore(&rpc_client, pubkey).await;
+
+        return Ok(Json(BalanceData {
+            coal_balance: proof_coal.balance,
+            ore_balance: proof_ore.balance,
+        }));
     } else {
         return Err("Stats not enabled for this server.".to_string());
-    }
-}
-
-pub async fn get_pool_balance(
-    Extension(app_config): Extension<Arc<Config>>,
-    Extension(rpc_client): Extension<Arc<RpcClient>>,
-) -> impl IntoResponse {
-    if app_config.stats_enabled {
-        let pubkey = Pubkey::from_str("6zbGwDbfwVS3hF8r7Yei8HuwSWm2yb541jUtmAZKhFDM").unwrap();
-        let miner_token_account = get_associated_token_address(&pubkey, &get_coal_mint());
-        if let Ok(response) = rpc_client
-            .get_token_account_balance(&miner_token_account)
-            .await
-        {
-            return Response::builder()
-                .status(StatusCode::OK)
-                .body(response.ui_amount_string)
-                .unwrap();
-        } else {
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("Failed to get token account balance".to_string())
-                .unwrap();
-        }
-    } else {
-        return Response::builder()
-            .status(StatusCode::SERVICE_UNAVAILABLE)
-            .body("Stats not available on this server.".to_string())
-            .unwrap();
     }
 }

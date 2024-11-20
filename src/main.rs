@@ -48,7 +48,7 @@ use drillx::Solution;
 use futures::{stream::SplitSink, SinkExt, StreamExt};
 use ore_api::prelude::Proof;
 use ore_utils::get_ore_register_ix;
-use routes::{get_challenges, get_latest_mine_txn, get_pool_balance};
+use routes::{get_challenges, get_latest_mine_txn};
 use serde::{Deserialize, Serialize};
 use solana_account_decoder::StringDecimals;
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -813,7 +813,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/challenges", get(get_challenges))
         .route("/pool", get(routes::get_pool))
         .route("/pool/staked", get(routes::get_pool_staked))
-        .route("/pool/balance", get(get_pool_balance))
         .route("/txns/latest-mine", get(get_latest_mine_txn))
         .route("/guild/addresses", get(get_guild_addresses))
         .route("/guild/check-member", get(get_guild_check_member))

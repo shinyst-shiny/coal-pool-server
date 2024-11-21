@@ -1143,8 +1143,8 @@ async fn get_miner_last_claim(
 
 #[derive(Deserialize, Serialize)]
 struct MinerBalance {
-    coal: String,
-    ore: String,
+    coal: f64,
+    ore: f64,
 }
 
 async fn get_miner_balance(
@@ -1156,20 +1156,20 @@ async fn get_miner_balance(
         let miner_token_account_ore = get_associated_token_address(&user_pubkey, &get_ore_mint());
 
         let mut resp = MinerBalance {
-            ore: "0".to_string(),
-            coal: "0".to_string(),
+            ore: 0.0,
+            coal: 0.0,
         };
 
         if let Ok(response_coal) =
             rpc_client.get_token_account_balance(&miner_token_account_coal).await
         {
-            resp.coal = response_coal.ui_amount_string;
+            resp.coal = response_coal.ui_amount.unwrap();
         }
 
         if let Ok(response_ore) =
             rpc_client.get_token_account_balance(&miner_token_account_ore).await
         {
-            resp.ore = response_ore.ui_amount_string;
+            resp.ore = response_ore.ui_amount.unwrap();
         }
 
         return Ok(Json(resp));
@@ -1340,14 +1340,9 @@ async fn post_claim_v2(
 
                 let amount_coal = query_params.amount_coal;
 
-                // 1
-                if amount_coal < 100_000_000_000 {
-                    return Err((StatusCode::BAD_REQUEST, "claim minimum is 1 for COAL".to_string()));
-                }
-
-                // 0.05
-                if amount_ore < 5_000_000_000 {
-                    return Err((StatusCode::BAD_REQUEST, "claim minimum is 0.05 for ORE".to_string()));
+                // 1 COAL 0.05 ORE
+                if amount_coal < 100_000_000_000 && amount_ore < 5_000_000_000 {
+                    return Err((StatusCode::BAD_REQUEST, "claim minimum is 1 COAL or 0.05 ORE".to_string()));
                 }
 
                 if let Ok(miner_rewards) = app_database

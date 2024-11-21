@@ -369,7 +369,7 @@ pub async fn pool_submission_system(
                                 let app_client_nonce_ranges = app_app_client_nonce_ranges;
                                 let app_last_challenge = app_app_last_challenge;
                                 tokio::time::sleep(Duration::from_millis(500)).await;
-                                loop {
+                                for u in 0..20 {
                                     if let Ok(_) = stop_reciever.try_recv() {
                                         // Transaction has succeeded or expired
                                         break;
@@ -561,7 +561,7 @@ pub async fn pool_submission_system(
                             });
 
                             let result: Result<Signature, String> = loop {
-                                if expired_timer.elapsed().as_secs() >= 200 {
+                                if expired_timer.elapsed().as_secs() >= 120 {
                                     break Err("Transaction Expired".to_string());
                                 }
                                 let results = rpc_client.get_signature_statuses(&[signature]).await;
@@ -624,7 +624,7 @@ pub async fn pool_submission_system(
                                         let mine_success_sender = app_mine_success_sender;
                                         let app_proof = app_app_proof;
                                         let app_config = app_app_config;
-                                        loop {
+                                        for t in 0..20 {
                                             if let Ok(txn_result) = rpc_client
                                                 .get_transaction_with_config(
                                                     &sig,
@@ -799,12 +799,12 @@ pub async fn pool_submission_system(
                                                         }
                                                     }
                                                     solana_transaction_status::option_serializer::OptionSerializer::None => {
-                                                        tracing::error!(target: "server_log", "RPC gave no transaction metadata....");
+                                                        tracing::error!(target: "server_log", "RPC gave no transaction metadata for {}....", sig);
                                                         tokio::time::sleep(Duration::from_millis(2000)).await;
                                                         continue;
                                                     }
                                                     solana_transaction_status::option_serializer::OptionSerializer::Skip => {
-                                                        tracing::error!(target: "server_log", "RPC gave transaction metadata should skip...");
+                                                        tracing::error!(target: "server_log", "RPC gave transaction metadata should skip for {}...",sig);
                                                         tokio::time::sleep(Duration::from_millis(2000)).await;
                                                         continue;
                                                     }
@@ -818,7 +818,7 @@ pub async fn pool_submission_system(
                                         }
                                     });
 
-                                    loop {
+                                    for k in 0..20 {
                                         info!(target: "server_log", "Checking for proof hash update.");
                                         let lock = app_proof.lock().await;
                                         let latest_proof = lock.clone();

@@ -185,16 +185,21 @@ pub async fn pool_submission_system(
                             info!(target: "server_log", "Jito tip: {} SOL", lamports_to_sol(jito_tip));
                         }
 
+                        info!(target: "server_log", "Adding noop ix ORE");
+
                         let ore_noop_ix = get_ore_auth_ix(signer.pubkey());
                         let coal_apinoop_ix = get_auth_ix(signer.pubkey());
                         ixs.push(ore_noop_ix.clone());
                         ixs.push(coal_apinoop_ix.clone());
+
+                        info!(target: "server_log", "Adding reset ix COAL");
 
                         if should_add_reset_ix_coal {
                             let reset_ix = get_reset_ix_coal(signer.pubkey());
                             ixs.push(reset_ix);
                         }
 
+                        info!(target: "server_log", "getting config");
                         // Fetch coal_proof
                         let config_address = get_config_pubkey(&Resource::Coal);
                         let tool_address = get_tool_pubkey(signer.pubkey(), &Resource::Coal);
@@ -209,6 +214,8 @@ pub async fn pool_submission_system(
                         let mut guild_config: Option<coal_guilds_api::state::Config> = None;
                         let mut guild: Option<coal_guilds_api::state::Guild> = None;
                         let mut guild_address: Option<Pubkey> = None;
+
+                        info!(target: "server_log", "setting up accounts");
 
                         if accounts.len() > 1 {
                             if accounts[1].as_ref().is_some() {
@@ -227,6 +234,8 @@ pub async fn pool_submission_system(
                                 guild = Some(deserialize_guild(&accounts[4].as_ref().unwrap().data));
                             }
                         }
+
+                        info!(target: "server_log", "getting guild info");
 
                         if member.is_some() && member.unwrap().guild.ne(&coal_guilds_api::ID) && guild_address.is_none() {
                             let guild_data = rpc_client.get_account_data(&member.unwrap().guild).await.unwrap();

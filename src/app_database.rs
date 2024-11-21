@@ -406,7 +406,6 @@ impl AppDatabase {
             match res {
                 Ok(interaction) => match interaction {
                     Ok(query) => {
-                        info!(target: "server_log", "Query: {}", query);
                         if query != 2 {
                             return Err(AppDatabaseError::FailedToUpdateRow);
                         }

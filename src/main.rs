@@ -239,13 +239,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             metadata.target() == "server_log"
         }));
 
-    /*let submission_logs = tracing_appender::rolling::daily("./logs", "coal-pool-submissions.log");
+    let submission_logs = tracing_appender::rolling::daily("./logs", "coal-pool-submissions.log");
     let (submission_logs, _guard) = tracing_appender::non_blocking(submission_logs);
     let submission_log_layer = tracing_subscriber::fmt::layer()
         .with_writer(submission_logs)
         .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
             metadata.target() == "submission_log"
-        }));*/
+        }));
 
     // Uncomment if you need console logging
     let console_log_layer = tracing_subscriber::fmt::layer()
@@ -256,7 +256,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing_subscriber::registry()
         .with(server_log_layer)
-        //.with(submission_log_layer)
+        .with(submission_log_layer)
         .with(console_log_layer)
         .init();
 

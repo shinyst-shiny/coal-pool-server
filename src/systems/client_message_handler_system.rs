@@ -152,7 +152,7 @@ pub async fn client_message_handler_system(
                                             },
                                         );
                                         if diff > epoch_hashes.best_hash.difficulty {
-                                            tracing::info!(target: "server_log", "{} - New best diff: {}", submission_uuid, diff);
+                                            // tracing::info!(target: "server_log", "{} - New best diff: {}", submission_uuid, diff);
                                             tracing::info!(target: "submission_log", "{} - New best diff: {}", submission_uuid, diff);
                                             epoch_hashes.best_hash.difficulty = diff;
                                             epoch_hashes.best_hash.solution = Some(solution);
@@ -173,7 +173,7 @@ pub async fn client_message_handler_system(
                                         },
                                     );
                                     if diff > epoch_hashes.best_hash.difficulty {
-                                        tracing::info!(target: "server_log", "{} - New best diff: {}", submission_uuid, diff);
+                                        // tracing::info!(target: "server_log", "{} - New best diff: {}", submission_uuid, diff);
                                         tracing::info!(target: "submission_log", "{} - New best diff: {}", submission_uuid, diff);
                                         epoch_hashes.best_hash.difficulty = diff;
                                         epoch_hashes.best_hash.solution = Some(solution);
@@ -183,7 +183,7 @@ pub async fn client_message_handler_system(
                                 }
                             }
                         } else {
-                            tracing::error!(target: "server_log", "Diff to low, skipping submission from {}",pubkey_str);
+                            tracing::error!(target: "submission_log", "Diff to low, skipping submission from {}",pubkey_str);
                             // tracing::error!(target: "server_log", "{} - {} found diff: {}", submission_uuid, pubkey_str, diff);
                         }
                     } else {

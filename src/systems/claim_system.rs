@@ -134,7 +134,7 @@ pub async fn claim_system(
             }
             let ix = crate::ore_utils::get_claim_ix(
                 wallet.pubkey(),
-                receiver_token_account_coal,
+                receiver_token_account_ore,
                 claim_amount_ore,
             );
             ixs.push(ix);

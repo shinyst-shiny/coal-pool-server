@@ -39,8 +39,10 @@ pub async fn claim_system(
             let coal_mint = get_coal_mint();
             let ore_mint = get_ore_mint();
             let receiver_pubkey = claim_queue_item.receiver_pubkey;
-            let receiver_token_account_coal = get_associated_token_address(&receiver_pubkey, &coal_mint);
-            let receiver_token_account_ore = get_associated_token_address(&receiver_pubkey, &ore_mint);
+            let receiver_token_account_coal =
+                get_associated_token_address(&receiver_pubkey, &coal_mint);
+            let receiver_token_account_ore =
+                get_associated_token_address(&receiver_pubkey, &ore_mint);
 
             let prio_fee: u32 = 20_000;
 
@@ -116,8 +118,11 @@ pub async fn claim_system(
             if is_creating_ata_coal {
                 claim_amount_coal = amount_coal - 400_000_000_000
             }
-            let ix =
-                crate::coal_utils::get_claim_ix(wallet.pubkey(), receiver_token_account_coal, claim_amount_coal);
+            let ix = crate::coal_utils::get_claim_ix(
+                wallet.pubkey(),
+                receiver_token_account_coal,
+                claim_amount_coal,
+            );
             ixs.push(ix);
 
             let amount_ore = claim_queue_item.amount_ore;
@@ -127,8 +132,11 @@ pub async fn claim_system(
             if is_creating_ata_ore {
                 claim_amount_ore = amount_ore - 2_000_000_000
             }
-            let ix =
-                crate::ore_utils::get_claim_ix(wallet.pubkey(), receiver_token_account_coal, claim_amount_ore);
+            let ix = crate::ore_utils::get_claim_ix(
+                wallet.pubkey(),
+                receiver_token_account_coal,
+                claim_amount_ore,
+            );
             ixs.push(ix);
 
             if let Ok((hash, _slot)) = rpc_client
@@ -147,15 +155,18 @@ pub async fn claim_system(
 
                 let signature;
                 loop {
-                    if let Ok(sig) = rpc_client
+                    match rpc_client
                         .send_transaction_with_config(&tx, rpc_config)
                         .await
                     {
-                        signature = sig;
-                        break;
-                    } else {
-                        error!(target: "server_log", "Failed to send claim transaction. retrying in 2 seconds...");
-                        tokio::time::sleep(Duration::from_millis(2000)).await;
+                        Ok(sig) => {
+                            signature = sig;
+                            break;
+                        }
+                        Err(e) => {
+                            error!(target: "server_log", "Failed to send claim transaction: {:?}. Retrying in 2 seconds...", e);
+                            tokio::time::sleep(Duration::from_millis(2000)).await;
+                        }
                     }
                 }
 
@@ -183,8 +194,10 @@ pub async fn claim_system(
 
                 match result {
                     Ok(sig) => {
-                        let amount_dec_coal = amount_coal as f64 / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
-                        let amount_dec_ore = amount_ore as f64 / 10f64.powf(ORE_TOKEN_DECIMALS as f64);
+                        let amount_dec_coal =
+                            amount_coal as f64 / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
+                        let amount_dec_ore =
+                            amount_ore as f64 / 10f64.powf(ORE_TOKEN_DECIMALS as f64);
                         info!(target: "server_log", "Miner {} successfully claimed {} COAL and {} ORE.\nSig: {}", miner_pubkey.to_string(), amount_dec_coal, amount_dec_ore, sig.to_string());
 
                         // TODO: use transacions, or at least put them into one query
@@ -196,14 +209,19 @@ pub async fn claim_system(
                             .get_pool_by_authority_pubkey(wallet.pubkey().to_string())
                             .await
                             .unwrap();
-                        while let Err(_) =
-                            app_database.decrease_miner_reward(miner.id, amount_coal, amount_ore).await
+                        while let Err(_) = app_database
+                            .decrease_miner_reward(miner.id, amount_coal, amount_ore)
+                            .await
                         {
                             error!(target: "server_log", "Failed to decrease miner rewards! Retrying...");
                             tokio::time::sleep(Duration::from_millis(2000)).await;
                         }
                         while let Err(_) = app_database
-                            .update_pool_claimed(wallet.pubkey().to_string(), amount_coal, amount_ore)
+                            .update_pool_claimed(
+                                wallet.pubkey().to_string(),
+                                amount_coal,
+                                amount_ore,
+                            )
                             .await
                         {
                             error!(target: "server_log", "Failed to increase pool claimed amount! Retrying...");

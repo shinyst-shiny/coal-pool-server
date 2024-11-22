@@ -267,7 +267,6 @@ pub async fn pool_submission_system(
 
                         info!(target: "server_log","Using for the transaction Signer: {:?} tool: {:?}, member: {:?}, guild_address: {:?}", signer.pubkey(), tool_address, guild_member_address, member.unwrap().guild);
 
-                        info!(target: "server_log", "best_solution COAL: {:?}",best_solution);
                         // let coal_mine_ix = get_mine_ix(signer.pubkey(), best_solution, bus, guild_pubkey, signer.pubkey());
                         let coal_mine_ix = get_mine_ix(
                             signer.pubkey(),
@@ -282,15 +281,21 @@ pub async fn pool_submission_system(
                         ixs.push(ore_mine_ix);
                         ixs.push(coal_mine_ix);
 
+                        info!(target: "server_log", "built ixs, getting balances...");
+
+                        let ore_balance_before_tx = get_ore_balance(
+                            app_wallet.clone().miner_wallet.pubkey(),
+                            &rpc_client.clone(),
+                        )
+                        .await;
+
+                        info!(target: "server_log", "got balance, sending to rpc_client");
+
                         if let Ok((hash, _slot)) = rpc_client
                             .get_latest_blockhash_with_commitment(rpc_client.commitment())
                             .await
                         {
-                            let ore_balance_before_tx = get_ore_balance(
-                                app_wallet.clone().miner_wallet.pubkey(),
-                                &rpc_client.clone(),
-                            )
-                            .await;
+                            info!(target: "server_log", "Got block building tx...");
 
                             let mut tx = Transaction::new_with_payer(&ixs, Some(&signer.pubkey()));
 

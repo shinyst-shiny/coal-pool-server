@@ -11,8 +11,12 @@ use steel::AccountDeserialize;
 use tracing::error;
 
 use crate::coal_utils::Resource;
-use crate::ore_utils::get_proof as get_proof_ore;
-use crate::{app_rr_database, coal_utils::{get_coal_mint, get_proof as get_proof_coal}, ChallengeWithDifficulty, Config, PoolGuild, Txn};
+use crate::ore_utils::get_proof_with_authority;
+use crate::{
+    app_rr_database,
+    coal_utils::{get_coal_mint, get_proof as get_proof_coal},
+    ChallengeWithDifficulty, Config, PoolGuild, Txn,
+};
 use coal_guilds_api::prelude::Member;
 use coal_guilds_api::state::Guild;
 use serde::{Deserialize, Serialize};
@@ -50,13 +54,17 @@ pub async fn get_latest_mine_txn(
     }
 }
 
-pub async fn get_guild_addresses(Extension(app_config): Extension<Arc<Config>>,
-                                 Extension(rpc_client): Extension<Arc<RpcClient>>) -> Result<Json<PoolGuild>, String> {
+pub async fn get_guild_addresses(
+    Extension(app_config): Extension<Arc<Config>>,
+    Extension(rpc_client): Extension<Arc<RpcClient>>,
+) -> Result<Json<PoolGuild>, String> {
     if app_config.guild_address.is_empty() {
         return Err("Failed to get guild info".to_string());
     }
     let guild_address = app_config.guild_address.clone();
-    let guild_data = rpc_client.get_account_data(&Pubkey::from_str(&guild_address).unwrap()).await;
+    let guild_data = rpc_client
+        .get_account_data(&Pubkey::from_str(&guild_address).unwrap())
+        .await;
 
     if let Ok(guild_data) = guild_data {
         let guild = Guild::try_from_bytes(&guild_data).unwrap();
@@ -107,7 +115,13 @@ pub async fn get_pool_staked(
             return Err("Stats not enabled for this server.".to_string());
         };
 
-        let proof_ore = get_proof_ore(&rpc_client, pubkey).await;
+        let proof_ore =
+            if let Ok(loaded_proof) = get_proof_with_authority(&rpc_client, pubkey).await {
+                loaded_proof
+            } else {
+                error!("get_pool_staked: Failed to load proof.");
+                return Err("Stats not enabled for this server.".to_string());
+            };
 
         return Ok(Json(BalanceData {
             coal_balance: proof_coal.balance,

@@ -7,12 +7,8 @@ use ore_api::{
 };
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::account::ReadableAccount;
-use solana_sdk::{
-    instruction::Instruction,
-    pubkey::Pubkey,
-};
+use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 use steel::AccountDeserialize;
-
 
 pub const ORE_TOKEN_DECIMALS: u8 = ore_api::consts::TOKEN_DECIMALS;
 
@@ -41,38 +37,30 @@ pub fn ore_proof_pubkey(authority: Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[PROOF, authority.as_ref()], &ORE_ID).0
 }
 
-pub async fn get_proof(client: &RpcClient, address: Pubkey) -> Proof {
-    let data = client
-        .get_account_data(&address)
-        .await
-        .expect("Failed to get proof account");
-    *bytemuck::try_from_bytes::<Proof>(&data[8..]).expect("Failed to parse proof account")
-}
-
-pub async fn get_proof_with_authority(client: &RpcClient, authority: Pubkey) -> Proof {
+pub async fn get_proof_with_authority(client: &RpcClient, authority: Pubkey) -> Result<Proof, ()> {
     let proof_address = proof_pubkey(authority);
-    get_proof(client, proof_address).await
+
+    if let Ok(data) = client.get_account_data(&proof_address).await {
+        if let Ok(proof) = bytemuck::try_from_bytes::<Proof>(&data[8..]) {
+            Ok(*proof)
+        } else {
+            Err(())
+        }
+    } else {
+        Err(())
+    }
 }
 
 pub fn get_reset_ix(signer: Pubkey) -> Instruction {
     ore_api::sdk::reset(signer)
 }
 
-pub async fn get_ore_balance(address: Pubkey, client: &RpcClient) -> u64 {
-    let proof = get_proof_with_authority(client, address).await;
-    let token_account_address = spl_associated_token_account::get_associated_token_address(
-        &address,
-        &ore_api::consts::MINT_ADDRESS,
-    );
-    let token_balance = if let Ok(Some(token_account)) = client
-        .get_token_account(&token_account_address)
-        .await
-    {
-        token_account.token_amount.ui_amount_string
+pub async fn get_ore_balance(address: Pubkey, client: &RpcClient) -> Result<u64, ()> {
+    if let Ok(proof) = get_proof_with_authority(client, address).await {
+        Ok(proof.balance)
     } else {
-        "0".to_string()
-    };
-    return proof.balance;
+        Err(())
+    }
 }
 
 pub fn proof_pubkey(authority: Pubkey) -> Pubkey {
@@ -103,62 +91,81 @@ pub async fn get_proof_and_config_with_busses(
     let datas = client.get_multiple_accounts(&account_pubkeys).await;
     if let Ok(datas) = datas {
         let proof = if let Some(data) = &datas[0] {
-            Ok(*bytemuck::try_from_bytes::<Proof>(&data.data()[8..]).expect("Failed to parse treasury account"))
+            Ok(*bytemuck::try_from_bytes::<Proof>(&data.data()[8..])
+                .expect("Failed to parse treasury account"))
         } else {
             Err(())
         };
 
         let treasury_config = if let Some(data) = &datas[1] {
-            Ok(*bytemuck::try_from_bytes::<ore_api::state::Config>(&data.data()[8..])
-                .expect("Failed to parse config account"))
+            Ok(
+                *bytemuck::try_from_bytes::<ore_api::state::Config>(&data.data()[8..])
+                    .expect("Failed to parse config account"),
+            )
         } else {
             Err(())
         };
         let bus_1 = if let Some(data) = &datas[2] {
-            Ok(*bytemuck::try_from_bytes::<ore_api::state::Bus>(&data.data()[8..])
-                .expect("Failed to parse bus1 account"))
+            Ok(
+                *bytemuck::try_from_bytes::<ore_api::state::Bus>(&data.data()[8..])
+                    .expect("Failed to parse bus1 account"),
+            )
         } else {
             Err(())
         };
         let bus_2 = if let Some(data) = &datas[3] {
-            Ok(*bytemuck::try_from_bytes::<ore_api::state::Bus>(&data.data()[8..])
-                .expect("Failed to parse bus2 account"))
+            Ok(
+                *bytemuck::try_from_bytes::<ore_api::state::Bus>(&data.data()[8..])
+                    .expect("Failed to parse bus2 account"),
+            )
         } else {
             Err(())
         };
         let bus_3 = if let Some(data) = &datas[4] {
-            Ok(*bytemuck::try_from_bytes::<ore_api::state::Bus>(&data.data()[8..])
-                .expect("Failed to parse bus3 account"))
+            Ok(
+                *bytemuck::try_from_bytes::<ore_api::state::Bus>(&data.data()[8..])
+                    .expect("Failed to parse bus3 account"),
+            )
         } else {
             Err(())
         };
         let bus_4 = if let Some(data) = &datas[5] {
-            Ok(*bytemuck::try_from_bytes::<ore_api::state::Bus>(&data.data()[8..])
-                .expect("Failed to parse bus4 account"))
+            Ok(
+                *bytemuck::try_from_bytes::<ore_api::state::Bus>(&data.data()[8..])
+                    .expect("Failed to parse bus4 account"),
+            )
         } else {
             Err(())
         };
         let bus_5 = if let Some(data) = &datas[6] {
-            Ok(*bytemuck::try_from_bytes::<ore_api::state::Bus>(&data.data()[8..])
-                .expect("Failed to parse bus5 account"))
+            Ok(
+                *bytemuck::try_from_bytes::<ore_api::state::Bus>(&data.data()[8..])
+                    .expect("Failed to parse bus5 account"),
+            )
         } else {
             Err(())
         };
         let bus_6 = if let Some(data) = &datas[7] {
-            Ok(*bytemuck::try_from_bytes::<ore_api::state::Bus>(&data.data()[8..])
-                .expect("Failed to parse bus6 account"))
+            Ok(
+                *bytemuck::try_from_bytes::<ore_api::state::Bus>(&data.data()[8..])
+                    .expect("Failed to parse bus6 account"),
+            )
         } else {
             Err(())
         };
         let bus_7 = if let Some(data) = &datas[8] {
-            Ok(*bytemuck::try_from_bytes::<ore_api::state::Bus>(&data.data()[8..])
-                .expect("Failed to parse bus7 account"))
+            Ok(
+                *bytemuck::try_from_bytes::<ore_api::state::Bus>(&data.data()[8..])
+                    .expect("Failed to parse bus7 account"),
+            )
         } else {
             Err(())
         };
         let bus_8 = if let Some(data) = &datas[9] {
-            Ok(*bytemuck::try_from_bytes::<ore_api::state::Bus>(&data.data()[8..])
-                .expect("Failed to parse bus8 account"))
+            Ok(
+                *bytemuck::try_from_bytes::<ore_api::state::Bus>(&data.data()[8..])
+                    .expect("Failed to parse bus8 account"),
+            )
         } else {
             Err(())
         };
@@ -172,7 +179,6 @@ pub async fn get_proof_and_config_with_busses(
         (Err(()), Err(()), Err(()))
     }
 }
-
 
 pub fn amount_u64_to_string(amount: u64) -> String {
     amount_u64_to_f64(amount).to_string()

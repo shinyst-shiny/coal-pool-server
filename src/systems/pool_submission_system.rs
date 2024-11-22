@@ -221,61 +221,10 @@ pub async fn pool_submission_system(
                             ixs.push(reset_ix);
                         }
 
-                        info!(target: "server_log", "getting config");
-                        /*// Fetch coal_proof
-                        let config_address = get_config_pubkey(&Resource::Coal);
-                        let tool_address = get_tool_pubkey(signer.pubkey(), &Resource::Coal);
-                        let guild_config_address = coal_guilds_api::state::config_pda().0;
-                        let guild_member_address = coal_guilds_api::state::member_pda(signer.pubkey()).0;
+                        info!(target: "server_log","Using for the transaction Signer: {:?} tool: {:?}, member: {:?}, guild_address: {:?}", signer.pubkey(), tool_address, guild_member_address, guild_address);
 
-                        let mut accounts: Vec<Pubkey> = vec![config_address, tool_address, guild_config_address, guild_member_address];
-                        let accounts = rpc_client.get_multiple_accounts(&accounts).await.unwrap();*/
-
-                        /*let mut tool: Option<ToolType> = None;
-                        let mut member: Option<coal_guilds_api::state::Member> = None;
-                        let mut guild_config: Option<coal_guilds_api::state::Config> = None;
-                        let mut guild: Option<coal_guilds_api::state::Guild> = None;
-                        let mut guild_address: Option<Pubkey> = None;
-
-                        info!(target: "server_log", "setting up accounts");
-
-                        if accounts.len() > 1 {
-                            if accounts[1].as_ref().is_some() {
-                                tool = Some(deserialize_tool(&accounts[1].as_ref().unwrap().data, &Resource::Coal));
-                            }
-
-                            if accounts.len() > 2 && accounts[2].as_ref().is_some() {
-                                guild_config = Some(deserialize_guild_config(&accounts[2].as_ref().unwrap().data));
-                            }
-
-                            if accounts.len() > 3 && accounts[3].as_ref().is_some() {
-                                member = Some(deserialize_guild_member(&accounts[3].as_ref().unwrap().data));
-                            }
-
-                            if accounts.len() > 4 && accounts[4].as_ref().is_some() {
-                                guild = Some(deserialize_guild(&accounts[4].as_ref().unwrap().data));
-                            }
-                        }
-
-                        info!(target: "server_log", "getting guild info");
-
-                        if member.is_some() && member.unwrap().guild.ne(&coal_guilds_api::ID) && guild_address.is_none() {
-                            let guild_data = rpc_client.get_account_data(&member.unwrap().guild).await.unwrap();
-                            guild = Some(deserialize_guild(&guild_data));
-                            guild_address = Some(member.unwrap().guild);
-                        }*/
-
-                        info!(target: "server_log","Using for the transaction Signer: {:?} tool: {:?}, member: {:?}, guild_address: {:?}", signer.pubkey(), tool_address, guild_member_address, member.unwrap().guild);
-
-                        // let coal_mine_ix = get_mine_ix(signer.pubkey(), best_solution, bus, guild_pubkey, signer.pubkey());
-                        let coal_mine_ix = get_mine_ix(
-                            signer.pubkey(),
-                            best_solution,
-                            bus,
-                            tool_address,
-                            guild_member_address,
-                            guild_address,
-                        );
+                        let coal_mine_ix =
+                            get_mine_ix(signer.pubkey(), best_solution, bus, None, None, None);
 
                         let ore_mine_ix = get_ore_mine_ix(signer.pubkey(), best_solution, bus);
                         ixs.push(ore_mine_ix);
@@ -283,13 +232,18 @@ pub async fn pool_submission_system(
 
                         info!(target: "server_log", "built ixs, getting balances...");
 
-                        let ore_balance_before_tx = get_ore_balance(
+                        let mut ore_balance_before_tx = std::u64::MAX;
+
+                        if let Ok(ore_balance) = get_ore_balance(
                             app_wallet.clone().miner_wallet.pubkey(),
                             &rpc_client.clone(),
                         )
-                        .await;
+                        .await
+                        {
+                            ore_balance_before_tx = ore_balance
+                        }
 
-                        info!(target: "server_log", "got balance, sending to rpc_client");
+                        info!(target: "server_log", "got balance {}, sending to rpc_client", ore_balance_before_tx);
 
                         if let Ok((hash, _slot)) = rpc_client
                             .get_latest_blockhash_with_commitment(rpc_client.commitment())
@@ -687,7 +641,22 @@ pub async fn pool_submission_system(
                                                         let bytes = BASE64_STANDARD.decode(data.data.0).unwrap();
 
                                                         if let Ok(mine_event) = bytemuck::try_from_bytes::<MineEvent>(&bytes) {
-                                                            let ore_balance_after_tx = get_ore_balance(app_wallet.clone().miner_wallet.pubkey(), &rpc_client.clone()).await;
+                                                            let mut ore_balance_after_tx = 0;
+
+                                                            if let Ok(ore_balance) = get_ore_balance(
+                                                                app_wallet.clone().miner_wallet.pubkey(),
+                                                                &rpc_client.clone(),
+                                                            ).await {
+                                                                ore_balance_after_tx = ore_balance.clone();
+                                                                if(ore_balance_before_tx == std::u64::MAX) {
+                                                                    ore_balance_before_tx = ore_balance.clone();
+                                                                }
+                                                            } else {
+                                                                ore_balance_before_tx = 0;
+                                                            }
+
+                                                            info!(target: "server_log", "ORE balance before: {:?} ORE balance after: {:?}", ore_balance_before_tx, ore_balance_after_tx);
+
                                                             info!(target: "server_log", "MineEvent: {:?}", mine_event);
                                                             info!(target: "submission_log", "MineEvent: {:?}", mine_event);
                                                             info!(target: "server_log", "For Challenge: {:?}", BASE64_STANDARD.encode(old_proof.challenge));
@@ -789,7 +758,7 @@ pub async fn pool_submission_system(
                                                             let balance_coal = (latest_proof.balance as f64)
                                                                 / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
 
-                                                            let balance_ore = get_ore_balance(app_wallet.miner_wallet.pubkey(), &rpc_client.clone()).await as f64
+                                                            let balance_ore = (ore_balance_before_tx + ore_balance_after_tx) as f64
                                                                 / 10f64.powf(ORE_TOKEN_DECIMALS as f64);
 
                                                             let multiplier = if let Some(config) = loaded_config_coal {

@@ -15,12 +15,20 @@ use systems::{
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
-use crate::systems::{message_text_all_clients_system::message_text_all_clients_system, pool_mine_success_system::pool_mine_success_system, pool_submission_system::pool_submission_system};
+use crate::systems::{
+    message_text_all_clients_system::message_text_all_clients_system,
+    pool_mine_success_system::pool_mine_success_system,
+    pool_submission_system::pool_submission_system,
+};
 
 use steel::AccountDeserialize;
 
 use self::models::*;
-use crate::coal_utils::{proof_pubkey, Resource};
+use crate::coal_utils::{
+    calculate_tool_multiplier, deserialize_guild, deserialize_guild_config,
+    deserialize_guild_member, deserialize_tool, get_config_pubkey, get_tool_pubkey, proof_pubkey,
+    Resource, ToolType,
+};
 use crate::ore_utils::get_ore_mint;
 use crate::routes::get_guild_addresses;
 use app_database::{AppDatabase, AppDatabaseError};
@@ -40,10 +48,7 @@ use base64::{prelude::BASE64_STANDARD, Engine};
 use clap::Parser;
 use coal_guilds_api::state::member_pda;
 use coal_guilds_api::state::Member;
-use coal_utils::{
-    get_coal_mint, get_config, get_proof, get_register_ix,
-    COAL_TOKEN_DECIMALS,
-};
+use coal_utils::{get_coal_mint, get_config, get_proof, get_register_ix, COAL_TOKEN_DECIMALS};
 use drillx::Solution;
 use futures::{stream::SplitSink, SinkExt, StreamExt};
 use ore_api::prelude::Proof;
@@ -53,7 +58,13 @@ use serde::{Deserialize, Serialize};
 use solana_account_decoder::StringDecimals;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
-    commitment_config::CommitmentConfig, compute_budget::ComputeBudgetInstruction, native_token::{lamports_to_sol, LAMPORTS_PER_SOL}, pubkey::Pubkey, signature::{read_keypair_file, Keypair, Signature}, signer::Signer, transaction::Transaction,
+    commitment_config::CommitmentConfig,
+    compute_budget::ComputeBudgetInstruction,
+    native_token::{lamports_to_sol, LAMPORTS_PER_SOL},
+    pubkey::Pubkey,
+    signature::{read_keypair_file, Keypair, Signature},
+    signer::Signer,
+    transaction::Transaction,
 };
 use spl_associated_token_account::get_associated_token_address;
 use tokio::{
@@ -269,11 +280,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let password = std::env::var("PASSWORD").expect("PASSWORD must be set.");
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set.");
     let database_rr_url = std::env::var("DATABASE_RR_URL").expect("DATABASE_RR_URL must be set.");
-    let commission_env = std::env::var("COMMISSION_PUBKEY").expect("COMMISSION_PUBKEY must be set.");
+    let commission_env =
+        std::env::var("COMMISSION_PUBKEY").expect("COMMISSION_PUBKEY must be set.");
     let commission_pubkey = match Pubkey::from_str(&commission_env) {
-        Ok(pk) => {
-            pk
-        }
+        Ok(pk) => pk,
         Err(_) => {
             println!("Invalid COMMISSION_PUBKEY");
             return Ok(());
@@ -342,7 +352,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .get_latest_blockhash_with_commitment(rpc_client.commitment())
             .await
         {
-            let mut tx = Transaction::new_with_payer(&[coal_register_ix, ore_register_ix], Some(&wallet.pubkey()));
+            let mut tx = Transaction::new_with_payer(
+                &[coal_register_ix, ore_register_ix],
+                Some(&wallet.pubkey()),
+            );
 
             tx.sign(&[&wallet], hash);
 
@@ -526,10 +539,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-
     info!(target: "server_log", "Validating commissions receiver is in db");
     let commission_miner_id;
-    match app_database.get_miner_by_pubkey_str(commission_pubkey.to_string()).await {
+    match app_database
+        .get_miner_by_pubkey_str(commission_pubkey.to_string())
+        .await
+    {
         Ok(miner) => {
             info!(target: "server_log", "Found commissions receiver in db.");
             commission_miner_id = miner.id;
@@ -538,10 +553,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!(target: "server_log", "Failed to get commissions receiver account from database.");
             info!(target: "server_log", "Inserting Commissions receiver account...");
 
-            match app_database.signup_user_transaction(commission_pubkey.to_string(), wallet.pubkey().to_string()).await {
+            match app_database
+                .signup_user_transaction(commission_pubkey.to_string(), wallet.pubkey().to_string())
+                .await
+            {
                 Ok(_) => {
                     info!(target: "server_log", "Successfully inserted Commissions receiver account...");
-                    if let Ok(m) = app_database.get_miner_by_pubkey_str(commission_pubkey.to_string()).await {
+                    if let Ok(m) = app_database
+                        .get_miner_by_pubkey_str(commission_pubkey.to_string())
+                        .await
+                    {
                         commission_miner_id = m.id;
                     } else {
                         panic!("Failed to get commission miner id")
@@ -645,7 +666,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_wallet.miner_wallet.clone(),
             app_app_database,
         )
-            .await;
+        .await;
     });
 
     // Track client pong timings
@@ -665,7 +686,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_wallet.miner_wallet.clone(),
             app_proof,
             app_last_challenge,
-        ).await;
+        )
+        .await;
     });
 
     let (client_message_sender, client_message_receiver) =
@@ -690,7 +712,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_pongs,
             app_submission_window,
         )
-            .await;
+        .await;
     });
 
     // Handle ready clients
@@ -711,7 +733,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_client_nonce_ranges,
             app_submission_window,
         )
-            .await;
+        .await;
     });
 
     let (mine_success_sender, mine_success_receiver) =
@@ -734,6 +756,77 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_submission_window = submission_window.clone();
     let app_client_nonce_ranges = client_nonce_ranges.clone();
     let app_last_challenge = last_challenge.clone();
+
+    // Fetch coal_proof
+    let config_address = get_config_pubkey(&Resource::Coal);
+    let tool_address = get_tool_pubkey(
+        app_wallet.clone().miner_wallet.clone().pubkey(),
+        &Resource::Coal,
+    );
+    let guild_config_address = coal_guilds_api::state::config_pda().0;
+    let guild_member_address =
+        coal_guilds_api::state::member_pda(app_wallet.clone().miner_wallet.clone().pubkey()).0;
+
+    let mut accounts_multipliers = vec![
+        config_address,
+        tool_address,
+        guild_config_address,
+        guild_member_address,
+    ];
+    let accounts_multipliers = rpc_client
+        .get_multiple_accounts(&accounts_multipliers)
+        .await
+        .unwrap();
+
+    let mut tool: Option<ToolType> = None;
+    let mut member: Option<coal_guilds_api::state::Member> = None;
+    let mut guild_config: Option<coal_guilds_api::state::Config> = None;
+    let mut guild: Option<coal_guilds_api::state::Guild> = None;
+    let mut guild_address: Option<Pubkey> = None;
+
+    info!(target: "server_log", "setting up accounts");
+
+    if accounts_multipliers.len() > 1 {
+        if accounts_multipliers[1].as_ref().is_some() {
+            tool = Some(deserialize_tool(
+                &accounts_multipliers[1].as_ref().unwrap().data,
+                &Resource::Coal,
+            ));
+        }
+
+        if accounts_multipliers.len() > 2 && accounts_multipliers[2].as_ref().is_some() {
+            guild_config = Some(deserialize_guild_config(
+                &accounts_multipliers[2].as_ref().unwrap().data,
+            ));
+        }
+
+        if accounts_multipliers.len() > 3 && accounts_multipliers[3].as_ref().is_some() {
+            member = Some(deserialize_guild_member(
+                &accounts_multipliers[3].as_ref().unwrap().data,
+            ));
+        }
+
+        if accounts_multipliers.len() > 4 && accounts_multipliers[4].as_ref().is_some() {
+            guild = Some(deserialize_guild(
+                &accounts_multipliers[4].as_ref().unwrap().data,
+            ));
+        }
+    }
+
+    info!(target: "server_log", "getting guild info");
+
+    if member.is_some() && member.unwrap().guild.ne(&coal_guilds_api::ID) && guild_address.is_none()
+    {
+        let guild_data = rpc_client
+            .get_account_data(&member.unwrap().guild)
+            .await
+            .unwrap();
+        guild = Some(deserialize_guild(&guild_data));
+        guild_address = Some(member.unwrap().guild);
+    }
+
+    let tool_multiplier = calculate_tool_multiplier(&tool);
+
     tokio::spawn(async move {
         pool_submission_system(
             app_proof,
@@ -751,8 +844,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_submission_window,
             app_client_nonce_ranges,
             app_last_challenge,
+            Option::from(tool_address),
+            Option::from(guild_member_address),
+            tool,
+            member,
+            guild_config,
+            guild,
+            guild_address,
+            tool_multiplier,
         )
-            .await;
+        .await;
     });
 
     let app_shared_state = shared_state.clone();
@@ -767,15 +868,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_config,
             app_wallet,
             mine_success_receiver,
-        ).await;
+        )
+        .await;
     });
 
     let app_shared_state = shared_state.clone();
     tokio::spawn(async move {
-        message_text_all_clients_system(
-            app_shared_state,
-            all_clients_receiver,
-        ).await;
+        message_text_all_clients_system(app_shared_state, all_clients_receiver).await;
     });
 
     let cors = CorsLayer::new()
@@ -847,8 +946,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
-        .await
-        .unwrap();
+    .await
+    .unwrap();
 
     Ok(())
 }
@@ -960,7 +1059,12 @@ async fn post_signup_v2(
             }
         }
 
-        let res = app_database.signup_user_transaction(miner_pubkey.to_string(), wallet.miner_wallet.pubkey().to_string()).await;
+        let res = app_database
+            .signup_user_transaction(
+                miner_pubkey.to_string(),
+                wallet.miner_wallet.pubkey().to_string(),
+            )
+            .await;
 
         match res {
             Ok(_) => {
@@ -987,9 +1091,7 @@ async fn post_signup_v2(
     }
 }
 
-async fn get_signup_fee(
-    Extension(app_config): Extension<Arc<Config>>,
-) -> impl IntoResponse {
+async fn get_signup_fee(Extension(app_config): Extension<Arc<Config>>) -> impl IntoResponse {
     return Response::builder()
         .status(StatusCode::OK)
         .body(app_config.signup_fee.to_string())
@@ -1049,10 +1151,10 @@ async fn get_miner_rewards(
 
         match res {
             Ok(rewards) => {
-                let decimal_bal_coal =
-                    rewards.balance_coal as f64 / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
-                let decimal_bal_ore =
-                    rewards.balance_ore as f64 / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
+                let decimal_bal_coal = rewards.balance_coal as f64
+                    / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
+                let decimal_bal_ore = rewards.balance_ore as f64
+                    / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
                 let response = MinerRewards {
                     ore: decimal_bal_ore,
                     coal: decimal_bal_coal,
@@ -1160,14 +1262,16 @@ async fn get_miner_balance(
             coal: 0.0,
         };
 
-        if let Ok(response_coal) =
-            rpc_client.get_token_account_balance(&miner_token_account_coal).await
+        if let Ok(response_coal) = rpc_client
+            .get_token_account_balance(&miner_token_account_coal)
+            .await
         {
             resp.coal = response_coal.ui_amount.unwrap();
         }
 
-        if let Ok(response_ore) =
-            rpc_client.get_token_account_balance(&miner_token_account_ore).await
+        if let Ok(response_ore) = rpc_client
+            .get_token_account_balance(&miner_token_account_ore)
+            .await
         {
             resp.ore = response_ore.ui_amount.unwrap();
         }
@@ -1311,11 +1415,12 @@ async fn post_claim_v2(
         return Err((StatusCode::UNAUTHORIZED, "Timestamp too old.".to_string()));
     }
     let receiver_pubkey = match Pubkey::from_str(&query_params.receiver_pubkey) {
-        Ok(pubkey) => {
-            pubkey
-        }
+        Ok(pubkey) => pubkey,
         Err(_) => {
-            return Err((StatusCode::BAD_REQUEST, "Invalid receiver_pubkey provided.".to_string()))
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "Invalid receiver_pubkey provided.".to_string(),
+            ))
         }
     };
 
@@ -1342,7 +1447,10 @@ async fn post_claim_v2(
 
                 // 1 COAL 0.05 ORE
                 if amount_coal < 100_000_000_000 && amount_ore < 5_000_000_000 {
-                    return Err((StatusCode::BAD_REQUEST, "claim minimum is 1 COAL or 0.05 ORE".to_string()));
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        "claim minimum is 1 COAL or 0.05 ORE".to_string(),
+                    ));
                 }
 
                 if let Ok(miner_rewards) = app_database
@@ -1350,13 +1458,21 @@ async fn post_claim_v2(
                     .await
                 {
                     if amount_coal > miner_rewards.balance_coal {
-                        return Err((StatusCode::BAD_REQUEST, "claim amount for COAL exceeds miner rewards balance.".to_string()));
+                        return Err((
+                            StatusCode::BAD_REQUEST,
+                            "claim amount for COAL exceeds miner rewards balance.".to_string(),
+                        ));
                     }
                     if amount_ore > miner_rewards.balance_ore {
-                        return Err((StatusCode::BAD_REQUEST, "claim amount for ORE exceeds miner rewards balance.".to_string()));
+                        return Err((
+                            StatusCode::BAD_REQUEST,
+                            "claim amount for ORE exceeds miner rewards balance.".to_string(),
+                        ));
                     }
 
-                    if let Ok(last_claim) = app_database.get_last_claim(miner_rewards.miner_id).await {
+                    if let Ok(last_claim) =
+                        app_database.get_last_claim(miner_rewards.miner_id).await
+                    {
                         let last_claim_ts = last_claim.created_at.and_utc().timestamp();
                         let now = SystemTime::now()
                             .duration_since(UNIX_EPOCH)
@@ -1364,23 +1480,35 @@ async fn post_claim_v2(
                             .as_secs() as i64;
                         let time_difference = now - last_claim_ts;
                         if time_difference <= 1800 {
-                            return Err((StatusCode::TOO_MANY_REQUESTS, time_difference.to_string()));
+                            return Err((
+                                StatusCode::TOO_MANY_REQUESTS,
+                                time_difference.to_string(),
+                            ));
                         }
                     }
 
                     let mut writer = claims_queue.queue.write().await;
-                    writer.insert(miner_pubkey, ClaimsQueueItem {
-                        receiver_pubkey,
-                        amount_coal,
-                        amount_ore,
-                    });
+                    writer.insert(
+                        miner_pubkey,
+                        ClaimsQueueItem {
+                            receiver_pubkey,
+                            amount_coal,
+                            amount_ore,
+                        },
+                    );
                     drop(writer);
                     return Ok((StatusCode::OK, "SUCCESS"));
                 } else {
-                    return Err((StatusCode::INTERNAL_SERVER_ERROR, "failed to get miner account from database".to_string()));
+                    return Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to get miner account from database".to_string(),
+                    ));
                 }
             } else {
-                return Err((StatusCode::UNAUTHORIZED, "Sig verification failed".to_string()));
+                return Err((
+                    StatusCode::UNAUTHORIZED,
+                    "Sig verification failed".to_string(),
+                ));
             }
         } else {
             return Err((StatusCode::UNAUTHORIZED, "Invalid signature".to_string()));
@@ -1408,7 +1536,10 @@ async fn post_guild_stake(
     const MAX_RETRIES: u32 = 5; // Maximum number of retry attempts
     const BASE_DELAY: u64 = 500; // Base delay in milliseconds
 
-    if let (Ok(user_pubkey), Ok(guild_pubkey)) = (Pubkey::from_str(&query_params.pubkey), Pubkey::from_str(&app_config.guild_address)) {
+    if let (Ok(user_pubkey), Ok(guild_pubkey)) = (
+        Pubkey::from_str(&query_params.pubkey),
+        Pubkey::from_str(&app_config.guild_address),
+    ) {
         let serialized_tx = match BASE64_STANDARD.decode(&body) {
             Ok(tx) => tx,
             Err(e) => {
@@ -1458,7 +1589,8 @@ async fn post_guild_stake(
 
         // check that only the new_member, stake, and delegate instructions are present not only with id but checking the specific tx action, regardless of the position of the tx
         let mut instruction_index = 0;
-        let mut program_id = tx.message.account_keys[tx.message.instructions[instruction_index].program_id_index as usize];
+        let mut program_id = tx.message.account_keys
+            [tx.message.instructions[instruction_index].program_id_index as usize];
         while instruction_index < tx.message.instructions.len() {
             if program_id != coal_guilds_api::ID {
                 error!(target: "server_log", "Guild stake: Wrong program detected in transaction. Program: {}.", program_id);
@@ -1467,10 +1599,10 @@ async fn post_guild_stake(
                     .body("Wrong program".to_string())
                     .unwrap();
             }
-            program_id = tx.message.account_keys[tx.message.instructions[instruction_index].program_id_index as usize];
+            program_id = tx.message.account_keys
+                [tx.message.instructions[instruction_index].program_id_index as usize];
             instruction_index += 1;
         }
-
 
         /*// There should be either 2 or 3 instructions: initialize (optional), stake, and delegate
         if tx.message.instructions.len() < 2 || tx.message.instructions.len() > 3 {
@@ -1530,10 +1662,13 @@ async fn post_guild_stake(
 
         // Retry mechanism for sending the transaction
         //for attempt in 0..=MAX_RETRIES {
-        match rpc_client.send_and_confirm_transaction_with_spinner_and_commitment(
-            &tx,
-            CommitmentConfig::confirmed(),
-        ).await {
+        match rpc_client
+            .send_and_confirm_transaction_with_spinner_and_commitment(
+                &tx,
+                CommitmentConfig::confirmed(),
+            )
+            .await
+        {
             Ok(signature) => {
                 // Transaction successful
                 let amount_dec =
@@ -1580,11 +1715,10 @@ async fn post_guild_stake(
 
     // Fallback in case all attempts fail
     /*Response::builder()
-        .status(StatusCode::INTERNAL_SERVER_ERROR)
-        .body("Transaction failed unexpectedly.".to_string())
-        .unwrap()*/
+    .status(StatusCode::INTERNAL_SERVER_ERROR)
+    .body("Transaction failed unexpectedly.".to_string())
+    .unwrap()*/
 }
-
 
 /*#[derive(Deserialize)]
 struct StakeParams {
@@ -2024,7 +2158,7 @@ async fn handle_socket(
             }
         }
     })
-        .await;
+    .await;
 
     let mut app_state = rw_app_state.write().await;
     app_state.sockets.remove(&who);
@@ -2189,15 +2323,12 @@ pub struct PoolGuild {
     pub authority: String,
 }
 
-
 async fn get_miner_balance_v2(
     query_params: Query<PubkeyMintParam>,
     Extension(rpc_client): Extension<Arc<RpcClient>>,
 ) -> impl IntoResponse {
     let mint = match Pubkey::from_str(&query_params.mint) {
-        Ok(pk) => {
-            pk
-        }
+        Ok(pk) => pk,
         Err(_) => {
             error!(target: "server_log", "get_miner_balance_v2 - Failed to parse mint");
             return Response::builder()
@@ -2233,7 +2364,8 @@ async fn get_miner_balance_v2(
 pub async fn get_guild_check_member(
     query_params: Query<PubkeyParam>,
     Extension(app_config): Extension<Arc<Config>>,
-    Extension(rpc_client): Extension<Arc<RpcClient>>) -> impl IntoResponse {
+    Extension(rpc_client): Extension<Arc<RpcClient>>,
+) -> impl IntoResponse {
     if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
         let member = member_pda(user_pubkey);
         let member_data = rpc_client.get_account_data(&member.0).await;
@@ -2249,14 +2381,23 @@ pub async fn get_guild_check_member(
             }
             Ok(data) => {
                 if let Ok(member) = Member::try_from_bytes(&data) {
-                    if member.guild.to_string().is_empty() || member.guild.to_string().eq("11111111111111111111111111111111") {
+                    if member.guild.to_string().is_empty()
+                        || member
+                            .guild
+                            .to_string()
+                            .eq("11111111111111111111111111111111")
+                    {
                         info!(target: "server_log", "Pubkey: {} without any guild. We can continue with the flow without any extra steps", user_pubkey.to_string());
                         return Response::builder()
                             .status(StatusCode::OK)
                             .header("Content-Type", "text/text")
                             .body("SUCCESS".to_string())
                             .unwrap();
-                    } else if member.guild.to_string().eq(&app_config.guild_address.to_string()) {
+                    } else if member
+                        .guild
+                        .to_string()
+                        .eq(&app_config.guild_address.to_string())
+                    {
                         info!(target: "server_log", "Pubkey: {} is already in the guild. No extra steps needed", user_pubkey.to_string());
                         return Response::builder()
                             .status(StatusCode::FOUND)

@@ -31,12 +31,25 @@ use tokio::{
 };
 use tracing::info;
 
-use crate::coal_utils::{amount_u64_to_string, calculate_guild_multiplier, calculate_tool_multiplier, deserialize_config, deserialize_guild, deserialize_guild_config, deserialize_guild_member, deserialize_tool, get_config_pubkey, get_tool_pubkey, Resource, ToolType};
-use crate::ore_utils::{get_ore_auth_ix, get_ore_balance, get_ore_mine_ix, get_proof_and_config_with_busses as get_proof_and_config_with_busses_ore, get_reset_ix as get_reset_ix_ore, ORE_TOKEN_DECIMALS};
+use crate::coal_utils::{
+    amount_u64_to_string, calculate_guild_multiplier, calculate_tool_multiplier,
+    deserialize_config, deserialize_guild, deserialize_guild_config, deserialize_guild_member,
+    deserialize_tool, get_config_pubkey, get_tool_pubkey, Resource, ToolType,
+};
+use crate::ore_utils::{
+    get_ore_auth_ix, get_ore_balance, get_ore_mine_ix,
+    get_proof_and_config_with_busses as get_proof_and_config_with_busses_ore,
+    get_reset_ix as get_reset_ix_ore, ORE_TOKEN_DECIMALS,
+};
 use crate::{
-    app_database::AppDatabase, coal_utils::{
-        get_auth_ix, get_cutoff, get_guild_member, get_guild_proof, get_mine_ix, get_proof, get_proof_and_config_with_busses as get_proof_and_config_with_busses_coal, get_reset_ix as get_reset_ix_coal, MineEventWithBoosts, COAL_TOKEN_DECIMALS,
-    }, Config, EpochHashes, InsertChallenge, InsertEarning, InsertTxn, MessageInternalAllClients, MessageInternalMineSuccess, SubmissionWindow, UpdateReward, WalletExtension,
+    app_database::AppDatabase,
+    coal_utils::{
+        get_auth_ix, get_cutoff, get_guild_member, get_guild_proof, get_mine_ix, get_proof,
+        get_proof_and_config_with_busses as get_proof_and_config_with_busses_coal,
+        get_reset_ix as get_reset_ix_coal, MineEventWithBoosts, COAL_TOKEN_DECIMALS,
+    },
+    Config, EpochHashes, InsertChallenge, InsertEarning, InsertTxn, MessageInternalAllClients,
+    MessageInternalMineSuccess, SubmissionWindow, UpdateReward, WalletExtension,
 };
 
 pub async fn pool_submission_system(
@@ -55,6 +68,14 @@ pub async fn pool_submission_system(
     app_submission_window: Arc<RwLock<SubmissionWindow>>,
     app_client_nonce_ranges: Arc<RwLock<HashMap<Pubkey, Vec<Range<u64>>>>>,
     app_last_challenge: Arc<Mutex<[u8; 32]>>,
+    tool_address: Option<Pubkey>,
+    guild_member_address: Option<Pubkey>,
+    tool: Option<ToolType>,
+    member: Option<coal_guilds_api::state::Member>,
+    guild_config: Option<coal_guilds_api::state::Config>,
+    guild: Option<coal_guilds_api::state::Guild>,
+    guild_address: Option<Pubkey>,
+    tool_multiplier: f64,
 ) {
     loop {
         let lock = app_proof.lock().await;
@@ -100,7 +121,8 @@ pub async fn pool_submission_system(
                         info!(target: "server_log", "Getting latest config and busses data.");
                         tokio::time::sleep(Duration::from_millis(1000)).await;
                         if let (Ok(p), Ok(config), Ok(_busses)) =
-                            get_proof_and_config_with_busses_coal(&rpc_client, signer.pubkey()).await
+                            get_proof_and_config_with_busses_coal(&rpc_client, signer.pubkey())
+                                .await
                         {
                             loaded_config_coal = Some(config);
 
@@ -178,7 +200,7 @@ pub async fn pool_submission_system(
                                         .unwrap()
                                         .to_string(),
                                 )
-                                    .unwrap(),
+                                .unwrap(),
                                 jito_tip,
                             ));
 
@@ -200,16 +222,16 @@ pub async fn pool_submission_system(
                         }
 
                         info!(target: "server_log", "getting config");
-                        // Fetch coal_proof
+                        /*// Fetch coal_proof
                         let config_address = get_config_pubkey(&Resource::Coal);
                         let tool_address = get_tool_pubkey(signer.pubkey(), &Resource::Coal);
                         let guild_config_address = coal_guilds_api::state::config_pda().0;
                         let guild_member_address = coal_guilds_api::state::member_pda(signer.pubkey()).0;
 
                         let mut accounts: Vec<Pubkey> = vec![config_address, tool_address, guild_config_address, guild_member_address];
-                        let accounts = rpc_client.get_multiple_accounts(&accounts).await.unwrap();
+                        let accounts = rpc_client.get_multiple_accounts(&accounts).await.unwrap();*/
 
-                        let mut tool: Option<ToolType> = None;
+                        /*let mut tool: Option<ToolType> = None;
                         let mut member: Option<coal_guilds_api::state::Member> = None;
                         let mut guild_config: Option<coal_guilds_api::state::Config> = None;
                         let mut guild: Option<coal_guilds_api::state::Guild> = None;
@@ -241,7 +263,7 @@ pub async fn pool_submission_system(
                             let guild_data = rpc_client.get_account_data(&member.unwrap().guild).await.unwrap();
                             guild = Some(deserialize_guild(&guild_data));
                             guild_address = Some(member.unwrap().guild);
-                        }
+                        }*/
 
                         info!(target: "server_log","Using for the transaction Signer: {:?} tool: {:?}, member: {:?}, guild_address: {:?}", signer.pubkey(), tool_address, guild_member_address, member.unwrap().guild);
 
@@ -249,23 +271,11 @@ pub async fn pool_submission_system(
                         // let coal_mine_ix = get_mine_ix(signer.pubkey(), best_solution, bus, guild_pubkey, signer.pubkey());
                         let coal_mine_ix = get_mine_ix(
                             signer.pubkey(),
-                            best_solution, bus,
-                            match tool {
-                                Some(_) => Some(tool_address),
-                                None => None
-                            },
-                            match member {
-                                Some(_) => Some(guild_member_address),
-                                None => None
-                            },
-                            match member {
-                                Some(member) => if member.guild.eq(&coal_guilds_api::ID) {
-                                    None
-                                } else {
-                                    Some(member.guild)
-                                },
-                                None => None
-                            },
+                            best_solution,
+                            bus,
+                            tool_address,
+                            guild_member_address,
+                            guild_address,
                         );
 
                         let ore_mine_ix = get_ore_mine_ix(signer.pubkey(), best_solution, bus);
@@ -276,7 +286,11 @@ pub async fn pool_submission_system(
                             .get_latest_blockhash_with_commitment(rpc_client.commitment())
                             .await
                         {
-                            let ore_balance_before_tx = get_ore_balance(app_wallet.clone().miner_wallet.pubkey(), &rpc_client.clone()).await;
+                            let ore_balance_before_tx = get_ore_balance(
+                                app_wallet.clone().miner_wallet.pubkey(),
+                                &rpc_client.clone(),
+                            )
+                            .await;
 
                             let mut tx = Transaction::new_with_payer(&ixs, Some(&signer.pubkey()));
 
@@ -310,14 +324,14 @@ pub async fn pool_submission_system(
                                 if let Some(tx_error) = result.value.err {
                                     if tx_error
                                         == TransactionError::InstructionError(
-                                        4,
-                                        InstructionError::Custom(1),
-                                    )
+                                            4,
+                                            InstructionError::Custom(1),
+                                        )
                                         || tx_error
-                                        == TransactionError::InstructionError(
-                                        5,
-                                        InstructionError::Custom(1),
-                                    )
+                                            == TransactionError::InstructionError(
+                                                5,
+                                                InstructionError::Custom(1),
+                                            )
                                     {
                                         tracing::error!(target: "server_log", "Custom program error: Invalid Hash");
                                         break;
@@ -402,7 +416,7 @@ pub async fn pool_submission_system(
                                                 &app_rpc_client,
                                                 app_wallet.clone().miner_wallet.pubkey(),
                                             )
-                                                .await
+                                            .await
                                             {
                                                 info!(target: "server_log", "OLD PROOF CHALLENGE: {}", BASE64_STANDARD.encode(old_proof.challenge));
                                                 info!(target: "server_log", "RPC PROOF CHALLENGE: {}", BASE64_STANDARD.encode(p.challenge));
@@ -476,7 +490,7 @@ pub async fn pool_submission_system(
                                                         tokio::time::sleep(Duration::from_millis(
                                                             1000,
                                                         ))
-                                                            .await;
+                                                        .await;
                                                     }
                                                     info!(target: "server_log", "New challenge successfully added to db");
 
@@ -653,10 +667,15 @@ pub async fn pool_submission_system(
                                                     .unwrap()
                                                     .return_data;
 
-
-                                                let guild_total_stake = guild.unwrap().total_stake as f64;
-                                                let guild_multiplier = calculate_guild_multiplier(guild_config.unwrap().total_stake, guild_config.unwrap().total_multiplier, guild.unwrap().total_stake);
-                                                let guild_last_stake_at = guild.unwrap().last_stake_at;
+                                                let guild_total_stake =
+                                                    guild.unwrap().total_stake as f64;
+                                                let guild_multiplier = calculate_guild_multiplier(
+                                                    guild_config.unwrap().total_stake,
+                                                    guild_config.unwrap().total_multiplier,
+                                                    guild.unwrap().total_stake,
+                                                );
+                                                let guild_last_stake_at =
+                                                    guild.unwrap().last_stake_at;
 
                                                 match data {
                                                     solana_transaction_status::option_serializer::OptionSerializer::Some(data) => {
@@ -700,7 +719,7 @@ pub async fn pool_submission_system(
                                                                     challenge = c;
                                                                     break;
                                                                 } else {
-                                                                    tracing::error!(target: "server_log", 
+                                                                    tracing::error!(target: "server_log",
                                                                         "Failed to get challenge by challenge! Inserting if necessary..."
                                                                     );
                                                                     let new_challenge = InsertChallenge {
@@ -777,7 +796,6 @@ pub async fn pool_submission_system(
                                                             } else {
                                                                 1.0f64
                                                             };
-                                                            let tool_multiplier = calculate_tool_multiplier(&tool);
 
                                                             info!(target: "server_log", "tool_multiplier: {}", tool_multiplier);
 
@@ -839,7 +857,7 @@ pub async fn pool_submission_system(
                                                 &rpc_client,
                                                 app_wallet.clone().miner_wallet.pubkey(),
                                             )
-                                                .await
+                                            .await
                                             {
                                                 info!(target: "server_log", "OLD PROOF CHALLENGE: {}", BASE64_STANDARD.encode(old_proof.challenge));
                                                 info!(target: "server_log", "RPC PROOF CHALLENGE: {}", BASE64_STANDARD.encode(p.challenge));
@@ -909,7 +927,7 @@ pub async fn pool_submission_system(
                                                         tokio::time::sleep(Duration::from_millis(
                                                             1000,
                                                         ))
-                                                            .await;
+                                                        .await;
                                                     }
                                                     info!(target: "server_log", "New challenge successfully added to db");
 

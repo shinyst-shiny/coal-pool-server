@@ -655,6 +655,10 @@ pub async fn pool_submission_system(
                                                                 ore_balance_before_tx = 0;
                                                             }
 
+                                                            if ore_balance_before_tx > ore_balance_after_tx {
+                                                                ore_balance_before_tx = ore_balance_after_tx.clone();
+                                                            }
+
                                                             info!(target: "server_log", "ORE balance before: {:?} ORE balance after: {:?}", ore_balance_before_tx, ore_balance_after_tx);
 
                                                             info!(target: "server_log", "MineEvent: {:?}", mine_event);

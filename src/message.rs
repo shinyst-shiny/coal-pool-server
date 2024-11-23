@@ -1,3 +1,5 @@
+use serde::Serialize;
+
 pub struct ServerMessageStartMining {
     challenge: [u8; 32],
     cutoff: i64,
@@ -32,72 +34,54 @@ impl ServerMessageStartMining {
     }
 }
 
+#[derive(Serialize)]
+pub struct RewardDetails {
+    pub total_balance: f64,
+    pub total_rewards: f64,
+    pub miner_supplied_difficulty: u32,
+    pub miner_earned_rewards: f64,
+    pub miner_percentage: f64,
+}
+
+#[derive(Serialize)]
+pub struct CoalDetails {
+    pub reward_details: RewardDetails,
+    pub top_stake: f64,
+    pub stake_multiplier: f64,
+    pub guild_total_stake: f64,
+    pub guild_multiplier: f64,
+    pub tool_multiplier: f64,
+}
+
+#[derive(Serialize)]
+pub struct OreBoost {
+    pub top_stake: f64,
+    pub total_stake: f64,
+    pub stake_multiplier: f64,
+    pub mint_address: [u8; 32],
+    pub name: String,
+}
+
+#[derive(Serialize)]
+pub struct OreDetails {
+    pub reward_details: RewardDetails,
+    pub top_stake: f64,
+    pub stake_multiplier: f64,
+    pub ore_boosts: Vec<OreBoost>,
+}
+
+#[derive(Serialize)]
 pub struct ServerMessagePoolSubmissionResult {
-    difficulty: u32,
-    total_balance: f64,
-    total_rewards: f64,
-    top_stake: f64,
-    multiplier: f64,
-    active_miners: u32,
-    challenge: [u8; 32],
-    best_nonce: u64,
-    miner_supplied_difficulty: u32,
-    miner_earned_rewards: f64,
-    miner_percentage: f64,
-    guild_total_stake: u64,
-    guild_multiplier: f64,
+    pub difficulty: u32,
+    pub challenge: [u8; 32],
+    pub best_nonce: u64,
+    pub active_miners: u32,
+    pub coal_details: CoalDetails,
+    pub ore_details: OreDetails,
 }
 
 impl ServerMessagePoolSubmissionResult {
-    pub fn new(
-        difficulty: u32,
-        total_balance: f64,
-        total_rewards: f64,
-        top_stake: f64,
-        multiplier: f64,
-        active_miners: u32,
-        challenge: [u8; 32],
-        best_nonce: u64,
-        miner_supplied_difficulty: u32,
-        miner_earned_rewards: f64,
-        miner_percentage: f64,
-        guild_total_stake: u64,
-        guild_multiplier: f64,
-    ) -> Self {
-        ServerMessagePoolSubmissionResult {
-            difficulty,
-            total_balance,
-            total_rewards,
-            top_stake,
-            multiplier,
-            active_miners,
-            challenge,
-            best_nonce,
-            miner_supplied_difficulty,
-            miner_earned_rewards,
-            miner_percentage,
-            guild_total_stake,
-            guild_multiplier,
-        }
-    }
-
-    pub fn to_message_binary(&self) -> Vec<u8> {
-        let mut bin_data = Vec::new();
-        bin_data.push(1u8);
-        bin_data.extend_from_slice(&self.difficulty.to_le_bytes());
-        bin_data.extend_from_slice(&self.total_balance.to_le_bytes());
-        bin_data.extend_from_slice(&self.total_rewards.to_le_bytes());
-        bin_data.extend_from_slice(&self.top_stake.to_le_bytes());
-        bin_data.extend_from_slice(&self.multiplier.to_le_bytes());
-        bin_data.extend_from_slice(&self.active_miners.to_le_bytes());
-        bin_data.extend_from_slice(&self.challenge);
-        bin_data.extend_from_slice(&self.best_nonce.to_le_bytes());
-        bin_data.extend_from_slice(&self.miner_supplied_difficulty.to_le_bytes());
-        bin_data.extend_from_slice(&self.miner_earned_rewards.to_le_bytes());
-        bin_data.extend_from_slice(&self.miner_percentage.to_le_bytes());
-        bin_data.extend_from_slice(&self.guild_total_stake.to_le_bytes());
-        bin_data.extend_from_slice(&self.guild_multiplier.to_le_bytes());
-
-        bin_data
+    pub fn to_binary(&self) -> Vec<u8> {
+        bincode::serialize(self).unwrap()
     }
 }

@@ -15,12 +15,21 @@ use systems::{
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
-use crate::systems::{message_text_all_clients_system::message_text_all_clients_system, pool_mine_success_system::pool_mine_success_system, pool_submission_system::pool_submission_system};
+use crate::systems::{
+    message_text_all_clients_system::message_text_all_clients_system,
+    pool_mine_success_system::pool_mine_success_system,
+    pool_submission_system::pool_submission_system,
+};
 
 use steel::AccountDeserialize;
 
 use self::models::*;
-use crate::coal_utils::{proof_pubkey, Resource};
+use crate::coal_utils::{
+    calculate_tool_multiplier, deserialize_guild, deserialize_guild_config,
+    deserialize_guild_member, deserialize_tool, get_config_pubkey, get_tool_pubkey, proof_pubkey,
+    Resource, ToolType,
+};
+use crate::ore_utils::get_ore_mint;
 use crate::routes::get_guild_addresses;
 use app_database::{AppDatabase, AppDatabaseError};
 use app_rr_database::AppRRDatabase;
@@ -39,18 +48,23 @@ use base64::{prelude::BASE64_STANDARD, Engine};
 use clap::Parser;
 use coal_guilds_api::state::member_pda;
 use coal_guilds_api::state::Member;
-use coal_utils::{
-    get_coal_mint, get_config, get_proof, get_register_ix,
-    COAL_TOKEN_DECIMALS,
-};
+use coal_utils::{get_coal_mint, get_config, get_proof, get_register_ix, COAL_TOKEN_DECIMALS};
 use drillx::Solution;
 use futures::{stream::SplitSink, SinkExt, StreamExt};
+use ore_api::prelude::Proof;
 use ore_utils::get_ore_register_ix;
-use routes::{get_challenges, get_latest_mine_txn, get_pool_balance};
+use routes::{get_challenges, get_latest_mine_txn};
 use serde::{Deserialize, Serialize};
+use solana_account_decoder::StringDecimals;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{
-    commitment_config::CommitmentConfig, compute_budget::ComputeBudgetInstruction, native_token::{lamports_to_sol, LAMPORTS_PER_SOL}, pubkey::Pubkey, signature::{read_keypair_file, Keypair, Signature}, signer::Signer, transaction::Transaction,
+    commitment_config::CommitmentConfig,
+    compute_budget::ComputeBudgetInstruction,
+    native_token::{lamports_to_sol, LAMPORTS_PER_SOL},
+    pubkey::Pubkey,
+    signature::{read_keypair_file, Keypair, Signature},
+    signer::Signer,
+    transaction::Transaction,
 };
 use spl_associated_token_account::get_associated_token_address;
 use tokio::{
@@ -72,12 +86,12 @@ mod routes;
 mod schema;
 mod systems;
 
-const MIN_DIFF: u32 = 8;
-const MIN_HASHPOWER: u64 = 5;
+const MIN_DIFF: u32 = 12;
+const MIN_HASHPOWER: u64 = 80; // difficulty 12
+const MAX_CALCULATED_HASHPOWER: u64 = 327_680; // difficulty 24
 
 #[derive(Clone)]
 enum ClientVersion {
-    V1,
     V2,
 }
 
@@ -103,7 +117,8 @@ struct AppState {
 #[derive(Clone, Copy)]
 struct ClaimsQueueItem {
     receiver_pubkey: Pubkey,
-    amount: u64,
+    amount_coal: u64,
+    amount_ore: u64,
 }
 
 struct ClaimsQueue {
@@ -124,23 +139,28 @@ pub struct InternalMessageSubmission {
     supplied_diff: u32,
     supplied_nonce: u64,
     hashpower: u64,
+    real_hashpower: u64,
 }
 
 pub struct MessageInternalMineSuccess {
     difficulty: u32,
-    total_balance: f64,
-    rewards: u64,
-    commissions: u64,
+    total_balance_coal: f64,
+    total_balance_ore: f64,
+    rewards_coal: u64,
+    commissions_coal: u64,
+    rewards_ore: u64,
+    commissions_ore: u64,
     challenge_id: i32,
     challenge: [u8; 32],
     best_nonce: u64,
     total_hashpower: u64,
+    total_real_hashpower: u64,
     coal_config: Option<coal_api::state::Config>,
     multiplier: f64,
     submissions: HashMap<Pubkey, InternalMessageSubmission>,
-    guild_total_stake: u64,
+    guild_total_stake: f64,
     guild_multiplier: f64,
-    guild_last_stake_at: i64,
+    tool_multiplier: f64,
 }
 
 pub struct LastPong {
@@ -230,13 +250,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             metadata.target() == "server_log"
         }));
 
-    /*let submission_logs = tracing_appender::rolling::daily("./logs", "coal-pool-submissions.log");
+    let submission_logs = tracing_appender::rolling::daily("./logs", "coal-pool-submissions.log");
     let (submission_logs, _guard) = tracing_appender::non_blocking(submission_logs);
     let submission_log_layer = tracing_subscriber::fmt::layer()
         .with_writer(submission_logs)
         .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
             metadata.target() == "submission_log"
-        }));*/
+        }));
 
     // Uncomment if you need console logging
     let console_log_layer = tracing_subscriber::fmt::layer()
@@ -247,7 +267,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing_subscriber::registry()
         .with(server_log_layer)
-        //.with(submission_log_layer)
+        .with(submission_log_layer)
         .with(console_log_layer)
         .init();
 
@@ -260,11 +280,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let password = std::env::var("PASSWORD").expect("PASSWORD must be set.");
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set.");
     let database_rr_url = std::env::var("DATABASE_RR_URL").expect("DATABASE_RR_URL must be set.");
-    let commission_env = std::env::var("COMMISSION_PUBKEY").expect("COMMISSION_PUBKEY must be set.");
+    let commission_env =
+        std::env::var("COMMISSION_PUBKEY").expect("COMMISSION_PUBKEY must be set.");
     let commission_pubkey = match Pubkey::from_str(&commission_env) {
-        Ok(pk) => {
-            pk
-        }
+        Ok(pk) => pk,
         Err(_) => {
             println!("Invalid COMMISSION_PUBKEY");
             return Ok(());
@@ -333,7 +352,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .get_latest_blockhash_with_commitment(rpc_client.commitment())
             .await
         {
-            let mut tx = Transaction::new_with_payer(&[coal_register_ix, ore_register_ix], Some(&wallet.pubkey()));
+            let mut tx = Transaction::new_with_payer(
+                &[coal_register_ix, ore_register_ix],
+                Some(&wallet.pubkey()),
+            );
 
             tx.sign(&[&wallet], hash);
 
@@ -517,10 +539,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-
     info!(target: "server_log", "Validating commissions receiver is in db");
     let commission_miner_id;
-    match app_database.get_miner_by_pubkey_str(commission_pubkey.to_string()).await {
+    match app_database
+        .get_miner_by_pubkey_str(commission_pubkey.to_string())
+        .await
+    {
         Ok(miner) => {
             info!(target: "server_log", "Found commissions receiver in db.");
             commission_miner_id = miner.id;
@@ -529,10 +553,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!(target: "server_log", "Failed to get commissions receiver account from database.");
             info!(target: "server_log", "Inserting Commissions receiver account...");
 
-            match app_database.signup_user_transaction(commission_pubkey.to_string(), wallet.pubkey().to_string()).await {
+            match app_database
+                .signup_user_transaction(commission_pubkey.to_string(), wallet.pubkey().to_string())
+                .await
+            {
                 Ok(_) => {
                     info!(target: "server_log", "Successfully inserted Commissions receiver account...");
-                    if let Ok(m) = app_database.get_miner_by_pubkey_str(commission_pubkey.to_string()).await {
+                    if let Ok(m) = app_database
+                        .get_miner_by_pubkey_str(commission_pubkey.to_string())
+                        .await
+                    {
                         commission_miner_id = m.id;
                     } else {
                         panic!("Failed to get commission miner id")
@@ -565,7 +595,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let new_challenge = models::InsertChallenge {
                 pool_id: db_pool.id,
                 challenge: proof.challenge.to_vec(),
-                rewards_earned: None,
+                rewards_earned_coal: None,
+                rewards_earned_ore: None,
             };
             let result = app_database.add_new_challenge(new_challenge).await;
 
@@ -635,7 +666,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_wallet.miner_wallet.clone(),
             app_app_database,
         )
-            .await;
+        .await;
     });
 
     // Track client pong timings
@@ -655,7 +686,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_wallet.miner_wallet.clone(),
             app_proof,
             app_last_challenge,
-        ).await;
+        )
+        .await;
     });
 
     let (client_message_sender, client_message_receiver) =
@@ -680,7 +712,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_pongs,
             app_submission_window,
         )
-            .await;
+        .await;
     });
 
     // Handle ready clients
@@ -701,7 +733,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_client_nonce_ranges,
             app_submission_window,
         )
-            .await;
+        .await;
     });
 
     let (mine_success_sender, mine_success_receiver) =
@@ -724,6 +756,77 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_submission_window = submission_window.clone();
     let app_client_nonce_ranges = client_nonce_ranges.clone();
     let app_last_challenge = last_challenge.clone();
+
+    // Fetch coal_proof
+    let config_address = get_config_pubkey(&Resource::Coal);
+    let tool_address = get_tool_pubkey(
+        app_wallet.clone().miner_wallet.clone().pubkey(),
+        &Resource::Coal,
+    );
+    let guild_config_address = coal_guilds_api::state::config_pda().0;
+    let guild_member_address =
+        coal_guilds_api::state::member_pda(app_wallet.clone().miner_wallet.clone().pubkey()).0;
+
+    let mut accounts_multipliers = vec![
+        config_address,
+        tool_address,
+        guild_config_address,
+        guild_member_address,
+    ];
+    let accounts_multipliers = rpc_client
+        .get_multiple_accounts(&accounts_multipliers)
+        .await
+        .unwrap();
+
+    let mut tool: Option<ToolType> = None;
+    let mut member: Option<coal_guilds_api::state::Member> = None;
+    let mut guild_config: Option<coal_guilds_api::state::Config> = None;
+    let mut guild: Option<coal_guilds_api::state::Guild> = None;
+    let mut guild_address: Option<Pubkey> = None;
+
+    info!(target: "server_log", "setting up accounts");
+
+    if accounts_multipliers.len() > 1 {
+        if accounts_multipliers[1].as_ref().is_some() {
+            tool = Some(deserialize_tool(
+                &accounts_multipliers[1].as_ref().unwrap().data,
+                &Resource::Coal,
+            ));
+        }
+
+        if accounts_multipliers.len() > 2 && accounts_multipliers[2].as_ref().is_some() {
+            guild_config = Some(deserialize_guild_config(
+                &accounts_multipliers[2].as_ref().unwrap().data,
+            ));
+        }
+
+        if accounts_multipliers.len() > 3 && accounts_multipliers[3].as_ref().is_some() {
+            member = Some(deserialize_guild_member(
+                &accounts_multipliers[3].as_ref().unwrap().data,
+            ));
+        }
+
+        if accounts_multipliers.len() > 4 && accounts_multipliers[4].as_ref().is_some() {
+            guild = Some(deserialize_guild(
+                &accounts_multipliers[4].as_ref().unwrap().data,
+            ));
+        }
+    }
+
+    info!(target: "server_log", "getting guild info");
+
+    if member.is_some() && member.unwrap().guild.ne(&coal_guilds_api::ID) && guild_address.is_none()
+    {
+        let guild_data = rpc_client
+            .get_account_data(&member.unwrap().guild)
+            .await
+            .unwrap();
+        guild = Some(deserialize_guild(&guild_data));
+        guild_address = Some(member.unwrap().guild);
+    }
+
+    let tool_multiplier = calculate_tool_multiplier(&tool);
+
     tokio::spawn(async move {
         pool_submission_system(
             app_proof,
@@ -741,8 +844,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_submission_window,
             app_client_nonce_ranges,
             app_last_challenge,
+            Option::from(tool_address),
+            Option::from(guild_member_address),
+            tool,
+            member,
+            guild_config,
+            guild,
+            guild_address,
+            tool_multiplier,
         )
-            .await;
+        .await;
     });
 
     let app_shared_state = shared_state.clone();
@@ -757,15 +868,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_config,
             app_wallet,
             mine_success_receiver,
-        ).await;
+        )
+        .await;
     });
 
     let app_shared_state = shared_state.clone();
     tokio::spawn(async move {
-        message_text_all_clients_system(
-            app_shared_state,
-            all_clients_receiver,
-        ).await;
+        message_text_all_clients_system(app_shared_state, all_clients_receiver).await;
     });
 
     let cors = CorsLayer::new()
@@ -775,17 +884,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client_channel = client_message_sender.clone();
     let app_shared_state = shared_state.clone();
     let app = Router::new()
-        .route("/", get(ws_handler))
         .route("/v2/ws", get(ws_handler_v2))
         .route("/pause", post(post_pause))
         .route("/latest-blockhash", get(get_latest_blockhash))
         .route("/pool/authority/pubkey", get(get_pool_authority_pubkey))
         .route("/pool/fee_payer/pubkey", get(get_pool_fee_payer_pubkey))
-        .route("/signup", post(post_signup))
         .route("/v2/signup", post(post_signup_v2))
         .route("/signup-fee", get(get_signup_fee))
         .route("/sol-balance", get(get_sol_balance))
-        .route("/claim", post(post_claim))
         .route("/v2/claim", post(post_claim_v2))
         //.route("/stake", post(post_stake))
         //.route("/unstake", post(post_unstake))
@@ -806,7 +912,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/challenges", get(get_challenges))
         .route("/pool", get(routes::get_pool))
         .route("/pool/staked", get(routes::get_pool_staked))
-        .route("/pool/balance", get(get_pool_balance))
         .route("/txns/latest-mine", get(get_latest_mine_txn))
         .route("/guild/addresses", get(get_guild_addresses))
         .route("/guild/check-member", get(get_guild_check_member))
@@ -841,8 +946,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
-        .await
-        .unwrap();
+    .await
+    .unwrap();
 
     Ok(())
 }
@@ -915,67 +1020,6 @@ struct SignupParams {
     pubkey: String,
 }
 
-async fn post_signup(
-    query_params: Query<SignupParams>,
-    Extension(app_database): Extension<Arc<AppDatabase>>,
-    Extension(wallet): Extension<Arc<WalletExtension>>,
-    _body: String,
-) -> impl IntoResponse {
-    if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
-        let db_miner = app_database
-            .get_miner_by_pubkey_str(user_pubkey.to_string())
-            .await;
-
-        match db_miner {
-            Ok(miner) => {
-                if miner.enabled {
-                    info!(target: "server_log", "Miner account already enabled!");
-                    return Response::builder()
-                        .status(StatusCode::OK)
-                        .header("Content-Type", "text/text")
-                        .body("EXISTS".to_string())
-                        .unwrap();
-                }
-            }
-            Err(AppDatabaseError::FailedToGetConnectionFromPool) => {
-                error!(target: "server_log", "Failed to get database pool connection");
-                return Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body("Failed to get db pool connection".to_string())
-                    .unwrap();
-            }
-            Err(_) => {
-                info!(target: "server_log", "No miner account exists. Signing up new user.");
-            }
-        }
-
-        let res = app_database.signup_user_transaction(user_pubkey.to_string(), wallet.miner_wallet.pubkey().to_string()).await;
-
-        match res {
-            Ok(_) => {
-                return Response::builder()
-                    .status(StatusCode::OK)
-                    .header("Content-Type", "text/text")
-                    .body("SUCCESS".to_string())
-                    .unwrap();
-            }
-            Err(_) => {
-                error!(target: "server_log", "Failed to add miner to database");
-                return Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body("Failed to add user to database".to_string())
-                    .unwrap();
-            }
-        }
-    } else {
-        error!(target: "server_log", "Signup with invalid pubkey");
-        return Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body("Invalid Pubkey".to_string())
-            .unwrap();
-    }
-}
-
 #[derive(Deserialize)]
 struct SignupParamsV2 {
     miner: String,
@@ -1015,7 +1059,12 @@ async fn post_signup_v2(
             }
         }
 
-        let res = app_database.signup_user_transaction(miner_pubkey.to_string(), wallet.miner_wallet.pubkey().to_string()).await;
+        let res = app_database
+            .signup_user_transaction(
+                miner_pubkey.to_string(),
+                wallet.miner_wallet.pubkey().to_string(),
+            )
+            .await;
 
         match res {
             Ok(_) => {
@@ -1042,9 +1091,7 @@ async fn post_signup_v2(
     }
 }
 
-async fn get_signup_fee(
-    Extension(app_config): Extension<Arc<Config>>,
-) -> impl IntoResponse {
+async fn get_signup_fee(Extension(app_config): Extension<Arc<Config>>) -> impl IntoResponse {
     return Response::builder()
         .status(StatusCode::OK)
         .body(app_config.signup_fee.to_string())
@@ -1087,6 +1134,12 @@ struct PubkeyParam {
     pubkey: String,
 }
 
+#[derive(Deserialize, Serialize)]
+struct MinerRewards {
+    coal: f64,
+    ore: f64,
+}
+
 async fn get_miner_rewards(
     query_params: Query<PubkeyParam>,
     Extension(app_rr_database): Extension<Arc<AppRRDatabase>>,
@@ -1098,27 +1151,23 @@ async fn get_miner_rewards(
 
         match res {
             Ok(rewards) => {
-                let decimal_bal =
-                    rewards.balance as f64 / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
-                let response = format!("{}", decimal_bal);
-                return Response::builder()
-                    .status(StatusCode::OK)
-                    .body(response)
-                    .unwrap();
+                let decimal_bal_coal = rewards.balance_coal as f64
+                    / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
+                let decimal_bal_ore = rewards.balance_ore as f64
+                    / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
+                let response = MinerRewards {
+                    ore: decimal_bal_ore,
+                    coal: decimal_bal_coal,
+                };
+                return Ok(Json(response));
             }
             Err(_) => {
                 error!(target: "server_log", "get_miner_rewards: failed to get rewards balance from db for {}", user_pubkey.to_string());
-                return Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body("Failed to get balance".to_string())
-                    .unwrap();
+                return Err("Failed to get balance".to_string());
             }
         }
     } else {
-        return Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body("Invalid public key".to_string())
-            .unwrap();
+        return Err("Invalid public key".to_string());
     }
 }
 
@@ -1194,31 +1243,42 @@ async fn get_miner_last_claim(
     }
 }
 
+#[derive(Deserialize, Serialize)]
+struct MinerBalance {
+    coal: f64,
+    ore: f64,
+}
+
 async fn get_miner_balance(
     query_params: Query<PubkeyParam>,
     Extension(rpc_client): Extension<Arc<RpcClient>>,
 ) -> impl IntoResponse {
     if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
-        let miner_token_account = get_associated_token_address(&user_pubkey, &get_coal_mint());
-        if let Ok(response) = rpc_client
-            .get_token_account_balance(&miner_token_account)
+        let miner_token_account_coal = get_associated_token_address(&user_pubkey, &get_coal_mint());
+        let miner_token_account_ore = get_associated_token_address(&user_pubkey, &get_ore_mint());
+
+        let mut resp = MinerBalance {
+            ore: 0.0,
+            coal: 0.0,
+        };
+
+        if let Ok(response_coal) = rpc_client
+            .get_token_account_balance(&miner_token_account_coal)
             .await
         {
-            return Response::builder()
-                .status(StatusCode::OK)
-                .body(response.ui_amount_string)
-                .unwrap();
-        } else {
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("Failed to get token account balance".to_string())
-                .unwrap();
+            resp.coal = response_coal.ui_amount.unwrap();
         }
+
+        if let Ok(response_ore) = rpc_client
+            .get_token_account_balance(&miner_token_account_ore)
+            .await
+        {
+            resp.ore = response_ore.ui_amount.unwrap();
+        }
+
+        return Ok(Json(resp));
     } else {
-        return Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body("Invalid public key".to_string())
-            .unwrap();
+        return Err("Invalid public key".to_string());
     }
 }
 
@@ -1326,89 +1386,12 @@ struct ClaimParams {
     amount: u64,
 }
 
-async fn post_claim(
-    query_params: Query<ClaimParams>,
-    Extension(app_database): Extension<Arc<AppDatabase>>,
-    Extension(claims_queue): Extension<Arc<ClaimsQueue>>,
-) -> impl IntoResponse {
-    if let Ok(miner_pubkey) = Pubkey::from_str(&query_params.pubkey) {
-        let reader = claims_queue.queue.read().await;
-        let queue = reader.clone();
-        drop(reader);
-
-        if queue.contains_key(&miner_pubkey) {
-            return Response::builder()
-                .status(StatusCode::TOO_MANY_REQUESTS)
-                .body("QUEUED".to_string())
-                .unwrap();
-        }
-
-        let amount = query_params.amount;
-
-        // 1
-        if amount < 100_000_000_000 {
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("claim minimum is 1".to_string())
-                .unwrap();
-        }
-
-        if let Ok(miner_rewards) = app_database
-            .get_miner_rewards(miner_pubkey.to_string())
-            .await
-        {
-            if amount > miner_rewards.balance {
-                return Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body("claim amount exceeds miner rewards balance".to_string())
-                    .unwrap();
-            }
-
-            if let Ok(last_claim) = app_database.get_last_claim(miner_rewards.miner_id).await {
-                let last_claim_ts = last_claim.created_at.and_utc().timestamp();
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .expect("Time went backwards")
-                    .as_secs() as i64;
-                let time_difference = now - last_claim_ts;
-                if time_difference <= 1800 {
-                    return Response::builder()
-                        .status(StatusCode::TOO_MANY_REQUESTS)
-                        .body(time_difference.to_string())
-                        .unwrap();
-                }
-            }
-
-            let mut writer = claims_queue.queue.write().await;
-            writer.insert(miner_pubkey, ClaimsQueueItem {
-                receiver_pubkey: miner_pubkey,
-                amount,
-            });
-            drop(writer);
-            return Response::builder()
-                .status(StatusCode::OK)
-                .body("SUCCESS".to_string())
-                .unwrap();
-        } else {
-            return Response::builder()
-                .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body("failed to get miner account from database".to_string())
-                .unwrap();
-        }
-    } else {
-        error!(target: "server_log", "Claim with invalid pubkey");
-        return Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body("Invalid Pubkey".to_string())
-            .unwrap();
-    }
-}
-
 #[derive(Deserialize)]
 struct ClaimParamsV2 {
     timestamp: u64,
     receiver_pubkey: String,
-    amount: u64,
+    amount_coal: u64,
+    amount_ore: u64,
 }
 
 async fn post_claim_v2(
@@ -1432,21 +1415,24 @@ async fn post_claim_v2(
         return Err((StatusCode::UNAUTHORIZED, "Timestamp too old.".to_string()));
     }
     let receiver_pubkey = match Pubkey::from_str(&query_params.receiver_pubkey) {
-        Ok(pubkey) => {
-            pubkey
-        }
+        Ok(pubkey) => pubkey,
         Err(_) => {
-            return Err((StatusCode::BAD_REQUEST, "Invalid receiver_pubkey provided.".to_string()))
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "Invalid receiver_pubkey provided.".to_string(),
+            ))
         }
     };
 
     if let Ok(miner_pubkey) = Pubkey::from_str(miner_pubkey_str) {
         if let Ok(signature) = Signature::from_str(signed_msg) {
-            let amount = query_params.amount;
+            let amount_coal = query_params.amount_coal;
+            let amount_ore = query_params.amount_ore;
             let mut signed_msg = vec![];
             signed_msg.extend(msg_timestamp.to_le_bytes());
             signed_msg.extend(receiver_pubkey.to_bytes());
-            signed_msg.extend(amount.to_le_bytes());
+            signed_msg.extend(amount_coal.to_le_bytes());
+            signed_msg.extend(amount_ore.to_le_bytes());
 
             if signature.verify(&miner_pubkey.to_bytes(), &signed_msg) {
                 let reader = claims_queue.queue.read().await;
@@ -1457,22 +1443,36 @@ async fn post_claim_v2(
                     return Err((StatusCode::TOO_MANY_REQUESTS, "QUEUED".to_string()));
                 }
 
-                let amount = query_params.amount;
+                let amount_coal = query_params.amount_coal;
 
-                // 1
-                if amount < 100_000_000_000 {
-                    return Err((StatusCode::BAD_REQUEST, "claim minimum is 1".to_string()));
+                // 1 COAL 0.05 ORE
+                if amount_coal < 100_000_000_000 && amount_ore < 5_000_000_000 {
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        "claim minimum is 1 COAL or 0.05 ORE".to_string(),
+                    ));
                 }
 
                 if let Ok(miner_rewards) = app_database
                     .get_miner_rewards(miner_pubkey.to_string())
                     .await
                 {
-                    if amount > miner_rewards.balance {
-                        return Err((StatusCode::BAD_REQUEST, "claim amount exceeds miner rewards balance.".to_string()));
+                    if amount_coal > miner_rewards.balance_coal {
+                        return Err((
+                            StatusCode::BAD_REQUEST,
+                            "claim amount for COAL exceeds miner rewards balance.".to_string(),
+                        ));
+                    }
+                    if amount_ore > miner_rewards.balance_ore {
+                        return Err((
+                            StatusCode::BAD_REQUEST,
+                            "claim amount for ORE exceeds miner rewards balance.".to_string(),
+                        ));
                     }
 
-                    if let Ok(last_claim) = app_database.get_last_claim(miner_rewards.miner_id).await {
+                    if let Ok(last_claim) =
+                        app_database.get_last_claim(miner_rewards.miner_id).await
+                    {
                         let last_claim_ts = last_claim.created_at.and_utc().timestamp();
                         let now = SystemTime::now()
                             .duration_since(UNIX_EPOCH)
@@ -1480,22 +1480,35 @@ async fn post_claim_v2(
                             .as_secs() as i64;
                         let time_difference = now - last_claim_ts;
                         if time_difference <= 1800 {
-                            return Err((StatusCode::TOO_MANY_REQUESTS, time_difference.to_string()));
+                            return Err((
+                                StatusCode::TOO_MANY_REQUESTS,
+                                time_difference.to_string(),
+                            ));
                         }
                     }
 
                     let mut writer = claims_queue.queue.write().await;
-                    writer.insert(miner_pubkey, ClaimsQueueItem {
-                        receiver_pubkey,
-                        amount,
-                    });
+                    writer.insert(
+                        miner_pubkey,
+                        ClaimsQueueItem {
+                            receiver_pubkey,
+                            amount_coal,
+                            amount_ore,
+                        },
+                    );
                     drop(writer);
                     return Ok((StatusCode::OK, "SUCCESS"));
                 } else {
-                    return Err((StatusCode::INTERNAL_SERVER_ERROR, "failed to get miner account from database".to_string()));
+                    return Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to get miner account from database".to_string(),
+                    ));
                 }
             } else {
-                return Err((StatusCode::UNAUTHORIZED, "Sig verification failed".to_string()));
+                return Err((
+                    StatusCode::UNAUTHORIZED,
+                    "Sig verification failed".to_string(),
+                ));
             }
         } else {
             return Err((StatusCode::UNAUTHORIZED, "Invalid signature".to_string()));
@@ -1523,7 +1536,10 @@ async fn post_guild_stake(
     const MAX_RETRIES: u32 = 5; // Maximum number of retry attempts
     const BASE_DELAY: u64 = 500; // Base delay in milliseconds
 
-    if let (Ok(user_pubkey), Ok(guild_pubkey)) = (Pubkey::from_str(&query_params.pubkey), Pubkey::from_str(&app_config.guild_address)) {
+    if let (Ok(user_pubkey), Ok(guild_pubkey)) = (
+        Pubkey::from_str(&query_params.pubkey),
+        Pubkey::from_str(&app_config.guild_address),
+    ) {
         let serialized_tx = match BASE64_STANDARD.decode(&body) {
             Ok(tx) => tx,
             Err(e) => {
@@ -1573,7 +1589,8 @@ async fn post_guild_stake(
 
         // check that only the new_member, stake, and delegate instructions are present not only with id but checking the specific tx action, regardless of the position of the tx
         let mut instruction_index = 0;
-        let mut program_id = tx.message.account_keys[tx.message.instructions[instruction_index].program_id_index as usize];
+        let mut program_id = tx.message.account_keys
+            [tx.message.instructions[instruction_index].program_id_index as usize];
         while instruction_index < tx.message.instructions.len() {
             if program_id != coal_guilds_api::ID {
                 error!(target: "server_log", "Guild stake: Wrong program detected in transaction. Program: {}.", program_id);
@@ -1582,10 +1599,10 @@ async fn post_guild_stake(
                     .body("Wrong program".to_string())
                     .unwrap();
             }
-            program_id = tx.message.account_keys[tx.message.instructions[instruction_index].program_id_index as usize];
+            program_id = tx.message.account_keys
+                [tx.message.instructions[instruction_index].program_id_index as usize];
             instruction_index += 1;
         }
-
 
         /*// There should be either 2 or 3 instructions: initialize (optional), stake, and delegate
         if tx.message.instructions.len() < 2 || tx.message.instructions.len() > 3 {
@@ -1645,10 +1662,13 @@ async fn post_guild_stake(
 
         // Retry mechanism for sending the transaction
         //for attempt in 0..=MAX_RETRIES {
-        match rpc_client.send_and_confirm_transaction_with_spinner_and_commitment(
-            &tx,
-            CommitmentConfig::confirmed(),
-        ).await {
+        match rpc_client
+            .send_and_confirm_transaction_with_spinner_and_commitment(
+                &tx,
+                CommitmentConfig::confirmed(),
+            )
+            .await
+        {
             Ok(signature) => {
                 // Transaction successful
                 let amount_dec =
@@ -1695,11 +1715,10 @@ async fn post_guild_stake(
 
     // Fallback in case all attempts fail
     /*Response::builder()
-        .status(StatusCode::INTERNAL_SERVER_ERROR)
-        .body("Transaction failed unexpectedly.".to_string())
-        .unwrap()*/
+    .status(StatusCode::INTERNAL_SERVER_ERROR)
+    .body("Transaction failed unexpectedly.".to_string())
+    .unwrap()*/
 }
-
 
 /*#[derive(Deserialize)]
 struct StakeParams {
@@ -2005,95 +2024,6 @@ struct WsQueryParams {
     timestamp: u64,
 }
 
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    TypedHeader(auth_header): TypedHeader<axum_extra::headers::Authorization<Basic>>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    State(app_state): State<Arc<RwLock<AppState>>>,
-    //Extension(app_config): Extension<Arc<Config>>,
-    Extension(client_channel): Extension<UnboundedSender<ClientMessage>>,
-    Extension(app_database): Extension<Arc<AppDatabase>>,
-    query_params: Query<WsQueryParams>,
-) -> impl IntoResponse {
-    let msg_timestamp = query_params.timestamp;
-
-    let pubkey = auth_header.username();
-    let signed_msg = auth_header.password();
-
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards")
-        .as_secs();
-
-    // Signed authentication message is only valid for 30 seconds
-    if (now - query_params.timestamp) >= 30 {
-        return Err((StatusCode::UNAUTHORIZED, "Timestamp too old."));
-    }
-
-    // verify client
-    if let Ok(user_pubkey) = Pubkey::from_str(pubkey) {
-        let db_miner = app_database
-            .get_miner_by_pubkey_str(pubkey.to_string())
-            .await;
-
-        let miner;
-        match db_miner {
-            Ok(db_miner) => {
-                miner = db_miner;
-            }
-            Err(AppDatabaseError::QueryFailed) => {
-                return Err((
-                    StatusCode::UNAUTHORIZED,
-                    "pubkey is not authorized to mine. please sign up.",
-                ));
-            }
-            Err(AppDatabaseError::InteractionFailed) => {
-                return Err((
-                    StatusCode::UNAUTHORIZED,
-                    "pubkey is not authorized to mine. please sign up.",
-                ));
-            }
-            Err(AppDatabaseError::FailedToGetConnectionFromPool) => {
-                error!(target: "server_log", "Failed to get database pool connection.");
-                return Err((StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error"));
-            }
-            Err(_) => {
-                error!(target: "server_log", "DB Error: Catch all.");
-                return Err((StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error"));
-            }
-        }
-
-        if !miner.enabled {
-            return Err((StatusCode::UNAUTHORIZED, "pubkey is not authorized to mine"));
-        }
-
-        if let Ok(signature) = Signature::from_str(signed_msg) {
-            let ts_msg = msg_timestamp.to_le_bytes();
-
-            if signature.verify(&user_pubkey.to_bytes(), &ts_msg) {
-                info!(target: "server_log", "Client: {addr} connected with pubkey {pubkey}.");
-                return Ok(ws.on_upgrade(move |socket| {
-                    handle_socket(
-                        socket,
-                        addr,
-                        user_pubkey,
-                        miner.id,
-                        ClientVersion::V1,
-                        app_state,
-                        client_channel,
-                    )
-                }));
-            } else {
-                return Err((StatusCode::UNAUTHORIZED, "Sig verification failed"));
-            }
-        } else {
-            return Err((StatusCode::UNAUTHORIZED, "Invalid signature"));
-        }
-    } else {
-        return Err((StatusCode::UNAUTHORIZED, "Invalid pubkey"));
-    }
-}
-
 async fn ws_handler_v2(
     ws: WebSocketUpgrade,
     TypedHeader(auth_header): TypedHeader<axum_extra::headers::Authorization<Basic>>,
@@ -2228,7 +2158,7 @@ async fn handle_socket(
             }
         }
     })
-        .await;
+    .await;
 
     let mut app_state = rw_app_state.write().await;
     app_state.sockets.remove(&who);
@@ -2393,15 +2323,12 @@ pub struct PoolGuild {
     pub authority: String,
 }
 
-
 async fn get_miner_balance_v2(
     query_params: Query<PubkeyMintParam>,
     Extension(rpc_client): Extension<Arc<RpcClient>>,
 ) -> impl IntoResponse {
     let mint = match Pubkey::from_str(&query_params.mint) {
-        Ok(pk) => {
-            pk
-        }
+        Ok(pk) => pk,
         Err(_) => {
             error!(target: "server_log", "get_miner_balance_v2 - Failed to parse mint");
             return Response::builder()
@@ -2437,7 +2364,8 @@ async fn get_miner_balance_v2(
 pub async fn get_guild_check_member(
     query_params: Query<PubkeyParam>,
     Extension(app_config): Extension<Arc<Config>>,
-    Extension(rpc_client): Extension<Arc<RpcClient>>) -> impl IntoResponse {
+    Extension(rpc_client): Extension<Arc<RpcClient>>,
+) -> impl IntoResponse {
     if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
         let member = member_pda(user_pubkey);
         let member_data = rpc_client.get_account_data(&member.0).await;
@@ -2453,14 +2381,23 @@ pub async fn get_guild_check_member(
             }
             Ok(data) => {
                 if let Ok(member) = Member::try_from_bytes(&data) {
-                    if member.guild.to_string().is_empty() || member.guild.to_string().eq("11111111111111111111111111111111") {
+                    if member.guild.to_string().is_empty()
+                        || member
+                            .guild
+                            .to_string()
+                            .eq("11111111111111111111111111111111")
+                    {
                         info!(target: "server_log", "Pubkey: {} without any guild. We can continue with the flow without any extra steps", user_pubkey.to_string());
                         return Response::builder()
                             .status(StatusCode::OK)
                             .header("Content-Type", "text/text")
                             .body("SUCCESS".to_string())
                             .unwrap();
-                    } else if member.guild.to_string().eq(&app_config.guild_address.to_string()) {
+                    } else if member
+                        .guild
+                        .to_string()
+                        .eq(&app_config.guild_address.to_string())
+                    {
                         info!(target: "server_log", "Pubkey: {} is already in the guild. No extra steps needed", user_pubkey.to_string());
                         return Response::builder()
                             .status(StatusCode::FOUND)

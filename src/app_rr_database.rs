@@ -28,9 +28,9 @@ impl AppRRDatabase {
     ) -> Result<models::Reward, AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn.interact(move |conn: &mut MysqlConnection| {
-                diesel::sql_query("SELECT r.balance, r.miner_id FROM miners m JOIN rewards r ON m.id = r.miner_id WHERE m.pubkey = ?")
-                .bind::<Text, _>(miner_pubkey)
-                .get_result::<models::Reward>(conn)
+                diesel::sql_query("SELECT r.balance_coal, r.balance_ore, r.miner_id FROM miners m JOIN rewards r ON m.id = r.miner_id WHERE m.pubkey = ?")
+                    .bind::<Text, _>(miner_pubkey)
+                    .get_result::<models::Reward>(conn)
             }).await;
 
             match res {
@@ -59,8 +59,7 @@ impl AppRRDatabase {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn
                 .interact(move |conn: &mut MysqlConnection| {
-
-                    diesel::sql_query("SELECT s.*, m.pubkey FROM submissions s JOIN miners m ON s.miner_id = m.id JOIN challenges c ON s.challenge_id = c.id WHERE c.id = (SELECT id from challenges WHERE rewards_earned IS NOT NULL ORDER BY id DESC LIMIT 1)")
+                    diesel::sql_query("SELECT s.*, m.pubkey FROM submissions s JOIN miners m ON s.miner_id = m.id JOIN challenges c ON s.challenge_id = c.id WHERE c.id = (SELECT id from challenges WHERE rewards_earned_coal IS NOT NULL ORDER BY id DESC LIMIT 1)")
                         .load::<SubmissionWithPubkey>(conn)
                 })
                 .await;
@@ -122,8 +121,7 @@ impl AppRRDatabase {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn
                 .interact(move |conn: &mut MysqlConnection| {
-
-                    diesel::sql_query("SELECT c.id, c.rewards_earned, c.updated_at, s.difficulty FROM challenges c JOIN submissions s ON c.submission_id = s.id WHERE c.submission_id IS NOT NULL ORDER BY c.id  DESC LIMIT 1440")
+                    diesel::sql_query("SELECT c.id, c.rewards_earned_coal, c.rewards_earned_ore, c.updated_at, s.difficulty FROM challenges c JOIN submissions s ON c.submission_id = s.id WHERE c.submission_id IS NOT NULL ORDER BY c.id  DESC LIMIT 1440")
                         .load::<ChallengeWithDifficulty>(conn)
                 })
                 .await;
@@ -154,9 +152,9 @@ impl AppRRDatabase {
     ) -> Result<models::Pool, AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn.interact(move |conn: &mut MysqlConnection| {
-                diesel::sql_query("SELECT id, proof_pubkey, authority_pubkey, total_rewards, claimed_rewards FROM pools WHERE pools.authority_pubkey = ?")
-                .bind::<Text, _>(pool_pubkey)
-                .get_result::<models::Pool>(conn)
+                diesel::sql_query("SELECT id, proof_pubkey, authority_pubkey, total_rewards_coal, total_rewards_ore, claimed_rewards_coal, claimed_rewards_ore FROM pools WHERE pools.authority_pubkey = ?")
+                    .bind::<Text, _>(pool_pubkey)
+                    .get_result::<models::Pool>(conn)
             }).await;
 
             match res {

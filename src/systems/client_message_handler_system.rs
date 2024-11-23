@@ -8,18 +8,15 @@ use std::{
 use uuid::Uuid;
 
 use axum::extract::ws::Message;
-use futures::SinkExt;
 use coal_api::state::Proof;
+use futures::SinkExt;
 use solana_sdk::pubkey::Pubkey;
 use tokio::{
     sync::{mpsc::UnboundedReceiver, Mutex, RwLock},
     time::Instant,
 };
 
-use crate::{
-    AppState, ClientMessage, EpochHashes, InternalMessageSubmission, LastPong, SubmissionWindow,
-    MIN_DIFF, MIN_HASHPOWER,
-};
+use crate::{AppState, ClientMessage, EpochHashes, InternalMessageSubmission, LastPong, SubmissionWindow, MAX_CALCULATED_HASHPOWER, MIN_DIFF, MIN_HASHPOWER};
 
 pub async fn client_message_handler_system(
     mut receiver_channel: UnboundedReceiver<ClientMessage>,
@@ -131,9 +128,10 @@ pub async fn client_message_handler_system(
                         tracing::info!(target: "submission_log", "{} - {} found diff: {}", submission_uuid, pubkey_str, diff);
                         if diff >= MIN_DIFF {
                             // calculate rewards
-                            let mut hashpower = MIN_HASHPOWER * 2u64.pow(diff - MIN_DIFF);
-                            if hashpower > 81_920 {
-                                hashpower = 81_920;
+                            let real_hashpower = MIN_HASHPOWER * 2u64.pow(diff - MIN_DIFF);
+                            let mut hashpower = real_hashpower.clone();
+                            if hashpower > MAX_CALCULATED_HASHPOWER {
+                                hashpower = MAX_CALCULATED_HASHPOWER;
                             }
                             {
                                 let reader = epoch_hashes.read().await;
@@ -150,10 +148,11 @@ pub async fn client_message_handler_system(
                                                 supplied_nonce: nonce,
                                                 supplied_diff: diff,
                                                 hashpower,
+                                                real_hashpower,
                                             },
                                         );
                                         if diff > epoch_hashes.best_hash.difficulty {
-                                            tracing::info!(target: "server_log", "{} - New best diff: {}", submission_uuid, diff);
+                                            // tracing::info!(target: "server_log", "{} - New best diff: {}", submission_uuid, diff);
                                             tracing::info!(target: "submission_log", "{} - New best diff: {}", submission_uuid, diff);
                                             epoch_hashes.best_hash.difficulty = diff;
                                             epoch_hashes.best_hash.solution = Some(solution);
@@ -170,10 +169,11 @@ pub async fn client_message_handler_system(
                                             supplied_nonce: nonce,
                                             supplied_diff: diff,
                                             hashpower,
+                                            real_hashpower,
                                         },
                                     );
                                     if diff > epoch_hashes.best_hash.difficulty {
-                                        tracing::info!(target: "server_log", "{} - New best diff: {}", submission_uuid, diff);
+                                        // tracing::info!(target: "server_log", "{} - New best diff: {}", submission_uuid, diff);
                                         tracing::info!(target: "submission_log", "{} - New best diff: {}", submission_uuid, diff);
                                         epoch_hashes.best_hash.difficulty = diff;
                                         epoch_hashes.best_hash.solution = Some(solution);
@@ -183,7 +183,8 @@ pub async fn client_message_handler_system(
                                 }
                             }
                         } else {
-                            tracing::error!(target: "server_log", "Diff to low, skipping");
+                            tracing::error!(target: "submission_log", "Diff to low, skipping submission from {}",pubkey_str);
+                            // tracing::error!(target: "server_log", "{} - {} found diff: {}", submission_uuid, pubkey_str, diff);
                         }
                     } else {
                         tracing::error!(target: "server_log", "{} returned an invalid solution!", pubkey);

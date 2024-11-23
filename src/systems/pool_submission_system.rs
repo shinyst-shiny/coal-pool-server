@@ -31,12 +31,25 @@ use tokio::{
 };
 use tracing::info;
 
-use crate::coal_utils::{amount_u64_to_string, deserialize_config, deserialize_guild, deserialize_guild_config, deserialize_guild_member, deserialize_tool, get_config_pubkey, get_tool_pubkey, Resource, ToolType};
-use crate::ore_utils::{get_ore_auth_ix, get_ore_mine_ix};
+use crate::coal_utils::{
+    amount_u64_to_string, calculate_guild_multiplier, calculate_tool_multiplier,
+    deserialize_config, deserialize_guild, deserialize_guild_config, deserialize_guild_member,
+    deserialize_tool, get_config_pubkey, get_tool_pubkey, Resource, ToolType,
+};
+use crate::ore_utils::{
+    get_ore_auth_ix, get_ore_balance, get_ore_mine_ix,
+    get_proof_and_config_with_busses as get_proof_and_config_with_busses_ore,
+    get_reset_ix as get_reset_ix_ore, ORE_TOKEN_DECIMALS,
+};
 use crate::{
-    app_database::AppDatabase, coal_utils::{
-        get_auth_ix, get_cutoff, get_guild_member, get_guild_proof, get_mine_ix, get_proof, get_proof_and_config_with_busses, get_reset_ix, MineEventWithBoosts, COAL_TOKEN_DECIMALS,
-    }, Config, EpochHashes, InsertChallenge, InsertEarning, InsertTxn, MessageInternalAllClients, MessageInternalMineSuccess, SubmissionWindow, UpdateReward, WalletExtension,
+    app_database::AppDatabase,
+    coal_utils::{
+        get_auth_ix, get_cutoff, get_guild_member, get_guild_proof, get_mine_ix, get_proof,
+        get_proof_and_config_with_busses as get_proof_and_config_with_busses_coal,
+        get_reset_ix as get_reset_ix_coal, MineEventWithBoosts, COAL_TOKEN_DECIMALS,
+    },
+    Config, EpochHashes, InsertChallenge, InsertEarning, InsertTxn, MessageInternalAllClients,
+    MessageInternalMineSuccess, SubmissionWindow, UpdateReward, WalletExtension,
 };
 
 pub async fn pool_submission_system(
@@ -55,6 +68,14 @@ pub async fn pool_submission_system(
     app_submission_window: Arc<RwLock<SubmissionWindow>>,
     app_client_nonce_ranges: Arc<RwLock<HashMap<Pubkey, Vec<Range<u64>>>>>,
     app_last_challenge: Arc<Mutex<[u8; 32]>>,
+    tool_address: Option<Pubkey>,
+    guild_member_address: Option<Pubkey>,
+    tool: Option<ToolType>,
+    member: Option<coal_guilds_api::state::Member>,
+    guild_config: Option<coal_guilds_api::state::Config>,
+    guild: Option<coal_guilds_api::state::Guild>,
+    guild_address: Option<Pubkey>,
+    tool_multiplier: f64,
 ) {
     loop {
         let lock = app_proof.lock().await;
@@ -84,7 +105,10 @@ pub async fn pool_submission_system(
                 let submissions = reader.submissions.clone();
                 drop(reader);
 
+                let app_app_wallet = app_wallet.clone();
+
                 for i in 0..10 {
+                    let app_wallet = app_app_wallet.clone();
                     if let Some(best_solution) = best_solution {
                         let difficulty = best_solution.to_hash().difficulty();
 
@@ -93,15 +117,14 @@ pub async fn pool_submission_system(
                             i, difficulty
                         );
                         info!(target: "server_log", "Submission Challenge: {}", BASE64_STANDARD.encode(old_proof.challenge));
-                        let mut loaded_config = None;
+                        let mut loaded_config_coal = None;
                         info!(target: "server_log", "Getting latest config and busses data.");
                         tokio::time::sleep(Duration::from_millis(1000)).await;
                         if let (Ok(p), Ok(config), Ok(_busses)) =
-                            get_proof_and_config_with_busses(&rpc_client, signer.pubkey()).await
+                            get_proof_and_config_with_busses_coal(&rpc_client, signer.pubkey())
+                                .await
                         {
-                            loaded_config = Some(config);
-
-                            info!(target: "server_log", "Got latest config: {:?}", loaded_config);
+                            loaded_config_coal = Some(config);
 
                             info!(target: "server_log", "Latest Challenge: {}", BASE64_STANDARD.encode(p.challenge));
 
@@ -113,6 +136,12 @@ pub async fn pool_submission_system(
                                 drop(lock);
                                 break;
                             }
+                        }
+                        let mut loaded_config_ore = None;
+                        if let (Ok(p), Ok(config), Ok(_busses)) =
+                            get_proof_and_config_with_busses_ore(&rpc_client, signer.pubkey()).await
+                        {
+                            loaded_config_ore = Some(config);
                         }
                         let now = SystemTime::now()
                             .duration_since(UNIX_EPOCH)
@@ -126,13 +155,13 @@ pub async fn pool_submission_system(
                             text: String::from("Server is sending mine transaction..."),
                         });
 
-                        let mut cu_limit = 500_000;
-                        let should_add_reset_ix = if let Some(config) = loaded_config {
+                        let mut cu_limit = 980_000;
+                        let should_add_reset_ix_coal = if let Some(config) = loaded_config_coal {
                             let time_until_reset = (config.last_reset_at + 120) - now as i64;
                             if time_until_reset <= 5 {
-                                cu_limit += 20_000;
+                                cu_limit += 50_000;
                                 prio_fee += 50_000;
-                                info!(target: "server_log", "Including reset tx.");
+                                info!(target: "server_log", "Including reset tx COAL.");
                                 true
                             } else {
                                 false
@@ -171,95 +200,57 @@ pub async fn pool_submission_system(
                                         .unwrap()
                                         .to_string(),
                                 )
-                                    .unwrap(),
+                                .unwrap(),
                                 jito_tip,
                             ));
 
                             info!(target: "server_log", "Jito tip: {} SOL", lamports_to_sol(jito_tip));
                         }
 
-                        info!("Signing transaction with: {}", signer.pubkey());
+                        info!(target: "server_log", "Adding noop ix ORE");
 
                         let ore_noop_ix = get_ore_auth_ix(signer.pubkey());
                         let coal_apinoop_ix = get_auth_ix(signer.pubkey());
-                        ixs.push(ore_noop_ix);
+                        ixs.push(ore_noop_ix.clone());
                         ixs.push(coal_apinoop_ix.clone());
 
-                        if should_add_reset_ix {
-                            let reset_ix = get_reset_ix(signer.pubkey());
+                        info!(target: "server_log", "Adding reset ix COAL");
+
+                        if should_add_reset_ix_coal {
+                            let reset_ix = get_reset_ix_coal(signer.pubkey());
                             ixs.push(reset_ix);
                         }
 
-                        // Fetch coal_proof
-                        let config_address = get_config_pubkey(&Resource::Coal);
-                        let tool_address = get_tool_pubkey(signer.pubkey(), &Resource::Coal);
-                        let guild_config_address = coal_guilds_api::state::config_pda().0;
-                        let guild_member_address = coal_guilds_api::state::member_pda(signer.pubkey()).0;
+                        info!(target: "server_log","Using for the transaction Signer: {:?} tool: {:?}, member: {:?}, guild_address: {:?}", signer.pubkey(), tool_address, guild_member_address, guild_address);
 
-                        let mut accounts: Vec<Pubkey> = vec![config_address, tool_address, guild_config_address, guild_member_address];
-                        let accounts = rpc_client.get_multiple_accounts(&accounts).await.unwrap();
+                        let coal_mine_ix =
+                            get_mine_ix(signer.pubkey(), best_solution, bus, None, None, None);
 
-                        let mut tool: Option<ToolType> = None;
-                        let mut member: Option<coal_guilds_api::state::Member> = None;
-                        let mut guild_config: Option<coal_guilds_api::state::Config> = None;
-                        let mut guild: Option<coal_guilds_api::state::Guild> = None;
-                        let mut guild_address: Option<Pubkey> = None;
-
-                        if accounts.len() > 1 {
-                            if accounts[1].as_ref().is_some() {
-                                tool = Some(deserialize_tool(&accounts[1].as_ref().unwrap().data, &Resource::Coal));
-                            }
-
-                            if accounts.len() > 2 && accounts[2].as_ref().is_some() {
-                                guild_config = Some(deserialize_guild_config(&accounts[2].as_ref().unwrap().data));
-                            }
-
-                            if accounts.len() > 3 && accounts[3].as_ref().is_some() {
-                                member = Some(deserialize_guild_member(&accounts[3].as_ref().unwrap().data));
-                            }
-
-                            if accounts.len() > 4 && accounts[4].as_ref().is_some() {
-                                guild = Some(deserialize_guild(&accounts[4].as_ref().unwrap().data));
-                            }
-                        }
-
-                        if member.is_some() && member.unwrap().guild.ne(&coal_guilds_api::ID) && guild_address.is_none() {
-                            let guild_data = rpc_client.get_account_data(&member.unwrap().guild).await.unwrap();
-                            guild = Some(deserialize_guild(&guild_data));
-                            guild_address = Some(member.unwrap().guild);
-                        }
-
-                        info!(target: "server_log","Using for the transaction Signer: {:?} tool: {:?}, member: {:?}, guild_address: {:?}", signer.pubkey(), tool_address, guild_member_address, member.unwrap().guild);
-
-                        // let coal_mine_ix = get_mine_ix(signer.pubkey(), best_solution, bus, guild_pubkey, signer.pubkey());
-                        let coal_mine_ix = get_mine_ix(
-                            signer.pubkey(),
-                            best_solution, bus,
-                            match tool {
-                                Some(_) => Some(tool_address),
-                                None => None
-                            },
-                            match member {
-                                Some(_) => Some(guild_member_address),
-                                None => None
-                            },
-                            match member {
-                                Some(member) => if member.guild.eq(&coal_guilds_api::ID) {
-                                    None
-                                } else {
-                                    Some(member.guild)
-                                },
-                                None => None
-                            },
-                        );
-                        // let ore_mine_ix = get_ore_mine_ix(signer.pubkey(), best_solution, bus);
-                        //ixs.push(ore_mine_ix);
+                        let ore_mine_ix = get_ore_mine_ix(signer.pubkey(), best_solution, bus);
+                        ixs.push(ore_mine_ix);
                         ixs.push(coal_mine_ix);
+
+                        info!(target: "server_log", "built ixs, getting balances...");
+
+                        let mut ore_balance_before_tx = std::u64::MAX;
+
+                        if let Ok(ore_balance) = get_ore_balance(
+                            app_wallet.clone().miner_wallet.pubkey(),
+                            &rpc_client.clone(),
+                        )
+                        .await
+                        {
+                            ore_balance_before_tx = ore_balance
+                        }
+
+                        info!(target: "server_log", "got balance {}, sending to rpc_client", ore_balance_before_tx);
 
                         if let Ok((hash, _slot)) = rpc_client
                             .get_latest_blockhash_with_commitment(rpc_client.commitment())
                             .await
                         {
+                            info!(target: "server_log", "Got block building tx...");
+
                             let mut tx = Transaction::new_with_payer(&ixs, Some(&signer.pubkey()));
 
                             let expired_timer = Instant::now();
@@ -292,14 +283,14 @@ pub async fn pool_submission_system(
                                 if let Some(tx_error) = result.value.err {
                                     if tx_error
                                         == TransactionError::InstructionError(
-                                        4,
-                                        InstructionError::Custom(1),
-                                    )
+                                            4,
+                                            InstructionError::Custom(1),
+                                        )
                                         || tx_error
-                                        == TransactionError::InstructionError(
-                                        5,
-                                        InstructionError::Custom(1),
-                                    )
+                                            == TransactionError::InstructionError(
+                                                5,
+                                                InstructionError::Custom(1),
+                                            )
                                     {
                                         tracing::error!(target: "server_log", "Custom program error: Invalid Hash");
                                         break;
@@ -382,9 +373,9 @@ pub async fn pool_submission_system(
                                             info!(target: "server_log", "Proof challenge not updated yet..");
                                             if let Ok(p) = get_proof(
                                                 &app_rpc_client,
-                                                app_wallet.miner_wallet.pubkey(),
+                                                app_wallet.clone().miner_wallet.pubkey(),
                                             )
-                                                .await
+                                            .await
                                             {
                                                 info!(target: "server_log", "OLD PROOF CHALLENGE: {}", BASE64_STANDARD.encode(old_proof.challenge));
                                                 info!(target: "server_log", "RPC PROOF CHALLENGE: {}", BASE64_STANDARD.encode(p.challenge));
@@ -435,7 +426,8 @@ pub async fn pool_submission_system(
                                                     let new_challenge = InsertChallenge {
                                                         pool_id: app_config.pool_id,
                                                         challenge: p.challenge.to_vec(),
-                                                        rewards_earned: None,
+                                                        rewards_earned_coal: None,
+                                                        rewards_earned_ore: None,
                                                     };
 
                                                     while let Err(_) = app_database
@@ -457,7 +449,7 @@ pub async fn pool_submission_system(
                                                         tokio::time::sleep(Duration::from_millis(
                                                             1000,
                                                         ))
-                                                            .await;
+                                                        .await;
                                                     }
                                                     info!(target: "server_log", "New challenge successfully added to db");
 
@@ -472,7 +464,8 @@ pub async fn pool_submission_system(
                                             let new_challenge = InsertChallenge {
                                                 pool_id: app_config.pool_id,
                                                 challenge: latest_proof.challenge.to_vec(),
-                                                rewards_earned: None,
+                                                rewards_earned_coal: None,
+                                                rewards_earned_ore: None,
                                             };
 
                                             while let Err(_) = app_database
@@ -550,7 +543,7 @@ pub async fn pool_submission_system(
                             });
 
                             let result: Result<Signature, String> = loop {
-                                if expired_timer.elapsed().as_secs() >= 360 {
+                                if expired_timer.elapsed().as_secs() >= 120 {
                                     break Err("Transaction Expired".to_string());
                                 }
                                 let results = rpc_client.get_signature_statuses(&[signature]).await;
@@ -603,7 +596,11 @@ pub async fn pool_submission_system(
                                         Arc::new(mine_success_sender.clone());
                                     let app_app_proof = app_proof.clone();
                                     let app_app_config = config.clone();
+
+                                    let app_app_wallet = app_wallet.clone();
+
                                     tokio::spawn(async move {
+                                        let app_wallet = app_app_wallet.clone();
                                         let rpc_client = app_rpc_client;
                                         let app_database = app_app_database;
                                         let mine_success_sender = app_mine_success_sender;
@@ -629,33 +626,65 @@ pub async fn pool_submission_system(
                                                     .unwrap()
                                                     .return_data;
 
-
-                                                let guild_total_stake = guild.unwrap().total_stake;
-                                                let guild_multiplier = calculate_guild_multiplier(guild_config.unwrap().total_stake, guild_config.unwrap().total_multiplier, guild.unwrap().total_stake);
-                                                let guild_last_stake_at = guild.unwrap().last_stake_at;
+                                                let guild_total_stake =
+                                                    guild.unwrap().total_stake as f64;
+                                                let guild_multiplier = calculate_guild_multiplier(
+                                                    guild_config.unwrap().total_stake,
+                                                    guild_config.unwrap().total_multiplier,
+                                                    guild.unwrap().total_stake,
+                                                );
+                                                let guild_last_stake_at =
+                                                    guild.unwrap().last_stake_at;
 
                                                 match data {
                                                     solana_transaction_status::option_serializer::OptionSerializer::Some(data) => {
                                                         let bytes = BASE64_STANDARD.decode(data.data.0).unwrap();
 
                                                         if let Ok(mine_event) = bytemuck::try_from_bytes::<MineEvent>(&bytes) {
+                                                            let mut ore_balance_after_tx = 0;
+
+                                                            if let Ok(ore_balance) = get_ore_balance(
+                                                                app_wallet.clone().miner_wallet.pubkey(),
+                                                                &rpc_client.clone(),
+                                                            ).await {
+                                                                ore_balance_after_tx = ore_balance.clone();
+                                                                if(ore_balance_before_tx == std::u64::MAX) {
+                                                                    ore_balance_before_tx = ore_balance.clone();
+                                                                }
+                                                            } else {
+                                                                ore_balance_before_tx = 0;
+                                                            }
+
+                                                            if ore_balance_before_tx > ore_balance_after_tx {
+                                                                ore_balance_before_tx = ore_balance_after_tx.clone();
+                                                            }
+
+                                                            info!(target: "server_log", "ORE balance before: {:?} ORE balance after: {:?}", ore_balance_before_tx, ore_balance_after_tx);
+
                                                             info!(target: "server_log", "MineEvent: {:?}", mine_event);
                                                             info!(target: "submission_log", "MineEvent: {:?}", mine_event);
                                                             info!(target: "server_log", "For Challenge: {:?}", BASE64_STANDARD.encode(old_proof.challenge));
                                                             info!(target: "submission_log", "For Challenge: {:?}", BASE64_STANDARD.encode(old_proof.challenge));
-                                                            let full_rewards = mine_event.reward;
-                                                            let commissions = full_rewards.mul(5).saturating_div(100);
-                                                            let rewards = full_rewards - commissions;
-                                                            info!(target: "server_log", "Miners Rewards: {}", rewards);
-                                                            info!(target: "server_log", "Commission: {}", commissions);
-                                                            info!(target: "server_log", "Guild total stake: {}", amount_u64_to_string(guild_total_stake));
-                                                            info!(target: "server_log", "Guild multiplier: {}", guild_multiplier);
-                                                            info!(target: "server_log", "Guild last stake at: {}", guild_last_stake_at);
+                                                            let full_rewards_coal = mine_event.reward;
+                                                            let commissions_coal = full_rewards_coal.mul(5).saturating_div(100);
+                                                            let rewards_coal = full_rewards_coal - commissions_coal;
+                                                            let full_rewards_ore = ore_balance_after_tx - ore_balance_before_tx;
+                                                            let commissions_ore = full_rewards_ore.mul(5).saturating_div(100);
+                                                            let rewards_ore = full_rewards_ore - commissions_ore;
+                                                            // info!(target: "server_log", "Miners Rewards COAL: {}", rewards_coal);
+                                                            // info!(target: "server_log", "Commission COAL: {}", commissions_coal);
+                                                            // info!(target: "server_log", "Guild total stake: {}", guild_total_stake);
+                                                            // info!(target: "server_log", "Guild multiplier: {}", guild_multiplier);
+                                                            // info!(target: "server_log", "Guild last stake at: {}", guild_last_stake_at);
+                                                            // info!(target: "server_log", "Miners Rewards ORE: {}", rewards_ore);
+                                                            // info!(target: "server_log", "Commission ORE: {}", commissions_ore);
 
                                                             // handle sending mine success message
+                                                            let mut total_real_hashpower: u64 = 0;
                                                             let mut total_hashpower: u64 = 0;
                                                             for submission in submissions.iter() {
-                                                                total_hashpower += submission.1.hashpower
+                                                                total_hashpower += submission.1.hashpower;
+                                                                total_real_hashpower += submission.1.real_hashpower;
                                                             }
                                                             let challenge;
                                                             loop {
@@ -668,13 +697,14 @@ pub async fn pool_submission_system(
                                                                     challenge = c;
                                                                     break;
                                                                 } else {
-                                                                    tracing::error!(target: "server_log", 
+                                                                    tracing::error!(target: "server_log",
                                                                         "Failed to get challenge by challenge! Inserting if necessary..."
                                                                     );
                                                                     let new_challenge = InsertChallenge {
                                                                         pool_id: app_config.pool_id,
                                                                         challenge: old_proof.challenge.to_vec(),
-                                                                        rewards_earned: None,
+                                                                        rewards_earned_coal: None,
+                                                                        rewards_earned_ore: None,
                                                                     };
                                                                     while let Err(_) = app_database
                                                                         .add_new_challenge(new_challenge.clone())
@@ -701,7 +731,8 @@ pub async fn pool_submission_system(
                                                                     miner_id: app_config.commissions_miner_id,
                                                                     pool_id: app_config.pool_id,
                                                                     challenge_id: challenge.id,
-                                                                    amount: commissions,
+                                                                    amount_coal: commissions_coal,
+                                                                    amount_ore: commissions_ore
                                                                 }
                                                             ];
                                                             tracing::info!(target: "server_log", "Inserting commissions earning");
@@ -715,7 +746,8 @@ pub async fn pool_submission_system(
 
                                                             let new_commission_rewards = vec![UpdateReward {
                                                                 miner_id: app_config.commissions_miner_id,
-                                                                balance: commissions,
+                                                                balance_coal: commissions_coal,
+                                                                balance_ore: commissions_ore
                                                             }];
 
                                                             tracing::info!(target: "server_log", "Updating commissions rewards...");
@@ -727,11 +759,13 @@ pub async fn pool_submission_system(
                                                             tokio::time::sleep(Duration::from_millis(200)).await;
 
                                                             let latest_proof = { app_proof.lock().await.clone() };
-                                                            let balance = (latest_proof.balance as f64)
+                                                            let balance_coal = (latest_proof.balance as f64)
                                                                 / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
 
+                                                            let balance_ore = (ore_balance_after_tx) as f64
+                                                                / 10f64.powf(ORE_TOKEN_DECIMALS as f64);
 
-                                                            let multiplier = if let Some(config) = loaded_config {
+                                                            let multiplier = if let Some(config) = loaded_config_coal {
                                                                 if config.top_balance > 0 {
                                                                     1.0 + (latest_proof.balance as f64 / config.top_balance as f64).min(1.0f64)
                                                                 } else {
@@ -741,161 +775,41 @@ pub async fn pool_submission_system(
                                                                 1.0f64
                                                             };
 
+                                                            info!(target: "server_log", "tool_multiplier: {}", tool_multiplier);
 
                                                             info!(target: "server_log", "Sending internal mine success for challenge: {}", BASE64_STANDARD.encode(old_proof.challenge));
                                                             let _ = mine_success_sender.send(
                                                                 MessageInternalMineSuccess {
                                                                     difficulty,
-                                                                    total_balance: balance,
-                                                                    rewards: full_rewards,
-                                                                    commissions,
+                                                                    total_balance_coal: balance_coal,
+                                                                    total_balance_ore: balance_ore,
+                                                                    rewards_coal: full_rewards_coal,
+                                                                    rewards_ore: full_rewards_ore,
+                                                                    commissions_coal: commissions_coal,
+                                                                    commissions_ore: commissions_ore,
                                                                     challenge_id: challenge.id,
                                                                     challenge: old_proof.challenge,
                                                                     best_nonce: u64::from_le_bytes(best_solution.n),
                                                                     total_hashpower,
-                                                                    coal_config: loaded_config,
+                                                                    total_real_hashpower,
+                                                                    coal_config: loaded_config_coal,
                                                                     multiplier,
                                                                     submissions,
                                                                     guild_total_stake,
                                                                     guild_multiplier,
-                                                                    guild_last_stake_at,
+                                                                    tool_multiplier,
                                                                 },
                                                             );
                                                             tokio::time::sleep(Duration::from_millis(200)).await;
-                                                        } else {
-                                                            if let Ok(mine_event) = bytemuck::try_from_bytes::<MineEventWithBoosts>(&bytes) {
-                                                                info!(target: "server_log", "MineEvent: {:?}", mine_event);
-                                                                info!(target: "submission_log", "MineEvent: {:?}", mine_event);
-                                                                info!(target: "server_log", "For Challenge: {:?}", BASE64_STANDARD.encode(old_proof.challenge));
-                                                                info!(target: "submission_log", "For Challenge: {:?}", BASE64_STANDARD.encode(old_proof.challenge));
-                                                                let full_rewards = mine_event.reward;
-                                                                let commissions = full_rewards.mul(5).saturating_div(100);
-                                                                let rewards = full_rewards - commissions;
-                                                                info!(target: "server_log", "Miners Rewards: {}", rewards);
-                                                                info!(target: "server_log", "Commission: {}", commissions);
-
-                                                                // handle sending mine success message
-                                                                let mut total_hashpower: u64 = 0;
-                                                                for submission in submissions.iter() {
-                                                                    total_hashpower += submission.1.hashpower
-                                                                }
-                                                                let challenge;
-                                                                loop {
-                                                                    if let Ok(c) = app_database
-                                                                        .get_challenge_by_challenge(
-                                                                            old_proof.challenge.to_vec(),
-                                                                        )
-                                                                        .await
-                                                                    {
-                                                                        challenge = c;
-                                                                        break;
-                                                                    } else {
-                                                                        tracing::error!(target: "server_log", 
-                                                                            "Failed to get challenge by challenge! Inserting if necessary..."
-                                                                        );
-                                                                        let new_challenge = InsertChallenge {
-                                                                            pool_id: app_config.pool_id,
-                                                                            challenge: old_proof.challenge.to_vec(),
-                                                                            rewards_earned: None,
-                                                                        };
-                                                                        while let Err(_) = app_database
-                                                                            .add_new_challenge(new_challenge.clone())
-                                                                            .await
-                                                                        {
-                                                                            tracing::error!(target: "server_log", "Failed to add new challenge to db.");
-                                                                            info!(target: "server_log", "Verifying challenge does not already exist.");
-                                                                            if let Ok(_) = app_database.get_challenge_by_challenge(new_challenge.challenge.clone()).await {
-                                                                                info!(target: "server_log", "Challenge already exists, continuing");
-                                                                                break;
-                                                                            }
-
-                                                                            tokio::time::sleep(Duration::from_millis(1000))
-                                                                                .await;
-                                                                        }
-                                                                        info!(target: "server_log", "New challenge successfully added to db");
-                                                                        tokio::time::sleep(Duration::from_millis(1000)).await;
-                                                                    }
-                                                                }
-                                                                // Insert commissions earning
-                                                                let commissions_earning = vec![
-                                                                    InsertEarning {
-                                                                        miner_id: app_config.commissions_miner_id,
-                                                                        pool_id: app_config.pool_id,
-                                                                        challenge_id: challenge.id,
-                                                                        amount: commissions,
-                                                                    }
-                                                                ];
-                                                                tracing::info!(target: "server_log", "Inserting commissions earning");
-                                                                while let Err(_) =
-                                                                    app_database.add_new_earnings_batch(commissions_earning.clone()).await
-                                                                {
-                                                                    tracing::error!(target: "server_log", "Failed to add commmissions earning... retrying...");
-                                                                    tokio::time::sleep(Duration::from_millis(500)).await;
-                                                                }
-                                                                tracing::info!(target: "server_log", "Inserted commissions earning");
-
-                                                                let new_commission_rewards = vec![UpdateReward {
-                                                                    miner_id: app_config.commissions_miner_id,
-                                                                    balance: commissions,
-                                                                }];
-
-                                                                tracing::info!(target: "server_log", "Updating commissions rewards...");
-                                                                while let Err(_) = app_database.update_rewards(new_commission_rewards.clone()).await {
-                                                                    tracing::error!(target: "server_log", "Failed to update commission rewards in db. Retrying...");
-                                                                    tokio::time::sleep(Duration::from_millis(500)).await;
-                                                                }
-                                                                tracing::info!(target: "server_log", "Updated commissions rewards");
-                                                                tokio::time::sleep(Duration::from_millis(200)).await;
-
-                                                                tokio::time::sleep(Duration::from_millis(1000)).await;
-                                                                let latest_proof = { app_proof.lock().await.clone() };
-                                                                let balance = (latest_proof.balance as f64)
-                                                                    / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
-
-
-                                                                let multiplier = if let Some(config) = loaded_config {
-                                                                    if config.top_balance > 0 {
-                                                                        1.0 + (latest_proof.balance as f64 / config.top_balance as f64).min(1.0f64)
-                                                                    } else {
-                                                                        1.0f64
-                                                                    }
-                                                                } else {
-                                                                    1.0f64
-                                                                };
-
-                                                                info!(target: "server_log", "Sending internal mine success for challenge: {}", BASE64_STANDARD.encode(old_proof.challenge));
-                                                                let _ = mine_success_sender.send(
-                                                                    MessageInternalMineSuccess {
-                                                                        difficulty,
-                                                                        total_balance: balance,
-                                                                        rewards: full_rewards,
-                                                                        commissions,
-                                                                        challenge_id: challenge.id,
-                                                                        challenge: old_proof.challenge,
-                                                                        best_nonce: u64::from_le_bytes(best_solution.n),
-                                                                        total_hashpower,
-                                                                        coal_config: loaded_config,
-                                                                        multiplier,
-                                                                        submissions,
-                                                                        guild_total_stake,
-                                                                        guild_multiplier,
-                                                                        guild_last_stake_at,
-                                                                    },
-                                                                );
-                                                                tokio::time::sleep(Duration::from_millis(200)).await;
-                                                            } else {
-                                                                tracing::error!(target: "server_log", "Failed get MineEvent data from transaction... wtf...");
-                                                                break;
-                                                            }
                                                         }
                                                     }
                                                     solana_transaction_status::option_serializer::OptionSerializer::None => {
-                                                        tracing::error!(target: "server_log", "RPC gave no transaction metadata....");
+                                                        tracing::error!(target: "server_log", "RPC gave no transaction metadata for {}....", sig);
                                                         tokio::time::sleep(Duration::from_millis(2000)).await;
                                                         continue;
                                                     }
                                                     solana_transaction_status::option_serializer::OptionSerializer::Skip => {
-                                                        tracing::error!(target: "server_log", "RPC gave transaction metadata should skip...");
+                                                        tracing::error!(target: "server_log", "RPC gave transaction metadata should skip for {}...",sig);
                                                         tokio::time::sleep(Duration::from_millis(2000)).await;
                                                         continue;
                                                     }
@@ -919,9 +833,9 @@ pub async fn pool_submission_system(
                                             info!(target: "server_log", "Proof challenge not updated yet..");
                                             if let Ok(p) = get_proof(
                                                 &rpc_client,
-                                                app_wallet.miner_wallet.pubkey(),
+                                                app_wallet.clone().miner_wallet.pubkey(),
                                             )
-                                                .await
+                                            .await
                                             {
                                                 info!(target: "server_log", "OLD PROOF CHALLENGE: {}", BASE64_STANDARD.encode(old_proof.challenge));
                                                 info!(target: "server_log", "RPC PROOF CHALLENGE: {}", BASE64_STANDARD.encode(p.challenge));
@@ -968,7 +882,8 @@ pub async fn pool_submission_system(
                                                     let new_challenge = InsertChallenge {
                                                         pool_id: config.pool_id,
                                                         challenge: latest_proof.challenge.to_vec(),
-                                                        rewards_earned: None,
+                                                        rewards_earned_coal: None,
+                                                        rewards_earned_ore: None,
                                                     };
 
                                                     while let Err(_) = app_database
@@ -990,7 +905,7 @@ pub async fn pool_submission_system(
                                                         tokio::time::sleep(Duration::from_millis(
                                                             1000,
                                                         ))
-                                                            .await;
+                                                        .await;
                                                     }
                                                     info!(target: "server_log", "New challenge successfully added to db");
 
@@ -1058,7 +973,8 @@ pub async fn pool_submission_system(
                                                 let new_challenge = InsertChallenge {
                                                     pool_id: config.pool_id,
                                                     challenge: latest_proof.challenge.to_vec(),
-                                                    rewards_earned: None,
+                                                    rewards_earned_coal: None,
+                                                    rewards_earned_ore: None,
                                                 };
 
                                                 while let Err(_) = app_database
@@ -1146,8 +1062,4 @@ pub async fn pool_submission_system(
             tokio::time::sleep(Duration::from_millis(1000)).await;
         };
     }
-}
-
-fn calculate_guild_multiplier(total_stake: u64, total_multiplier: u64, member_stake: u64) -> f64 {
-    total_multiplier as f64 * member_stake as f64 / total_stake as f64
 }

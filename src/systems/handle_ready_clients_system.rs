@@ -8,12 +8,14 @@ use std::{
 
 use axum::extract::ws::Message;
 use base64::{prelude::BASE64_STANDARD, Engine};
-use futures::SinkExt;
 use coal_api::state::Proof;
+use futures::SinkExt;
 use solana_sdk::pubkey::Pubkey;
 use tokio::sync::{Mutex, RwLock};
 
-use crate::{message::ServerMessageStartMining, coal_utils::get_cutoff, AppState, EpochHashes, SubmissionWindow};
+use crate::{coal_utils::get_cutoff, message::ServerMessageStartMining, AppState, EpochHashes, SubmissionWindow};
+
+const NONCE_RANGE_SIZE: u64 = 40_000_000;
 
 pub async fn handle_ready_clients_system(
     app_state: Arc<RwLock<AppState>>,
@@ -82,11 +84,11 @@ pub async fn handle_ready_clients_system(
                             let nonce_range = {
                                 let mut nonce = app_nonce.lock().await;
                                 let start = *nonce;
-                                *nonce += 4_000_000;
+                                *nonce += NONCE_RANGE_SIZE;
                                 drop(nonce);
                                 // max hashes possible in 60s for a single client
                                 //
-                                let nonce_end = start + 3_999_999;
+                                let nonce_end = start + NONCE_RANGE_SIZE - 1;
                                 let end = nonce_end;
                                 start..end
                             };

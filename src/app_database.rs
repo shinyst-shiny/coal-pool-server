@@ -397,6 +397,7 @@ impl AppDatabase {
         earned_rewards_coal: u64,
         earned_rewards_ore: u64,
     ) -> Result<(), AppDatabaseError> {
+        info!(target: "server_log", "Updating pool rewards for {} with {} coal and {} ore", pool_authority_pubkey, earned_rewards_coal, earned_rewards_ore);
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn.interact(move |conn: &mut MysqlConnection| {
                 diesel::sql_query("UPDATE pools SET total_rewards_coal = total_rewards_coal + ?, total_rewards_ore = total_rewards_ore + ? WHERE authority_pubkey = ?")

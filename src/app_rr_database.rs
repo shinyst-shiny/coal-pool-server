@@ -59,7 +59,7 @@ impl AppRRDatabase {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn
                 .interact(move |conn: &mut MysqlConnection| {
-                    diesel::sql_query("SELECT s.*, m.pubkey FROM submissions s JOIN miners m ON s.miner_id = m.id JOIN challenges c ON s.challenge_id = c.id WHERE c.id = (SELECT id from challenges WHERE rewards_earned IS NOT NULL ORDER BY id DESC LIMIT 1)")
+                    diesel::sql_query("SELECT s.*, m.pubkey FROM submissions s JOIN miners m ON s.miner_id = m.id JOIN challenges c ON s.challenge_id = c.id WHERE c.id = (SELECT id from challenges WHERE rewards_earned_coal IS NOT NULL ORDER BY id DESC LIMIT 1)")
                         .load::<SubmissionWithPubkey>(conn)
                 })
                 .await;
@@ -121,7 +121,7 @@ impl AppRRDatabase {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn
                 .interact(move |conn: &mut MysqlConnection| {
-                    diesel::sql_query("SELECT c.id, c.rewards_earned, c.updated_at, s.difficulty FROM challenges c JOIN submissions s ON c.submission_id = s.id WHERE c.submission_id IS NOT NULL ORDER BY c.id  DESC LIMIT 1440")
+                    diesel::sql_query("SELECT c.id, c.rewards_earned_coal, c.rewards_earned_ore, c.updated_at, s.difficulty FROM challenges c JOIN submissions s ON c.submission_id = s.id WHERE c.submission_id IS NOT NULL ORDER BY c.id  DESC LIMIT 1440")
                         .load::<ChallengeWithDifficulty>(conn)
                 })
                 .await;
@@ -184,8 +184,8 @@ impl AppRRDatabase {
                     diesel::sql_query(
                         "SELECT * FROM txns WHERE txn_type = ? ORDER BY id DESC LIMIT 1",
                     )
-                        .bind::<Text, _>("mine")
-                        .get_result::<Txn>(conn)
+                    .bind::<Text, _>("mine")
+                    .get_result::<Txn>(conn)
                 })
                 .await;
 

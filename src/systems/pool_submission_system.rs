@@ -762,7 +762,7 @@ pub async fn pool_submission_system(
                                                             let balance_coal = (latest_proof.balance as f64)
                                                                 / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
 
-                                                            let balance_ore = (ore_balance_before_tx + ore_balance_after_tx) as f64
+                                                            let balance_ore = (ore_balance_after_tx) as f64
                                                                 / 10f64.powf(ORE_TOKEN_DECIMALS as f64);
 
                                                             let multiplier = if let Some(config) = loaded_config_coal {

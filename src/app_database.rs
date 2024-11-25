@@ -795,4 +795,102 @@ impl AppDatabase {
             return Err(AppDatabaseError::FailedToGetConnectionFromPool);
         };
     }
+
+    pub async fn add_chromium_reprocessing(&self, pool_id: i32) -> Result<(), AppDatabaseError> {
+        if let Ok(db_conn) = self.connection_pool.get().await {
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    diesel::sql_query("INSERT INTO extra_resources_generation (pool_id) VALUES (?)")
+                        .bind::<Integer, _>(pool_id)
+                        .execute(conn)
+                })
+                .await;
+
+            match res {
+                Ok(interaction) => match interaction {
+                    Ok(query) => {
+                        info!(target: "server_log", "Chromium reprocessing inserted: {}", query);
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        error!(target: "server_log", "{:?}", e);
+                        return Err(AppDatabaseError::QueryFailed);
+                    }
+                },
+                Err(e) => {
+                    error!(target: "server_log", "{:?}", e);
+                    return Err(AppDatabaseError::InteractionFailed);
+                }
+            }
+        } else {
+            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
+        };
+    }
+
+    pub async fn finish_chromium_reprocessing(
+        &self,
+        amount_chromium: u64,
+    ) -> Result<(), AppDatabaseError> {
+        if let Ok(db_conn) = self.connection_pool.get().await {
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    diesel::sql_query("UPDATE extra_resources_generation SET amount_chromium = ?, finished_at = now() WHERE finished_at = null")
+                        .bind::<Integer, _>(amount_chromium)
+                        .execute(conn)
+                })
+                .await;
+
+            match res {
+                Ok(interaction) => match interaction {
+                    Ok(query) => {
+                        info!(target: "server_log", "Chromium reprocessing updated: {}", query);
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        error!(target: "server_log", "{:?}", e);
+                        return Err(AppDatabaseError::QueryFailed);
+                    }
+                },
+                Err(e) => {
+                    error!(target: "server_log", "{:?}", e);
+                    return Err(AppDatabaseError::InteractionFailed);
+                }
+            }
+        } else {
+            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
+        };
+    }
+
+    pub async fn get_last_chromium_reprocessing(
+        &self,
+    ) -> Result<models::ExtraResourcesGeneration, AppDatabaseError> {
+        if let Ok(db_conn) = self.connection_pool.get().await {
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    diesel::sql_query(
+                        "SELECT * FROM extra_resources_generation WHERE amount_chromium > 0 ORDER BY created_at DESC",
+                    )
+                    .get_result::<models::ExtraResourcesGeneration>(conn)
+                })
+                .await;
+
+            match res {
+                Ok(interaction) => match interaction {
+                    Ok(query) => {
+                        return Ok(query);
+                    }
+                    Err(e) => {
+                        error!(target: "server_log", "{:?}", e);
+                        return Err(AppDatabaseError::QueryFailed);
+                    }
+                },
+                Err(e) => {
+                    error!(target: "server_log", "{:?}", e);
+                    return Err(AppDatabaseError::InteractionFailed);
+                }
+            }
+        } else {
+            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
+        };
+    }
 }

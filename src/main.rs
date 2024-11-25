@@ -31,6 +31,7 @@ use crate::coal_utils::{
 };
 use crate::ore_utils::get_ore_mint;
 use crate::routes::get_guild_addresses;
+use crate::systems::chromium_reprocessing_system::chromium_reprocessing_system;
 use app_database::{AppDatabase, AppDatabaseError};
 use app_rr_database::AppRRDatabase;
 use axum::{
@@ -198,6 +199,7 @@ pub struct Config {
 
 mod coal_utils;
 mod ore_utils;
+mod send_and_confirm;
 
 #[derive(Parser, Debug)]
 #[command(version, author, about, long_about = None)]
@@ -854,6 +856,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tool_multiplier,
         )
         .await;
+    });
+
+    tokio::spawn(async move {
+        // chromium_reprocessing_system().await;
     });
 
     let app_shared_state = shared_state.clone();

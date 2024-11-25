@@ -1,24 +1,22 @@
 use std::io::Read;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use bytemuck::{Pod, Zeroable};
-use coal_api::consts::{BUS_COUNT, COAL_MAIN_HAND_TOOL, TREASURY_ADDRESS, WOOD_BUS_ADDRESSES, WOOD_MAIN_HAND_TOOL};
-use coal_api::state::{ProofV2, Tool, Treasury, WoodConfig, WoodTool};
+use coal_api::consts::{
+    BUS_COUNT, COAL_MAIN_HAND_TOOL, REPROCESSOR, TREASURY_ADDRESS, WOOD_BUS_ADDRESSES,
+    WOOD_MAIN_HAND_TOOL,
+};
+use coal_api::state::{ProofV2, Reprocessor, Tool, Treasury, WoodConfig, WoodTool};
 use coal_api::{
     consts::{COAL_BUS_ADDRESSES, COAL_CONFIG_ADDRESS, COAL_MINT_ADDRESS, TOKEN_DECIMALS},
     instruction as coal_instruction,
-    state::{Config, Proof}
-    ,
+    state::{Config, Proof},
 };
 use coal_guilds_api::state as guilds_state;
-// use coal_miner_delegation::{instruction, state::DelegatedStake, utils::AccountDeserialize};
-// use coal_utils::event;
 pub use coal_utils::AccountDeserialize as _;
 use drillx::Solution;
 use serde::Deserialize;
-use solana_client::client_error::{ClientError, ClientErrorKind};
 use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::hash::Hash;
 use solana_sdk::{account::ReadableAccount, instruction::Instruction, pubkey::Pubkey};
 use steel::AccountDeserialize;
 use steel::{sysvar, Clock};
@@ -38,6 +36,20 @@ pub struct MineEventWithBoosts {
 
 // event!(MineEventWithBoosts);
 
+fn get_reprocessor_address(signer: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[REPROCESSOR, signer.as_ref()], &coal_api::id()).0
+}
+
+pub async fn get_reprocessor(client: &RpcClient, signer: &Pubkey) -> Option<Reprocessor> {
+    let address = get_reprocessor_address(&signer);
+    let account_data = client.get_account_data(&address).await;
+
+    if let Ok(account_data) = account_data {
+        Some(*Reprocessor::try_from_bytes(&account_data).unwrap())
+    } else {
+        None
+    }
+}
 
 pub fn deserialize_guild_config(data: &[u8]) -> coal_guilds_api::state::Config {
     *coal_guilds_api::state::Config::try_from_bytes(&data).unwrap()
@@ -57,9 +69,24 @@ pub fn get_auth_ix(signer: Pubkey) -> Instruction {
     coal_instruction::auth(proof)
 }
 
-pub fn get_mine_ix(signer: Pubkey, solution: Solution, bus: usize, tool: Option<Pubkey>, guild_member: Option<Pubkey>, guild: Option<Pubkey>) -> Instruction {
+pub fn get_mine_ix(
+    signer: Pubkey,
+    solution: Solution,
+    bus: usize,
+    tool: Option<Pubkey>,
+    guild_member: Option<Pubkey>,
+    guild: Option<Pubkey>,
+) -> Instruction {
     // coal_instruction::mine_coal(signer, signer, COAL_BUS_ADDRESSES[bus], Option::None, Option::None, Option::None, solution)
-    coal_instruction::mine_coal(signer, signer, COAL_BUS_ADDRESSES[bus], tool, guild_member, guild, solution)
+    coal_instruction::mine_coal(
+        signer,
+        signer,
+        COAL_BUS_ADDRESSES[bus],
+        tool,
+        guild_member,
+        guild,
+        solution,
+    )
 }
 
 pub fn get_register_ix(signer: Pubkey) -> Instruction {
@@ -281,9 +308,6 @@ pub fn get_cutoff(proof: Proof, buffer_time: u64) -> i64 {
         .saturating_sub(now)
 }
 
-pub const BLOCKHASH_QUERY_RETRIES: usize = 5;
-pub const BLOCKHASH_QUERY_DELAY: u64 = 500;
-
 #[derive(Clone, Hash, Eq, PartialEq)]
 pub enum Resource {
     Coal,
@@ -376,7 +400,6 @@ impl ProofType {
         }
     }
 
-
     pub fn miner(&self) -> Pubkey {
         match self {
             ProofType::Proof(proof) => proof.miner,
@@ -454,17 +477,19 @@ pub fn get_config_pubkey(resource: &Resource) -> Pubkey {
 pub fn deserialize_config(data: &[u8], resource: &Resource) -> ConfigType {
     match resource {
         Resource::Wood => ConfigType::Wood(
-            *WoodConfig::try_from_bytes(&data).expect("Failed to parse wood config account")
+            *WoodConfig::try_from_bytes(&data).expect("Failed to parse wood config account"),
         ),
         _ => ConfigType::General(
-            *Config::try_from_bytes(&data).expect("Failed to parse config account")
+            *Config::try_from_bytes(&data).expect("Failed to parse config account"),
         ),
     }
 }
 
 pub fn deserialize_tool(data: &[u8], resource: &Resource) -> ToolType {
     match resource {
-        Resource::Wood => ToolType::WoodTool(*WoodTool::try_from_bytes(&data).expect("Failed to parse tool account")),
+        Resource::Wood => ToolType::WoodTool(
+            *WoodTool::try_from_bytes(&data).expect("Failed to parse tool account"),
+        ),
         _ => ToolType::Tool(*Tool::try_from_bytes(&data).expect("Failed to parse tool account")),
     }
 }
@@ -518,33 +543,6 @@ pub fn ask_confirm(question: &str) -> bool {
     }
 }
 
-pub async fn get_latest_blockhash_with_retries(
-    client: &RpcClient,
-) -> Result<(Hash, u64), ClientError> {
-    let mut attempts = 0;
-
-    loop {
-        if let Ok((hash, slot)) = client
-            .get_latest_blockhash_with_commitment(client.commitment())
-            .await
-        {
-            return Ok((hash, slot));
-        }
-
-        // Retry
-        tokio::time::sleep(Duration::from_millis(BLOCKHASH_QUERY_DELAY)).await;
-        attempts += 1;
-        if attempts >= BLOCKHASH_QUERY_RETRIES {
-            return Err(ClientError {
-                request: None,
-                kind: ClientErrorKind::Custom(
-                    "Max retries reached for latest blockhash query".into(),
-                ),
-            });
-        }
-    }
-}
-
 pub fn get_resource_from_str(resource: &Option<String>) -> Resource {
     match resource {
         Some(resource) => match resource.as_str() {
@@ -557,7 +555,7 @@ pub fn get_resource_from_str(resource: &Option<String>) -> Resource {
                 println!("Error: Invalid resource type specified.");
                 std::process::exit(1);
             }
-        }
+        },
         None => Resource::Coal,
     }
 }
@@ -592,8 +590,20 @@ pub fn get_resource_bus_addresses(resource: &Resource) -> [Pubkey; BUS_COUNT] {
 
 pub fn get_tool_pubkey(authority: Pubkey, resource: &Resource) -> Pubkey {
     match resource {
-        Resource::Wood => Pubkey::find_program_address(&[WOOD_MAIN_HAND_TOOL, authority.as_ref()], &coal_api::id()).0,
-        _ => Pubkey::find_program_address(&[COAL_MAIN_HAND_TOOL, authority.as_ref()], &coal_api::id()).0,
+        Resource::Wood => {
+            Pubkey::find_program_address(
+                &[WOOD_MAIN_HAND_TOOL, authority.as_ref()],
+                &coal_api::id(),
+            )
+            .0
+        }
+        _ => {
+            Pubkey::find_program_address(
+                &[COAL_MAIN_HAND_TOOL, authority.as_ref()],
+                &coal_api::id(),
+            )
+            .0
+        }
     }
 }
 
@@ -614,10 +624,13 @@ pub fn proof_pubkey(authority: Pubkey, resource: Resource) -> Pubkey {
     Pubkey::find_program_address(&[seed, authority.as_ref()], program_id).0
 }
 
-pub fn calculate_guild_multiplier(total_stake: u64, total_multiplier: u64, member_stake: u64) -> f64 {
+pub fn calculate_guild_multiplier(
+    total_stake: u64,
+    total_multiplier: u64,
+    member_stake: u64,
+) -> f64 {
     total_multiplier as f64 * member_stake as f64 / total_stake as f64
 }
-
 
 #[derive(Debug, Deserialize)]
 pub struct Tip {

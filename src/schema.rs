@@ -1,6 +1,29 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    extra_resources_generation (id) {
+        id -> Integer,
+        pool_id -> Integer,
+        amount_chromium -> Nullable<Unsigned<Bigint>>,
+        created_at -> Timestamp,
+        finished_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    earnings_extra_resources (id) {
+        id -> Integer,
+        miner_id -> Integer,
+        pool_id -> Integer,
+        extra_resources_generation_id -> Integer,
+        amount_chromium -> Unsigned<Bigint>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     challenges (id) {
         id -> Integer,
         pool_id -> Integer,
@@ -22,6 +45,7 @@ diesel::table! {
         txn_id -> Integer,
         amount_coal -> Unsigned<Bigint>,
         amount_ore -> Unsigned<Bigint>,
+        amount_chromium -> Unsigned<Bigint>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }
@@ -61,8 +85,10 @@ diesel::table! {
         authority_pubkey -> Varchar,
         total_rewards_coal -> Unsigned<Bigint>,
         total_rewards_ore -> Unsigned<Bigint>,
+        total_rewards_chromium -> Unsigned<Bigint>,
         claimed_rewards_coal -> Unsigned<Bigint>,
         claimed_rewards_ore -> Unsigned<Bigint>,
+        claimed_rewards_chromium -> Unsigned<Bigint>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }
@@ -75,6 +101,7 @@ diesel::table! {
         pool_id -> Integer,
         balance_coal -> Unsigned<Bigint>,
         balance_ore -> Unsigned<Bigint>,
+        balance_chromium -> Unsigned<Bigint>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }

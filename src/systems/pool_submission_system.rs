@@ -747,7 +747,8 @@ pub async fn pool_submission_system(
                                                             let new_commission_rewards = vec![UpdateReward {
                                                                 miner_id: app_config.commissions_miner_id,
                                                                 balance_coal: commissions_coal,
-                                                                balance_ore: commissions_ore
+                                                                balance_ore: commissions_ore,
+                                                                balance_chromium: 0
                                                             }];
 
                                                             tracing::info!(target: "server_log", "Updating commissions rewards...");

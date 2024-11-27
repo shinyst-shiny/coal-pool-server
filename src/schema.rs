@@ -6,7 +6,7 @@ diesel::table! {
         pool_id -> Integer,
         amount_chromium -> Nullable<Unsigned<Bigint>>,
         created_at -> Timestamp,
-        finished_at -> Timestamp,
+        finished_at -> Nullable<Timestamp>,
         updated_at -> Timestamp,
     }
 }

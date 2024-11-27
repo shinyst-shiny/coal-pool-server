@@ -9,13 +9,12 @@ use serde::{Deserialize, Serialize};
 pub struct ExtraResourcesGeneration {
     pub id: i32,
     pub pool_id: i32,
-    pub amount_chromium: u64,
+    #[diesel(sql_type = Nullable<Unsigned<BigInt>>)]
+    pub amount_chromium: Option<u64>,
+    #[diesel(sql_type = Nullable<Timestamp>)]
+    pub finished_at: Option<NaiveDateTime>,
     #[diesel(sql_type = Timestamp)]
     pub created_at: NaiveDateTime,
-    #[diesel(sql_type = Timestamp)]
-    pub finished_at: NaiveDateTime,
-    #[diesel(sql_type = Timestamp)]
-    pub updated_at: NaiveDateTime,
 }
 
 #[derive(Debug, Copy, Clone, Deserialize, Insertable)]
@@ -24,7 +23,7 @@ pub struct ExtraResourcesGeneration {
 pub struct InsertEarningExtraResources {
     pub miner_id: i32,
     pub pool_id: i32,
-    pub extra_resource_generation_id: i32,
+    pub extra_resources_generation_id: i32,
     pub amount_chromium: u64,
 }
 

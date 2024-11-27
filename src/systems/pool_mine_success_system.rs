@@ -1,25 +1,21 @@
 use axum::extract::ws::Message;
 use base64::{prelude::BASE64_STANDARD, Engine};
 use futures::SinkExt;
-use std::{
-    ops::Div,
-    sync::Arc,
-    time::Duration,
-};
+use std::{ops::Div, sync::Arc, time::Duration};
 
-use solana_sdk::
-signer::Signer
-;
+use solana_sdk::signer::Signer;
 use tokio::{
-    sync::{mpsc::UnboundedReceiver, RwLock}, time::Instant}
-;
+    sync::{mpsc::UnboundedReceiver, RwLock},
+    time::Instant,
+};
 use tracing::info;
 
 use crate::message::{CoalDetails, OreBoost, OreDetails, RewardDetails};
 use crate::ore_utils::ORE_TOKEN_DECIMALS;
 use crate::{
-    app_database::AppDatabase, coal_utils::
-    COAL_TOKEN_DECIMALS, message::ServerMessagePoolSubmissionResult, AppState, ClientVersion, Config, InsertEarning, InsertSubmission, MessageInternalMineSuccess, UpdateReward, WalletExtension,
+    app_database::AppDatabase, coal_utils::COAL_TOKEN_DECIMALS,
+    message::ServerMessagePoolSubmissionResult, AppState, ClientVersion, Config, InsertEarning,
+    InsertSubmission, MessageInternalMineSuccess, UpdateReward, WalletExtension,
 };
 
 pub async fn pool_mine_success_system(
@@ -91,6 +87,7 @@ pub async fn pool_mine_success_system(
                         miner_id: msg_submission.miner_id,
                         balance_coal: earned_rewards_coal,
                         balance_ore: earned_rewards_ore,
+                        balance_chromium: 0,
                     };
 
                     i_earnings.push(new_earning);
@@ -134,7 +131,8 @@ pub async fn pool_mine_success_system(
                                             miner_earned_rewards: earned_rewards_dec_coal,
                                             miner_percentage: percentage_coal,
                                             total_rewards: pool_rewards_dec_coal,
-                                            miner_supplied_difficulty: msg_submission.supplied_diff as u32,
+                                            miner_supplied_difficulty: msg_submission.supplied_diff
+                                                as u32,
                                         },
                                         tool_multiplier: msg.tool_multiplier,
                                         guild_total_stake: msg.guild_total_stake,
@@ -149,7 +147,8 @@ pub async fn pool_mine_success_system(
                                             miner_earned_rewards: earned_rewards_dec_ore,
                                             miner_percentage: percentage_ore,
                                             total_rewards: pool_rewards_dec_ore,
-                                            miner_supplied_difficulty: msg_submission.supplied_diff as u32,
+                                            miner_supplied_difficulty: msg_submission.supplied_diff
+                                                as u32,
                                         },
                                         top_stake: 0.0,
                                         stake_multiplier: 0.0,
@@ -174,7 +173,7 @@ pub async fn pool_mine_success_system(
                                                 total_stake: 0.0,
                                                 name: "".to_string(),
                                                 mint_address: [0; 32],
-                                            }
+                                            },
                                         ]),
                                     };
 
@@ -185,7 +184,6 @@ pub async fn pool_mine_success_system(
                                         active_miners: len as u32,
                                         coal_details,
                                         ore_details,
-
                                     };
                                     let mut message = vec![1u8];
                                     message.extend_from_slice(&server_message.to_binary());
@@ -193,11 +191,10 @@ pub async fn pool_mine_success_system(
                                         if let Ok(_) = socket_sender
                                             .lock()
                                             .await
-                                            .send(Message::Binary(
-                                                message
-                                            ))
+                                            .send(Message::Binary(message))
                                             .await
-                                        {} else {
+                                        {
+                                        } else {
                                             tracing::error!(target: "server_log", "Failed to send client pool submission result binary message");
                                         }
                                     });
@@ -214,8 +211,7 @@ pub async fn pool_mine_success_system(
                 let batch_size = 200;
                 if i_earnings.len() > 0 {
                     for batch in i_earnings.chunks(batch_size) {
-                        while let Err(_) =
-                            app_database.add_new_earnings_batch(batch.to_vec()).await
+                        while let Err(_) = app_database.add_new_earnings_batch(batch.to_vec()).await
                         {
                             tracing::error!(target: "server_log", "{} - Failed to add new earnings batch to db. Retrying...", id);
                             tokio::time::sleep(Duration::from_millis(500)).await;
@@ -295,7 +291,12 @@ pub async fn pool_mine_success_system(
                     .await
                 {
                     if let Err(_) = app_database
-                        .update_challenge_rewards(msg.challenge.to_vec(), s, msg.rewards_coal, msg.rewards_ore)
+                        .update_challenge_rewards(
+                            msg.challenge.to_vec(),
+                            s,
+                            msg.rewards_coal,
+                            msg.rewards_ore,
+                        )
                         .await
                     {
                         tracing::error!(target: "server_log", "{} - Failed to update challenge rewards! Skipping! Devs check!", id);

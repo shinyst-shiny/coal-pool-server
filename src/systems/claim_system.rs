@@ -210,7 +210,7 @@ pub async fn claim_system(
                             .await
                             .unwrap();
                         while let Err(_) = app_database
-                            .decrease_miner_reward(miner.id, amount_coal, amount_ore)
+                            .decrease_miner_reward(miner.id, amount_coal, amount_ore, 0) // TODO: add chromium
                             .await
                         {
                             error!(target: "server_log", "Failed to decrease miner rewards! Retrying...");
@@ -221,6 +221,7 @@ pub async fn claim_system(
                                 wallet.pubkey().to_string(),
                                 amount_coal,
                                 amount_ore,
+                                0, // TODO: add chromium
                             )
                             .await
                         {

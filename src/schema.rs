@@ -1,29 +1,6 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
-    extra_resources_generation (id) {
-        id -> Integer,
-        pool_id -> Integer,
-        amount_chromium -> Nullable<Unsigned<Bigint>>,
-        created_at -> Timestamp,
-        finished_at -> Nullable<Timestamp>,
-        updated_at -> Timestamp,
-    }
-}
-
-diesel::table! {
-    earnings_extra_resources (id) {
-        id -> Integer,
-        miner_id -> Integer,
-        pool_id -> Integer,
-        extra_resources_generation_id -> Integer,
-        amount_chromium -> Unsigned<Bigint>,
-        created_at -> Timestamp,
-        updated_at -> Timestamp,
-    }
-}
-
-diesel::table! {
     challenges (id) {
         id -> Integer,
         pool_id -> Integer,
@@ -62,6 +39,29 @@ diesel::table! {
         created_at -> Timestamp,
         updated_at -> Timestamp,
         created_at_day -> Nullable<Date>,
+    }
+}
+
+diesel::table! {
+    earnings_extra_resources (id) {
+        id -> Integer,
+        miner_id -> Integer,
+        pool_id -> Integer,
+        extra_resources_generation_id -> Integer,
+        amount_chromium -> Unsigned<Bigint>,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
+    extra_resources_generation (id) {
+        id -> Integer,
+        pool_id -> Integer,
+        amount_chromium -> Nullable<Unsigned<Bigint>>,
+        created_at -> Timestamp,
+        finished_at -> Nullable<Timestamp>,
+        updated_at -> Timestamp,
     }
 }
 
@@ -138,6 +138,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     challenges,
     claims,
     earnings,
+    earnings_extra_resources,
+    extra_resources_generation,
     miners,
     pools,
     rewards,

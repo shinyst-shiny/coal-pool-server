@@ -225,6 +225,7 @@ pub struct UpdateReward {
 pub struct Reward {
     pub balance_coal: u64,
     pub balance_ore: u64,
+    pub balance_chromium: u64,
     pub miner_id: i32,
 }
 

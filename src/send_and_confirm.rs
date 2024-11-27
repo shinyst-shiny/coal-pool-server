@@ -111,11 +111,9 @@ pub async fn send_and_confirm(
 
     // Build tx
     let send_cfg = RpcSendTransactionConfig {
-        skip_preflight: true,
+        skip_preflight: false,
         preflight_commitment: Some(CommitmentLevel::Confirmed),
-        encoding: Some(UiTransactionEncoding::Base64),
-        max_retries: Some(RPC_RETRIES),
-        min_context_slot: None,
+        ..RpcSendTransactionConfig::default()
     };
     let mut tx = Transaction::new_with_payer(&final_ixs, Some(&fee_payer.pubkey().clone()));
 

@@ -28,6 +28,7 @@ pub async fn chromium_reprocessing_system(
     app_database: Arc<AppDatabase>,
     config: Arc<Config>,
 ) {
+    tokio::time::sleep(Duration::from_millis(10000)).await;
     loop {
         let mut last_reprocess: Option<ExtraResourcesGeneration> = None;
         match app_database
@@ -46,7 +47,7 @@ pub async fn chromium_reprocessing_system(
         let three_days_ago = Utc::now() - Duration::from_secs(60 * 60 * 24 * 3);
 
         // check if the last reprocess was more than 3 days ago, if not wait for 6 hours and retry the reprocess
-        if !last_reprocess.is_none()
+        if last_reprocess.is_some()
             && last_reprocess.unwrap().created_at > three_days_ago.naive_utc()
         {
             info!(target: "server_log", "CHROMIUM: Last reprocessing was less than 3 days ago, waiting then retrying");
@@ -142,6 +143,14 @@ pub async fn chromium_reprocessing_system(
                 }
             }
         }
+
+        tokio::time::sleep(Duration::from_millis(20000)).await;
+
+        // Build instructions.
+        let token_account_pubkey = spl_associated_token_account::get_associated_token_address(
+            &signer.pubkey(),
+            &mint_address,
+        );
 
         let token_account = rpc_client
             .get_token_account(&token_account_pubkey)
@@ -304,52 +313,38 @@ pub async fn chromium_reprocessing_system(
 
         let mut total_hash_power: u64 = 0;
 
-        let mut calc_miner_stats: HashMap<i32, (HashSet<i32>, u64)> = HashMap::new();
+        let mut miner_stats: HashMap<i32, MinerStats> = HashMap::new();
 
         for submission in submissions {
-            let entry = calc_miner_stats
+            let entry = miner_stats
                 .entry(submission.miner_id)
-                .or_insert((HashSet::new(), 0));
+                .or_insert(MinerStats {
+                    total_hash_power: 0,
+                    submission_count: 0,
+                });
 
-            // Insert the challenge_id into the HashSet for uniqueness
-            entry.0.insert(submission.challenge_id);
-
+            let mut hash_power = 0;
             // Calculate and add the hash power
-            let hash_power =
-                MIN_HASHPOWER * 2u64.pow((submission.difficulty as u32 - MIN_DIFF) as u32);
+            if submission.difficulty as u32 > MIN_DIFF {
+                hash_power = MIN_HASHPOWER * 2u64.pow(submission.difficulty as u32 - MIN_DIFF);
+            }
             total_hash_power += hash_power;
-            entry.1 += hash_power;
+            entry.total_hash_power += hash_power;
+            entry.submission_count += 1;
         }
 
-        // Convert the HashSet counts into a simpler result
-        let miner_stats: HashMap<i32, MinerStats> = calc_miner_stats
-            .into_iter()
-            .map(|(miner_id, (challenge_ids, hash_power))| {
-                (
-                    miner_id,
-                    MinerStats {
-                        submission_count: challenge_ids.len() as u64,
-                        total_hash_power: hash_power,
-                    },
-                )
-            })
-            .collect();
+        let mut total_miners_perc = 0.0;
 
-        let mut total_miners_perc = 0u64;
-
-        let mut miner_stats_perc: HashMap<i32, u64> = HashMap::new();
+        let mut miner_stats_perc: HashMap<i32, f64> = HashMap::new();
 
         for (miner_id, stats) in miner_stats {
-            println!(
-                "CHROMIUM Miner {}: {} unique challenges, total hash power {}",
-                miner_id, stats.submission_count, stats.total_hash_power
-            );
             // total_mine_event : 1 = stats.submission_count : x
-            let miner_submission_perc = stats
-                .submission_count
-                .saturating_div(total_mine_event as u64);
+            let miner_submission_perc = stats.submission_count as f64 / total_mine_event as f64;
             // total_hash_power : 1 = stats.total_hash_power : x
-            let miner_hash_power_perc = stats.total_hash_power.saturating_div(total_hash_power);
+            let miner_hash_power_perc = stats.total_hash_power as f64 / total_hash_power as f64;
+
+            // info!(target: "server_log", "CHROMIUM: Miner: {}, set of data {}, {}, {}, {}", miner_id, stats.submission_count, total_mine_event, stats.total_hash_power, total_hash_power);
+            // info!(target: "server_log", "CHROMIUM: Miner: {}, submission perc: {:.11}, hash power perc: {:.11}", miner_id, miner_submission_perc, miner_hash_power_perc);
 
             let miner_factor_perc = miner_submission_perc.mul(miner_hash_power_perc);
 
@@ -357,23 +352,24 @@ pub async fn chromium_reprocessing_system(
             total_miners_perc += miner_factor_perc
         }
 
+        info!(target: "server_log", "CHROMIUM: Total Miners: {}, total miner perc: {}", miner_stats_perc.len(), total_miners_perc);
+
         let mut miners_earnings: Vec<InsertEarningExtraResources> = Vec::new();
         let mut miners_rewards: Vec<UpdateReward> = Vec::new();
 
         for (miner_id, miner_factor_perc) in miner_stats_perc {
-            let chromium_earned = miner_factor_perc
-                .mul(reprocessed_amount)
-                .saturating_div(total_miners_perc);
+            let chromium_earned =
+                miner_factor_perc.mul(reprocessed_amount as f64) / total_miners_perc;
             println!("CHROMIUM Miner {}: earned: {}", miner_id, chromium_earned);
             miners_earnings.push(InsertEarningExtraResources {
                 miner_id,
                 pool_id: config.pool_id,
                 extra_resources_generation_id: current_reprocessing.id,
-                amount_chromium: chromium_earned,
+                amount_chromium: chromium_earned.floor() as u64,
             });
             miners_rewards.push(UpdateReward {
                 miner_id,
-                balance_chromium: chromium_earned,
+                balance_chromium: chromium_earned.floor() as u64,
                 balance_coal: 0,
                 balance_ore: 0,
             });
@@ -408,7 +404,22 @@ pub async fn chromium_reprocessing_system(
         }
 
         while let Err(_) = app_database
-            .finish_chromium_reprocessing(current_reprocessing.id, full_reprocessed_amount as u64)
+            .update_pool_rewards(
+                app_wallet.miner_wallet.pubkey().to_string(),
+                0,
+                0,
+                full_reprocessed_amount,
+            )
+            .await
+        {
+            tracing::error!(target: "server_log",
+                "Failed to update pool rewards! Retrying..."
+            );
+        }
+        info!(target: "server_log", "Updated pool rewards");
+
+        while let Err(_) = app_database
+            .finish_chromium_reprocessing(current_reprocessing.id, full_reprocessed_amount)
             .await
         {
             tracing::error!(target: "server_log", "CHROMIUM: Failed to finish chromium reprocessing to db. Retrying...");

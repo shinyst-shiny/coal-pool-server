@@ -272,6 +272,7 @@ pub async fn pool_mine_success_system(
                         app_wallet.miner_wallet.pubkey().to_string(),
                         msg.rewards_coal,
                         msg.rewards_ore,
+                        0,
                     )
                     .await
                 {

@@ -858,8 +858,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await;
     });
 
+    let app_config = config.clone();
+    let app_wallet = wallet_extension.clone();
+    let app_app_database = app_database.clone();
+    let app_rpc_client = rpc_client.clone();
+    let app_jito_client = jito_client.clone();
     tokio::spawn(async move {
-        // chromium_reprocessing_system().await;
+        chromium_reprocessing_system(
+            app_wallet,
+            app_rpc_client,
+            app_jito_client,
+            app_app_database,
+            app_config,
+        )
+        .await;
     });
 
     let app_shared_state = shared_state.clone();

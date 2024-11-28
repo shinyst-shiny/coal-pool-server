@@ -217,14 +217,14 @@ pub async fn claim_system(
                 ixs.push(ix);
             }
 
-            if claim_amount_chromium > 0 {
+            /*if claim_amount_chromium > 0 {
                 let ix = crate::coal_utils::get_claim_ix(
                     wallet.pubkey(),
                     receiver_token_account_chromium,
                     claim_amount_chromium,
                 );
                 ixs.push(ix);
-            }
+            }*/
 
             if let Ok((hash, _slot)) = rpc_client
                 .get_latest_blockhash_with_commitment(rpc_client.commitment())
@@ -311,7 +311,7 @@ pub async fn claim_system(
                                     miner.id,
                                     amount_coal,
                                     amount_ore,
-                                    amount_chromium,
+                                    0, // amount_chromium,
                                 )
                                 .await
                             {
@@ -323,7 +323,7 @@ pub async fn claim_system(
                                     wallet.pubkey().to_string(),
                                     amount_coal,
                                     amount_ore,
-                                    amount_chromium,
+                                    0, // amount_chromium,
                                 )
                                 .await
                             {
@@ -378,6 +378,10 @@ pub async fn claim_system(
                 }
             } else {
                 error!(target: "server_log", "Failed to confirm transaction, will retry on next iteration.");
+                let mut writer = claims_queue.queue.write().await;
+                writer.remove(&miner_pubkey);
+                drop(writer);
+                continue;
             }
         }
 

@@ -1,16 +1,17 @@
 use axum::extract::ws::Message;
 use base64::{prelude::BASE64_STANDARD, Engine};
 use futures::SinkExt;
-use std::{ops::Div, sync::Arc, time::Duration};
-
 use solana_sdk::signer::Signer;
+use std::str::FromStr;
+use std::{ops::Div, sync::Arc, time::Duration};
+use steel::Pubkey;
 use tokio::{
     sync::{mpsc::UnboundedReceiver, RwLock},
     time::Instant,
 };
 use tracing::info;
 
-use crate::message::{CoalDetails, OreBoost, OreDetails, RewardDetails};
+use crate::message::{CoalDetails, MinerDetails, OreBoost, OreDetails, RewardDetails};
 use crate::ore_utils::ORE_TOKEN_DECIMALS;
 use crate::{
     app_database::AppDatabase, coal_utils::COAL_TOKEN_DECIMALS,
@@ -25,6 +26,8 @@ pub async fn pool_mine_success_system(
     app_wallet: Arc<WalletExtension>,
     mut mine_success_receiver: UnboundedReceiver<MessageInternalMineSuccess>,
 ) {
+    let guild_pubkey = Pubkey::from_str(&app_config.guild_address).unwrap();
+    info!(target: "server_log", "guild_pubkey {}",guild_pubkey);
     loop {
         while let Some(msg) = mine_success_receiver.recv().await {
             let id = uuid::Uuid::new_v4();
@@ -48,6 +51,11 @@ pub async fn pool_mine_success_system(
                 let total_rewards_ore = msg.rewards_ore - msg.commissions_ore;
                 let total_rewards_coal = msg.rewards_coal - msg.commissions_coal;
                 for (miner_pubkey, msg_submission) in msg.submissions.iter() {
+                    let miner_rewards = app_database
+                        .get_miner_rewards(miner_pubkey.to_string())
+                        .await
+                        .unwrap();
+
                     let hashpower_percent = (msg_submission.hashpower as u128)
                         .saturating_mul(1_000_000)
                         .saturating_div(msg.total_hashpower as u128);
@@ -177,6 +185,14 @@ pub async fn pool_mine_success_system(
                                         ]),
                                     };
 
+                                    let miner_details = MinerDetails {
+                                        total_coal: miner_rewards.balance_coal as f64,
+                                        total_ore: miner_rewards.balance_ore as f64,
+                                        total_chromium: miner_rewards.balance_chromium as f64,
+                                        guild_address: guild_pubkey.to_bytes(),
+                                        miner_address: miner_pubkey.to_bytes(),
+                                    };
+
                                     let server_message = ServerMessagePoolSubmissionResult {
                                         difficulty: msg.difficulty,
                                         challenge: msg.challenge,
@@ -184,6 +200,7 @@ pub async fn pool_mine_success_system(
                                         active_miners: len as u32,
                                         coal_details,
                                         ore_details,
+                                        miner_details,
                                     };
                                     let mut message = vec![1u8];
                                     message.extend_from_slice(&server_message.to_binary());

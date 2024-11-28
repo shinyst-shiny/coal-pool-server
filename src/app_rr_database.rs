@@ -28,7 +28,7 @@ impl AppRRDatabase {
     ) -> Result<models::Reward, AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn.interact(move |conn: &mut MysqlConnection| {
-                diesel::sql_query("SELECT r.balance_coal, r.balance_ore, r.miner_id FROM miners m JOIN rewards r ON m.id = r.miner_id WHERE m.pubkey = ?")
+                diesel::sql_query("SELECT r.balance_coal, r.balance_ore, r.balance_chromium, r.miner_id FROM miners m JOIN rewards r ON m.id = r.miner_id WHERE m.pubkey = ?")
                     .bind::<Text, _>(miner_pubkey)
                     .get_result::<models::Reward>(conn)
             }).await;
@@ -151,11 +151,13 @@ impl AppRRDatabase {
         pool_pubkey: String,
     ) -> Result<models::Pool, AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
-            let res = db_conn.interact(move |conn: &mut MysqlConnection| {
-                diesel::sql_query("SELECT id, proof_pubkey, authority_pubkey, total_rewards_coal, total_rewards_ore, claimed_rewards_coal, claimed_rewards_ore FROM pools WHERE pools.authority_pubkey = ?")
-                    .bind::<Text, _>(pool_pubkey)
-                    .get_result::<models::Pool>(conn)
-            }).await;
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    diesel::sql_query("SELECT * FROM pools WHERE pools.authority_pubkey = ?")
+                        .bind::<Text, _>(pool_pubkey)
+                        .get_result::<models::Pool>(conn)
+                })
+                .await;
 
             match res {
                 Ok(interaction) => match interaction {

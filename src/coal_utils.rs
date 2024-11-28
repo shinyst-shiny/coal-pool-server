@@ -3,8 +3,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use bytemuck::{Pod, Zeroable};
 use coal_api::consts::{
-    BUS_COUNT, COAL_MAIN_HAND_TOOL, REPROCESSOR, TREASURY_ADDRESS, WOOD_BUS_ADDRESSES,
-    WOOD_MAIN_HAND_TOOL,
+    BUS_COUNT, CHROMIUM_MINT_ADDRESS, COAL_MAIN_HAND_TOOL, REPROCESSOR, TREASURY_ADDRESS,
+    WOOD_BUS_ADDRESSES, WOOD_MAIN_HAND_TOOL,
 };
 use coal_api::state::{ProofV2, Reprocessor, Tool, Treasury, WoodConfig, WoodTool};
 use coal_api::{
@@ -114,6 +114,10 @@ pub fn get_guild_proof(miner: Pubkey) -> (Pubkey, u8) {
 }
 pub fn get_coal_mint() -> Pubkey {
     COAL_MINT_ADDRESS
+}
+
+pub fn get_chromium_mint() -> Pubkey {
+    CHROMIUM_MINT_ADDRESS
 }
 
 /*pub fn get_managed_proof_token_ata(miner: Pubkey) -> Pubkey {

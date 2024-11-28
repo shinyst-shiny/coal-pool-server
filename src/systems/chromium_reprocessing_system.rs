@@ -244,12 +244,15 @@ pub async fn chromium_reprocessing_system(
                 }
             }
         }
+        tokio::time::sleep(Duration::from_millis(25000)).await;
 
         let token_account = rpc_client
             .get_token_account(&token_account_pubkey)
             .await
             .unwrap();
-        let final_balance = token_account.unwrap().token_amount.ui_amount.unwrap();
+        tokio::time::sleep(Duration::from_millis(25000)).await;
+        let final_balance = 160050822272 as f64; // token_account.unwrap().token_amount.ui_amount.unwrap();
+        tokio::time::sleep(Duration::from_millis(25000)).await;
         let mut full_reprocessed_amount = (final_balance - initial_balance) as u64;
         if full_reprocessed_amount <= 0 {
             tracing::error!(target: "server_log", "CHROMIUM: Chromium reprocessing system: Got 0 reprocessed amount");

@@ -1,5 +1,4 @@
-use std::{sync::Arc, time::Duration};
-
+use coal_api::consts::CHROMIUM_MINT_ADDRESS;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcSendTransactionConfig};
 use solana_sdk::{
     compute_budget::ComputeBudgetInstruction,
@@ -9,6 +8,7 @@ use solana_sdk::{
 };
 use solana_transaction_status::TransactionConfirmationStatus;
 use spl_associated_token_account::get_associated_token_address;
+use std::{sync::Arc, time::Duration};
 use tokio::time::Instant;
 use tracing::{error, info};
 
@@ -217,14 +217,25 @@ pub async fn claim_system(
                 ixs.push(ix);
             }
 
-            /*if claim_amount_chromium > 0 {
-                let ix = crate::coal_utils::get_claim_ix(
-                    wallet.pubkey(),
-                    receiver_token_account_chromium,
+            if claim_amount_chromium > 0 {
+                match spl_token::instruction::transfer(
+                    &spl_token::id(),
+                    &wallet.pubkey(),
+                    &receiver_token_account_chromium,
+                    &wallet.pubkey(),
+                    &[],
                     claim_amount_chromium,
-                );
-                ixs.push(ix);
-            }*/
+                ) {
+                    Ok(ix) => ixs.push(ix),
+                    Err(e) => {
+                        error!(target: "server_log", "Failed to create transfer ix: {}, for miner: {}", e, miner_pubkey);
+                        let mut writer = claims_queue.queue.write().await;
+                        writer.remove(&miner_pubkey);
+                        drop(writer);
+                        continue;
+                    }
+                }
+            }
 
             if let Ok((hash, _slot)) = rpc_client
                 .get_latest_blockhash_with_commitment(rpc_client.commitment())

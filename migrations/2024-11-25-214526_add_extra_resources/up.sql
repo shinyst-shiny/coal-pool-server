@@ -1,0 +1,24 @@
+-- Your SQL goes here
+CREATE TABLE extra_resources_generation (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    pool_id INT NOT NULL,
+    amount_chromium BIGINT UNSIGNED DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    finished_at TIMESTAMP DEFAULT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL
+);
+
+CREATE TABLE earnings_extra_resources (
+      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      miner_id INT NOT NULL,
+      pool_id INT NOT NULL,
+      extra_resources_generation_id INT NOT NULL,
+      amount_chromium BIGINT UNSIGNED DEFAULT 0 NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL
+);
+
+ALTER TABLE claims ADD COLUMN amount_chromium BIGINT UNSIGNED DEFAULT 0 NOT NULL AFTER amount_ore;
+ALTER TABLE pools ADD COLUMN total_rewards_chromium BIGINT UNSIGNED DEFAULT 0 NOT NULL AFTER total_rewards_ore;
+ALTER TABLE pools ADD COLUMN claimed_rewards_chromium BIGINT UNSIGNED DEFAULT 0 NOT NULL AFTER claimed_rewards_ore;
+ALTER TABLE rewards ADD COLUMN balance_chromium BIGINT UNSIGNED DEFAULT 0 NOT NULL AFTER balance_ore;

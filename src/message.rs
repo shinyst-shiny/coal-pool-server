@@ -71,6 +71,15 @@ pub struct OreDetails {
 }
 
 #[derive(Serialize)]
+pub struct MinerDetails {
+    pub total_chromium: f64,
+    pub total_coal: f64,
+    pub total_ore: f64,
+    pub guild_address: [u8; 32],
+    pub miner_address: [u8; 32],
+}
+
+#[derive(Serialize)]
 pub struct ServerMessagePoolSubmissionResult {
     pub difficulty: u32,
     pub challenge: [u8; 32],
@@ -78,6 +87,7 @@ pub struct ServerMessagePoolSubmissionResult {
     pub active_miners: u32,
     pub coal_details: CoalDetails,
     pub ore_details: OreDetails,
+    pub miner_details: MinerDetails,
 }
 
 impl ServerMessagePoolSubmissionResult {

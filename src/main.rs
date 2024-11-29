@@ -26,11 +26,12 @@ use steel::AccountDeserialize;
 use self::models::*;
 use crate::coal_utils::{
     calculate_tool_multiplier, deserialize_guild, deserialize_guild_config,
-    deserialize_guild_member, deserialize_tool, get_config_pubkey, get_tool_pubkey, proof_pubkey,
-    Resource, ToolType,
+    deserialize_guild_member, deserialize_tool, get_chromium_mint, get_config_pubkey,
+    get_tool_pubkey, proof_pubkey, Resource, ToolType,
 };
 use crate::ore_utils::get_ore_mint;
 use crate::routes::get_guild_addresses;
+use crate::systems::chromium_reprocessing_system::chromium_reprocessing_system;
 use app_database::{AppDatabase, AppDatabaseError};
 use app_rr_database::AppRRDatabase;
 use axum::{
@@ -119,6 +120,7 @@ struct ClaimsQueueItem {
     receiver_pubkey: Pubkey,
     amount_coal: u64,
     amount_ore: u64,
+    amount_chromium: u64,
 }
 
 struct ClaimsQueue {
@@ -198,6 +200,7 @@ pub struct Config {
 
 mod coal_utils;
 mod ore_utils;
+mod send_and_confirm;
 
 #[derive(Parser, Debug)]
 #[command(version, author, about, long_about = None)]
@@ -206,7 +209,7 @@ struct Args {
         long,
         value_name = "priority fee",
         help = "Number of microlamports to pay as priority fee per transaction",
-        default_value = "30000",
+        default_value = "10000",
         global = true
     )]
     priority_fee: u64,
@@ -856,6 +859,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await;
     });
 
+    let app_config = config.clone();
+    let app_wallet = wallet_extension.clone();
+    let app_app_database = app_database.clone();
+    let app_rpc_client = rpc_client.clone();
+    let app_jito_client = jito_client.clone();
+    tokio::spawn(async move {
+        chromium_reprocessing_system(
+            app_wallet,
+            app_rpc_client,
+            app_jito_client,
+            app_app_database,
+            app_config,
+        )
+        .await;
+    });
+
     let app_shared_state = shared_state.clone();
     let app_app_database = app_database.clone();
     let app_config = config.clone();
@@ -1138,6 +1157,7 @@ struct PubkeyParam {
 struct MinerRewards {
     coal: f64,
     ore: f64,
+    chromium: f64,
 }
 
 async fn get_miner_rewards(
@@ -1153,11 +1173,14 @@ async fn get_miner_rewards(
             Ok(rewards) => {
                 let decimal_bal_coal = rewards.balance_coal as f64
                     / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
-                let decimal_bal_ore = rewards.balance_ore as f64
+                let decimal_bal_ore =
+                    rewards.balance_ore as f64 / 10f64.powf(ore_api::consts::TOKEN_DECIMALS as f64);
+                let decimal_bal_chromium = rewards.balance_chromium as f64
                     / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
                 let response = MinerRewards {
                     ore: decimal_bal_ore,
                     coal: decimal_bal_coal,
+                    chromium: decimal_bal_chromium,
                 };
                 return Ok(Json(response));
             }
@@ -1247,6 +1270,7 @@ async fn get_miner_last_claim(
 struct MinerBalance {
     coal: f64,
     ore: f64,
+    chromium: f64,
 }
 
 async fn get_miner_balance(
@@ -1256,10 +1280,13 @@ async fn get_miner_balance(
     if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
         let miner_token_account_coal = get_associated_token_address(&user_pubkey, &get_coal_mint());
         let miner_token_account_ore = get_associated_token_address(&user_pubkey, &get_ore_mint());
+        let miner_token_account_chromium =
+            get_associated_token_address(&user_pubkey, &get_chromium_mint());
 
         let mut resp = MinerBalance {
             ore: 0.0,
             coal: 0.0,
+            chromium: 0.0,
         };
 
         if let Ok(response_coal) = rpc_client
@@ -1274,6 +1301,13 @@ async fn get_miner_balance(
             .await
         {
             resp.ore = response_ore.ui_amount.unwrap();
+        }
+
+        if let Ok(response_chromium) = rpc_client
+            .get_token_account_balance(&miner_token_account_chromium)
+            .await
+        {
+            resp.chromium = response_chromium.ui_amount.unwrap();
         }
 
         return Ok(Json(resp));
@@ -1392,6 +1426,7 @@ struct ClaimParamsV2 {
     receiver_pubkey: String,
     amount_coal: u64,
     amount_ore: u64,
+    amount_chromium: u64,
 }
 
 async fn post_claim_v2(
@@ -1428,11 +1463,13 @@ async fn post_claim_v2(
         if let Ok(signature) = Signature::from_str(signed_msg) {
             let amount_coal = query_params.amount_coal;
             let amount_ore = query_params.amount_ore;
+            let amount_chromium = query_params.amount_chromium;
             let mut signed_msg = vec![];
             signed_msg.extend(msg_timestamp.to_le_bytes());
             signed_msg.extend(receiver_pubkey.to_bytes());
             signed_msg.extend(amount_coal.to_le_bytes());
             signed_msg.extend(amount_ore.to_le_bytes());
+            signed_msg.extend(amount_chromium.to_le_bytes());
 
             if signature.verify(&miner_pubkey.to_bytes(), &signed_msg) {
                 let reader = claims_queue.queue.read().await;
@@ -1445,8 +1482,8 @@ async fn post_claim_v2(
 
                 let amount_coal = query_params.amount_coal;
 
-                // 1 COAL 0.05 ORE
-                if amount_coal < 100_000_000_000 && amount_ore < 5_000_000_000 {
+                // 5 COAL 0.05 ORE
+                if amount_coal < 500_000_000_000 && amount_ore < 5_000_000_000 {
                     return Err((
                         StatusCode::BAD_REQUEST,
                         "claim minimum is 1 COAL or 0.05 ORE".to_string(),
@@ -1494,6 +1531,7 @@ async fn post_claim_v2(
                             receiver_pubkey,
                             amount_coal,
                             amount_ore,
+                            amount_chromium,
                         },
                     );
                     drop(writer);

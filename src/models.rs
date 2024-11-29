@@ -4,6 +4,30 @@ use diesel::sql_types::{BigInt, Integer, Nullable, Text, Timestamp, TinyInt, Uns
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]
+#[diesel(table_name = crate::schema::extra_resources_generation)]
+#[diesel(check_for_backend(diesel::mysql::Mysql))]
+pub struct ExtraResourcesGeneration {
+    pub id: i32,
+    pub pool_id: i32,
+    #[diesel(sql_type = Nullable<Unsigned<BigInt>>)]
+    pub amount_chromium: Option<u64>,
+    #[diesel(sql_type = Nullable<Timestamp>)]
+    pub finished_at: Option<NaiveDateTime>,
+    #[diesel(sql_type = Timestamp)]
+    pub created_at: NaiveDateTime,
+}
+
+#[derive(Debug, Copy, Clone, Deserialize, Insertable)]
+#[diesel(table_name = crate::schema::earnings_extra_resources)]
+#[diesel(check_for_backend(diesel::mysql::Mysql))]
+pub struct InsertEarningExtraResources {
+    pub miner_id: i32,
+    pub pool_id: i32,
+    pub extra_resources_generation_id: i32,
+    pub amount_chromium: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]
 #[diesel(table_name = crate::schema::challenges)]
 #[diesel(check_for_backend(diesel::mysql::Mysql))]
 pub struct Challenge {
@@ -56,6 +80,7 @@ pub struct Claim {
     pub txn_id: i32,
     pub amount_coal: u64,
     pub amount_ore: u64,
+    pub amount_chromium: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]
@@ -94,8 +119,10 @@ pub struct Pool {
     pub authority_pubkey: String,
     pub total_rewards_coal: u64,
     pub total_rewards_ore: u64,
+    pub total_rewards_chromium: u64,
     pub claimed_rewards_coal: u64,
     pub claimed_rewards_ore: u64,
+    pub claimed_rewards_chromium: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]
@@ -189,6 +216,7 @@ pub struct UpdateReward {
     pub miner_id: i32,
     pub balance_coal: u64,
     pub balance_ore: u64,
+    pub balance_chromium: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]
@@ -197,6 +225,7 @@ pub struct UpdateReward {
 pub struct Reward {
     pub balance_coal: u64,
     pub balance_ore: u64,
+    pub balance_chromium: u64,
     pub miner_id: i32,
 }
 
@@ -210,4 +239,3 @@ pub struct InsertEarning {
     pub amount_coal: u64,
     pub amount_ore: u64,
 }
-

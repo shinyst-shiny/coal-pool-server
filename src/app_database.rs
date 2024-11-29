@@ -1,4 +1,6 @@
+use chrono::{DateTime, NaiveDateTime};
 use deadpool_diesel::mysql::{Manager, Pool};
+use diesel::sql_types::Datetime;
 use diesel::{
     insert_into,
     sql_types::{BigInt, Binary, Bool, Integer, Nullable, Text, Unsigned},
@@ -70,7 +72,7 @@ impl AppDatabase {
     ) -> Result<models::Reward, AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn.interact(move |conn: &mut MysqlConnection| {
-                diesel::sql_query("SELECT r.balance_coal, r.balance_ore, r.miner_id FROM miners m JOIN rewards r ON m.id = r.miner_id WHERE m.pubkey = ?")
+                diesel::sql_query("SELECT r.balance_coal, r.balance_ore, r.balance_chromium, r.miner_id FROM miners m JOIN rewards r ON m.id = r.miner_id WHERE m.pubkey = ?")
                     .bind::<Text, _>(miner_pubkey)
                     .get_result::<models::Reward>(conn)
             }).await;
@@ -151,7 +153,31 @@ impl AppDatabase {
                 })
                 .await;
 
-            let res = query_1.and(query_2);
+            let rewards_3 = rewards.clone();
+            let query_3 = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    let rewards = rewards_3.clone();
+                    let query = diesel::sql_query(
+                        "UPDATE rewards SET balance_chromium = balance_chromium + CASE miner_id "
+                            .to_string()
+                            + &rewards
+                                .iter()
+                                .map(|r| format!("WHEN {} THEN {}", r.miner_id, r.balance_chromium))
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                            + " END WHERE miner_id IN ("
+                            + &rewards
+                                .iter()
+                                .map(|r| r.miner_id.to_string())
+                                .collect::<Vec<_>>()
+                                .join(",")
+                            + ");\n",
+                    );
+                    query.execute(conn)
+                })
+                .await;
+
+            let res = query_1.and(query_2).and(query_3);
 
             match res {
                 Ok(interaction) => match interaction {
@@ -178,13 +204,15 @@ impl AppDatabase {
         miner_id: i32,
         rewards_to_decrease_coal: u64,
         rewards_to_decrease_ore: u64,
+        rewards_to_decrease_chromium: u64,
     ) -> Result<(), AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn
                 .interact(move |conn: &mut MysqlConnection| {
-                    diesel::sql_query("UPDATE rewards SET balance_coal = balance_coal - ?, balance_ore = balance_ore - ? WHERE miner_id = ?")
+                    diesel::sql_query("UPDATE rewards SET balance_coal = balance_coal - ?, balance_ore = balance_ore - ?, balance_chromium = balance_chromium - ? WHERE miner_id = ?")
                         .bind::<Unsigned<BigInt>, _>(rewards_to_decrease_coal)
                         .bind::<Unsigned<BigInt>, _>(rewards_to_decrease_ore)
+                        .bind::<Unsigned<BigInt>, _>(rewards_to_decrease_chromium)
                         .bind::<Integer, _>(miner_id)
                         .execute(conn)
                 })
@@ -325,11 +353,13 @@ impl AppDatabase {
         pool_pubkey: String,
     ) -> Result<models::Pool, AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
-            let res = db_conn.interact(move |conn: &mut MysqlConnection| {
-                diesel::sql_query("SELECT id, proof_pubkey, authority_pubkey, total_rewards_coal, total_rewards_ore, claimed_rewards_coal, claimed_rewards_ore FROM pools WHERE pools.authority_pubkey = ?")
-                    .bind::<Text, _>(pool_pubkey)
-                    .get_result::<models::Pool>(conn)
-            }).await;
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    diesel::sql_query("SELECT * FROM pools WHERE pools.authority_pubkey = ?")
+                        .bind::<Text, _>(pool_pubkey)
+                        .get_result::<models::Pool>(conn)
+                })
+                .await;
 
             match res {
                 Ok(interaction) => match interaction {
@@ -396,13 +426,15 @@ impl AppDatabase {
         pool_authority_pubkey: String,
         earned_rewards_coal: u64,
         earned_rewards_ore: u64,
+        earned_rewards_chromium: u64,
     ) -> Result<(), AppDatabaseError> {
         info!(target: "server_log", "Updating pool rewards for {} with {} coal and {} ore", pool_authority_pubkey, earned_rewards_coal, earned_rewards_ore);
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn.interact(move |conn: &mut MysqlConnection| {
-                diesel::sql_query("UPDATE pools SET total_rewards_coal = total_rewards_coal + ?, total_rewards_ore = total_rewards_ore + ? WHERE authority_pubkey = ?")
+                diesel::sql_query("UPDATE pools SET total_rewards_coal = total_rewards_coal + ?, total_rewards_ore = total_rewards_ore + ?, total_rewards_chromium = total_rewards_chromium + ? WHERE authority_pubkey = ?")
                     .bind::<Unsigned<BigInt>, _>(earned_rewards_coal)
                     .bind::<Unsigned<BigInt>, _>(earned_rewards_ore)
+                    .bind::<Unsigned<BigInt>, _>(earned_rewards_chromium)
                     .bind::<Text, _>(pool_authority_pubkey)
                     .execute(conn)
             }).await;
@@ -433,12 +465,14 @@ impl AppDatabase {
         pool_authority_pubkey: String,
         claimed_rewards_coal: u64,
         claimed_rewards_ore: u64,
+        claimed_rewards_chromium: u64,
     ) -> Result<(), AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn.interact(move |conn: &mut MysqlConnection| {
-                diesel::sql_query("UPDATE pools SET claimed_rewards_coal = claimed_rewards_coal + ?, claimed_rewards_ore = claimed_rewards_ore + ? WHERE authority_pubkey = ?")
+                diesel::sql_query("UPDATE pools SET claimed_rewards_coal = claimed_rewards_coal + ?, claimed_rewards_ore = claimed_rewards_ore + ?, claimed_rewards_chromium = claimed_rewards_chromium + ? WHERE authority_pubkey = ?")
                     .bind::<Unsigned<BigInt>, _>(claimed_rewards_coal)
                     .bind::<Unsigned<BigInt>, _>(claimed_rewards_ore)
+                    .bind::<Unsigned<BigInt>, _>(claimed_rewards_chromium)
                     .bind::<Text, _>(pool_authority_pubkey)
                     .execute(conn)
             }).await;
@@ -755,13 +789,17 @@ impl AppDatabase {
                             .bind::<Bool, _>(true)
                             .execute(conn)?;
 
-                        let miner: Miner = diesel::sql_query("SELECT id, pubkey, enabled FROM miners WHERE miners.pubkey = ?")
-                            .bind::<Text, _>(&user_pubkey)
-                            .get_result(conn)?;
+                        let miner: Miner = diesel::sql_query(
+                            "SELECT id, pubkey, enabled FROM miners WHERE miners.pubkey = ?",
+                        )
+                        .bind::<Text, _>(&user_pubkey)
+                        .get_result(conn)?;
 
-                        let pool: models::Pool = diesel::sql_query("SELECT id, proof_pubkey, authority_pubkey, total_rewards_coal, total_rewards_ore, claimed_rewards_coal, claimed_rewards_ore FROM pools WHERE pools.authority_pubkey = ?")
-                            .bind::<Text, _>(&pool_authority_pubkey)
-                            .get_result(conn)?;
+                        let pool: models::Pool = diesel::sql_query(
+                            "SELECT * FROM pools WHERE pools.authority_pubkey = ?",
+                        )
+                        .bind::<Text, _>(&pool_authority_pubkey)
+                        .get_result(conn)?;
 
                         diesel::sql_query("INSERT INTO rewards (miner_id, pool_id) VALUES (?, ?)")
                             .bind::<Integer, _>(miner.id)
@@ -779,6 +817,219 @@ impl AppDatabase {
                             return Err(AppDatabaseError::FailedToInsertRow);
                         }
                         info!(target: "server_log", "Successfully inserted signup for pubkey: {}", user_pubkey);
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        error!(target: "server_log", "{:?}", e);
+                        return Err(AppDatabaseError::QueryFailed);
+                    }
+                },
+                Err(e) => {
+                    error!(target: "server_log", "{:?}", e);
+                    return Err(AppDatabaseError::InteractionFailed);
+                }
+            }
+        } else {
+            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
+        };
+    }
+
+    pub async fn add_chromium_reprocessing(&self, pool_id: i32) -> Result<(), AppDatabaseError> {
+        if let Ok(db_conn) = self.connection_pool.get().await {
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    diesel::sql_query("INSERT INTO extra_resources_generation (pool_id) VALUES (?)")
+                        .bind::<Integer, _>(pool_id)
+                        .execute(conn)
+                })
+                .await;
+
+            match res {
+                Ok(interaction) => match interaction {
+                    Ok(query) => {
+                        info!(target: "server_log", "Chromium reprocessing inserted: {}", query);
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        error!(target: "server_log", "{:?}", e);
+                        return Err(AppDatabaseError::QueryFailed);
+                    }
+                },
+                Err(e) => {
+                    error!(target: "server_log", "{:?}", e);
+                    return Err(AppDatabaseError::InteractionFailed);
+                }
+            }
+        } else {
+            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
+        };
+    }
+
+    pub async fn finish_chromium_reprocessing(
+        &self,
+        id: i32,
+        amount_chromium: u64,
+    ) -> Result<(), AppDatabaseError> {
+        if let Ok(db_conn) = self.connection_pool.get().await {
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    diesel::sql_query("UPDATE extra_resources_generation SET amount_chromium = ?, finished_at = now() WHERE id = ?")
+                        .bind::<Unsigned<BigInt>, _>(amount_chromium)
+                        .bind::<Integer, _>(id)
+                        .execute(conn)
+                })
+                .await;
+
+            match res {
+                Ok(interaction) => match interaction {
+                    Ok(query) => {
+                        info!(target: "server_log", "Chromium reprocessing updated: {}", query);
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        error!(target: "server_log", "{:?}", e);
+                        return Err(AppDatabaseError::QueryFailed);
+                    }
+                },
+                Err(e) => {
+                    error!(target: "server_log", "{:?}", e);
+                    return Err(AppDatabaseError::InteractionFailed);
+                }
+            }
+        } else {
+            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
+        };
+    }
+
+    pub async fn get_pending_chromium_reprocessing(
+        &self,
+        pool_id: i32,
+    ) -> Result<models::ExtraResourcesGeneration, AppDatabaseError> {
+        if let Ok(db_conn) = self.connection_pool.get().await {
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    diesel::sql_query(
+                        "SELECT * FROM extra_resources_generation WHERE finished_at is null AND pool_id = ? ORDER BY created_at DESC",
+                    )
+                        .bind::<Integer, _>(pool_id)
+                        .get_result::<models::ExtraResourcesGeneration>(conn)
+                })
+                .await;
+
+            match res {
+                Ok(interaction) => match interaction {
+                    Ok(query) => {
+                        return Ok(query);
+                    }
+                    Err(e) => {
+                        error!(target: "server_log", "{:?}", e);
+                        return Err(AppDatabaseError::QueryFailed);
+                    }
+                },
+                Err(e) => {
+                    error!(target: "server_log", "{:?}", e);
+                    return Err(AppDatabaseError::InteractionFailed);
+                }
+            }
+        } else {
+            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
+        };
+    }
+
+    pub async fn get_last_chromium_reprocessing(
+        &self,
+        pool_id: i32,
+    ) -> Result<models::ExtraResourcesGeneration, AppDatabaseError> {
+        if let Ok(db_conn) = self.connection_pool.get().await {
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    diesel::sql_query(
+                        "SELECT * FROM extra_resources_generation WHERE finished_at is not null AND pool_id = ? ORDER BY created_at DESC",
+                    )
+                        .bind::<Integer, _>(pool_id)
+                    .get_result::<models::ExtraResourcesGeneration>(conn)
+                })
+                .await;
+
+            match res {
+                Ok(interaction) => match interaction {
+                    Ok(query) => {
+                        return Ok(query);
+                    }
+                    Err(e) => {
+                        error!(target: "server_log", "{:?}", e);
+                        return Err(AppDatabaseError::QueryFailed);
+                    }
+                },
+                Err(e) => {
+                    error!(target: "server_log", "{:?}", e);
+                    return Err(AppDatabaseError::InteractionFailed);
+                }
+            }
+        } else {
+            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
+        };
+    }
+
+    pub async fn get_submissions_in_range(
+        &self,
+        start_time: NaiveDateTime,
+        end_time: NaiveDateTime,
+    ) -> Result<Vec<models::Submission>, AppDatabaseError> {
+        if let Ok(db_conn) = self.connection_pool.get().await {
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    diesel::sql_query(
+                        "SELECT * FROM submissions WHERE created_at BETWEEN ? AND ? ORDER BY miner_id DESC",
+                    )
+                        .bind::<Datetime, _>(start_time)
+                        .bind::<Datetime, _>(end_time)
+                        .get_results::<models::Submission>(conn)
+                })
+                .await;
+
+            match res {
+                Ok(interaction) => match interaction {
+                    Ok(query) => {
+                        return Ok(query);
+                    }
+                    Err(e) => {
+                        error!(target: "server_log", "{:?}", e);
+                        return Err(AppDatabaseError::QueryFailed);
+                    }
+                },
+                Err(e) => {
+                    error!(target: "server_log", "{:?}", e);
+                    return Err(AppDatabaseError::InteractionFailed);
+                }
+            }
+        } else {
+            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
+        };
+    }
+
+    pub async fn add_new_earnings_extra_resources_batch(
+        &self,
+        earnings: Vec<models::InsertEarningExtraResources>,
+    ) -> Result<(), AppDatabaseError> {
+        if let Ok(db_conn) = self.connection_pool.get().await {
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    insert_into(
+                        crate::schema::earnings_extra_resources::dsl::earnings_extra_resources,
+                    )
+                    .values(&earnings)
+                    .execute(conn)
+                })
+                .await;
+
+            match res {
+                Ok(interaction) => match interaction {
+                    Ok(query) => {
+                        info!(target: "server_log", "Earnings extra resources inserted: {}", query);
+                        if query == 0 {
+                            return Err(AppDatabaseError::FailedToInsertRow);
+                        }
                         return Ok(());
                     }
                     Err(e) => {

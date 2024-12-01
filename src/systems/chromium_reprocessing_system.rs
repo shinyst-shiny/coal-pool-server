@@ -1,5 +1,5 @@
 use crate::app_database::{AppDatabase, AppDatabaseError};
-use crate::coal_utils::{get_reprocessor, get_resource_mint, Resource, Tip};
+use crate::coal_utils::{get_reprocessor, get_resource_mint, Resource, Tip, COAL_TOKEN_DECIMALS};
 use crate::models::{
     ExtraResourcesGeneration, InsertEarningExtraResources, Submission, UpdateReward,
 };
@@ -156,9 +156,10 @@ pub async fn chromium_reprocessing_system(
             .get_token_account(&token_account_pubkey)
             .await
             .unwrap();
-        let initial_balance = token_account.unwrap().token_amount.ui_amount.unwrap();
+        let initial_balance = (token_account.unwrap().token_amount.ui_amount.unwrap()
+            * 10f64.powf(COAL_TOKEN_DECIMALS as f64)) as u64;
 
-        /*let mut reprocessor = get_reprocessor(&rpc_client, &signer.pubkey()).await;
+        let mut reprocessor = get_reprocessor(&rpc_client, &signer.pubkey()).await;
 
         while reprocessor.is_none() {
             info!(target: "server_log", "CHROMIUM: Reprocessor not found. Creating it...");
@@ -243,22 +244,23 @@ pub async fn chromium_reprocessing_system(
                     tokio::time::sleep(Duration::from_secs(400)).await;
                 }
             }
-        }*/
-        tracing::error!(target: "server_log", "CHROMIUM: Waiting a bit more for good measure 1");
+        }
+        info!(target: "server_log", "CHROMIUM: Waiting a bit more for good measure 1");
         tokio::time::sleep(Duration::from_millis(25000)).await;
-        tracing::error!(target: "server_log", "CHROMIUM: Waiting a bit more for good measure 2");
+        info!(target: "server_log", "CHROMIUM: Waiting a bit more for good measure 2");
         tokio::time::sleep(Duration::from_millis(25000)).await;
-        tracing::error!(target: "server_log", "CHROMIUM: Waiting a bit more for good measure 3");
+        info!(target: "server_log", "CHROMIUM: Waiting a bit more for good measure 3");
         tokio::time::sleep(Duration::from_millis(25000)).await;
-        tracing::error!(target: "server_log", "CHROMIUM: Waiting a bit more for good measure 4");
+        info!(target: "server_log", "CHROMIUM: Waiting a bit more for good measure 4");
         tokio::time::sleep(Duration::from_millis(25000)).await;
         let token_account = rpc_client
             .get_token_account(&token_account_pubkey)
             .await
             .unwrap();
-        let final_balance = token_account.unwrap().token_amount.ui_amount.unwrap();
-        tracing::error!(target: "server_log", "CHROMIUM: initial_balance {} final_balance {}",initial_balance, final_balance);
-        let mut full_reprocessed_amount = 19310391936u64; // (final_balance - initial_balance) as u64;
+        let final_balance = (token_account.unwrap().token_amount.ui_amount.unwrap()
+            * 10f64.powf(COAL_TOKEN_DECIMALS as f64)) as u64;
+        info!(target: "server_log", "CHROMIUM: initial_balance {} final_balance {}",initial_balance, final_balance);
+        let mut full_reprocessed_amount = final_balance - initial_balance;
         if full_reprocessed_amount <= 0 {
             tracing::error!(target: "server_log", "CHROMIUM: Chromium reprocessing system: Got 0 reprocessed amount");
             full_reprocessed_amount = 0;
@@ -350,9 +352,6 @@ pub async fn chromium_reprocessing_system(
             let miner_submission_perc = stats.submission_count as f64 / total_mine_event as f64;
             // total_hash_power : 1 = stats.total_hash_power : x
             let miner_hash_power_perc = stats.total_hash_power as f64 / total_hash_power as f64;
-
-            // info!(target: "server_log", "CHROMIUM: Miner: {}, set of data {}, {}, {}, {}", miner_id, stats.submission_count, total_mine_event, stats.total_hash_power, total_hash_power);
-            // info!(target: "server_log", "CHROMIUM: Miner: {}, submission perc: {:.11}, hash power perc: {:.11}", miner_id, miner_submission_perc, miner_hash_power_perc);
 
             let miner_factor_perc = miner_submission_perc.mul(miner_hash_power_perc);
 

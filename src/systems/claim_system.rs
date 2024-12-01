@@ -47,6 +47,8 @@ pub async fn claim_system(
                 get_associated_token_address(&receiver_pubkey, &ore_mint);
             let receiver_token_account_chromium =
                 get_associated_token_address(&receiver_pubkey, &chromium_mint);
+            let pool_token_account_chromium =
+                get_associated_token_address(&wallet.pubkey(), &chromium_mint);
 
             let prio_fee: u32 = 10_000;
 
@@ -220,7 +222,7 @@ pub async fn claim_system(
             if claim_amount_chromium > 0 {
                 match spl_token::instruction::transfer(
                     &spl_token::id(),
-                    &wallet.pubkey(),
+                    &pool_token_account_chromium,
                     &receiver_token_account_chromium,
                     &wallet.pubkey(),
                     &[],

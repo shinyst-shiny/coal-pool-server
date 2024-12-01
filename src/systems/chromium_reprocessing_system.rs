@@ -253,6 +253,8 @@ pub async fn chromium_reprocessing_system(
         tokio::time::sleep(Duration::from_millis(25000)).await;
         let final_balance = token_account.unwrap().token_amount.ui_amount.unwrap();
         tokio::time::sleep(Duration::from_millis(25000)).await;
+        tracing::error!(target: "server_log", "CHROMIUM: Waiting a bit more for good measure");
+        tokio::time::sleep(Duration::from_millis(25000)).await;
         let mut full_reprocessed_amount = (final_balance - initial_balance) as u64;
         if full_reprocessed_amount <= 0 {
             tracing::error!(target: "server_log", "CHROMIUM: Chromium reprocessing system: Got 0 reprocessed amount");

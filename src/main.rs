@@ -31,6 +31,7 @@ use crate::coal_utils::{
 };
 use crate::ore_utils::get_ore_mint;
 use crate::routes::get_guild_addresses;
+use crate::send_and_confirm::{send_and_confirm, ComputeBudget};
 use crate::systems::chromium_reprocessing_system::chromium_reprocessing_system;
 use app_database::{AppDatabase, AppDatabaseError};
 use app_rr_database::AppRRDatabase;
@@ -47,6 +48,7 @@ use axum::{
 use axum_extra::{headers::authorization::Basic, TypedHeader};
 use base64::{prelude::BASE64_STANDARD, Engine};
 use clap::Parser;
+use coal_api::consts::COAL_MINT_ADDRESS;
 use coal_guilds_api::state::member_pda;
 use coal_guilds_api::state::Member;
 use coal_utils::{get_coal_mint, get_config, get_proof, get_register_ix, COAL_TOKEN_DECIMALS};
@@ -935,6 +937,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/guild/addresses", get(get_guild_addresses))
         .route("/guild/check-member", get(get_guild_check_member))
         .route("/guild/stake", post(post_guild_stake))
+        .route("/guild/unstake", post(post_guild_un_stake))
+        .route("/coal/stake", post(post_coal_stake))
         .with_state(app_shared_state)
         .layer(Extension(app_database))
         .layer(Extension(app_rr_database))
@@ -1642,59 +1646,6 @@ async fn post_guild_stake(
             instruction_index += 1;
         }
 
-        /*// There should be either 2 or 3 instructions: initialize (optional), stake, and delegate
-        if tx.message.instructions.len() < 2 || tx.message.instructions.len() > 3 {
-            error!(target: "server_log", "Guild stake: Wrong priority fee detected in transaction. Count: {}.", tx.message.instructions.len());
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("Wrong instructions number".to_string())
-                .unwrap();
-        }
-
-        // Check for initialize instruction if it's present
-        let mut instruction_index = 0;
-        if tx.message.instructions.len() == 3 {
-            // If there are 3 instructions, the first should be initialize
-            let init_ix = &tx.message.instructions[instruction_index];
-            let program_id = tx.message.account_keys[init_ix.program_id_index as usize];
-
-            // Check if it's an initialize instruction from the correct program
-            if program_id != coal_guilds_api::ID
-                || init_ix.data != coal_guilds_api::sdk::new_member(user_pubkey).data {
-                error!(target: "server_log", "Guild stake: Wrong initialize instruction detected in transaction.");
-                return Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body("Wrong instructions".to_string())
-                    .unwrap();
-            }
-            instruction_index += 1; // Move to the next instruction
-        }
-
-        // Check the stake instruction
-        let stake_ix = &tx.message.instructions[instruction_index];
-        let program_id = tx.message.account_keys[stake_ix.program_id_index as usize];
-        if program_id != coal_guilds_api::ID
-            || stake_ix.data != coal_guilds_api::sdk::stake(user_pubkey, guild_pubkey, query_params.amount).data {
-            error!(target: "server_log", "Guild stake: Wrong stake instruction detected in transaction.");
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("Wrong instructions".to_string())
-                .unwrap();
-        }
-        instruction_index += 1;
-
-        // Check the delegate instruction
-        let delegate_ix = &tx.message.instructions[instruction_index];
-        let program_id = tx.message.account_keys[delegate_ix.program_id_index as usize];
-        if program_id != coal_guilds_api::ID
-            || delegate_ix.data != coal_guilds_api::sdk::delegate(user_pubkey, guild_pubkey).data {
-            error!(target: "server_log", "Guild stake: Wrong delegate instruction detected in transaction.");
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("Wrong instructions".to_string())
-                .unwrap();
-        }*/
-
         // Sign the transaction
         tx.sign(&[&*wallet.fee_wallet], tx.message.recent_blockhash);
 
@@ -1719,22 +1670,6 @@ async fn post_guild_stake(
                     .unwrap();
             }
             Err(e) => {
-                // Log the error and retry
-                //error!(target: "server_log", "Attempt {}: Failed to send transaction. Error: {}", attempt + 1, e);
-
-                /*if attempt == MAX_RETRIES {
-                    // Maximum retries reached
-                    error!(target: "server_log", "Max retries reached. Transaction failed.");
-                    return Response::builder()
-                        .status(StatusCode::INTERNAL_SERVER_ERROR)
-                        .body(format!("Transaction failed after {} attempts. Error: {}", MAX_RETRIES, e))
-                        .unwrap();
-                }
-
-                // Exponential backoff delay
-                let delay = BASE_DELAY * 2_u64.pow(attempt);
-                info!(target: "server_log", "Retrying in {} ms...", delay);
-                tokio::time::sleep(std::time::Duration::from_millis(delay)).await;*/
                 error!(target: "server_log", "Failed to send transaction. Error: {:?}", e);
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -1750,12 +1685,330 @@ async fn post_guild_stake(
             .body("Invalid pubkey".to_string())
             .unwrap();
     }
+}
 
-    // Fallback in case all attempts fail
-    /*Response::builder()
-    .status(StatusCode::INTERNAL_SERVER_ERROR)
-    .body("Transaction failed unexpectedly.".to_string())
-    .unwrap()*/
+#[derive(Deserialize)]
+struct CoalStakeParams {
+    pubkey: String,
+    amount: u64,
+}
+async fn post_coal_stake(
+    query_params: Query<CoalStakeParams>,
+    Extension(rpc_client): Extension<Arc<RpcClient>>,
+    Extension(wallet): Extension<Arc<WalletExtension>>,
+    Extension(app_config): Extension<Arc<Config>>,
+    Extension(app_database): Extension<Arc<AppDatabase>>,
+    body: String,
+) -> impl IntoResponse {
+    const MAX_RETRIES: u32 = 5; // Maximum number of retry attempts
+    const BASE_DELAY: u64 = 500; // Base delay in milliseconds
+
+    if let (Ok(user_pubkey), Ok(guild_pubkey)) = (
+        Pubkey::from_str(&query_params.pubkey),
+        Pubkey::from_str(&app_config.guild_address),
+    ) {
+        let serialized_tx = match BASE64_STANDARD.decode(&body) {
+            Ok(tx) => tx,
+            Err(e) => {
+                error!(target: "server_log", "Failed to decode transaction: {}", e);
+                return Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body("Invalid Tx encoding".to_string())
+                    .unwrap();
+            }
+        };
+
+        let mut tx: Transaction = match bincode::deserialize(&serialized_tx) {
+            Ok(tx) => tx,
+            Err(_) => {
+                error!(target: "server_log", "Failed to deserialize tx");
+                return Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body("Invalid Tx format".to_string())
+                    .unwrap();
+            }
+        };
+
+        // Verify fee payer and ensure transaction structure
+        if !tx.message.account_keys[0].eq(&wallet.fee_wallet.pubkey()) {
+            error!(target: "server_log", "Coal stake: Unexpected fee payer detected in transaction.");
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body("Invalid fee payer".to_string())
+                .unwrap();
+        }
+
+        // check if the only transactions are new_member, stake, and delegate. None is mandatory
+        if tx.message.instructions.len() == 0 {
+            error!(target: "server_log", "Coal stake: No instructions detected in transaction.");
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body("Instructions error".to_string())
+                .unwrap();
+        }
+        if tx.message.instructions.len() != 1 {
+            error!(target: "server_log", "Coal stake: Too many instructions detected in transaction. Count: {}.", tx.message.instructions.len());
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body("Instructions error".to_string())
+                .unwrap();
+        }
+
+        // check that only the new_member, stake, and delegate instructions are present not only with id but checking the specific tx action, regardless of the position of the tx
+        let mut program_id =
+            tx.message.account_keys[tx.message.instructions[0].program_id_index as usize];
+        if program_id != spl_token::id() {
+            error!(target: "server_log", "Coal stake: Wrong program detected in transaction. Program: {}.", program_id);
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body("Wrong program".to_string())
+                .unwrap();
+        }
+
+        // Sign the transaction
+        tx.sign(&[&*wallet.fee_wallet], tx.message.recent_blockhash);
+
+        // Retry mechanism for sending the transaction
+        //for attempt in 0..=MAX_RETRIES {
+        match rpc_client
+            .send_and_confirm_transaction_with_spinner_and_commitment(
+                &tx,
+                CommitmentConfig::confirmed(),
+            )
+            .await
+        {
+            Ok(signature) => {
+                tokio::time::sleep(Duration::from_millis(5000)).await;
+                let pool_sender =
+                    get_associated_token_address(&wallet.miner_wallet.pubkey(), &COAL_MINT_ADDRESS);
+
+                let stake_ix = coal_utils::get_stake_ix(
+                    wallet.miner_wallet.pubkey(),
+                    pool_sender,
+                    query_params.amount,
+                );
+
+                match send_and_confirm(
+                    &[stake_ix],
+                    ComputeBudget::Fixed(32_000),
+                    &rpc_client.clone(),
+                    &rpc_client.clone(),
+                    &wallet.miner_wallet.clone(),
+                    &wallet.fee_wallet.clone(),
+                    None,
+                    None,
+                )
+                .await
+                {
+                    Ok(signature) => {
+                        tracing::info!(target: "server_log", "Coal stake: Transaction successful {}",signature);
+                    }
+                    Err(e) => {
+                        tracing::error!(target: "server_log", "Coal stake: Transaction failed: {}", e);
+                        return Response::builder()
+                            .status(StatusCode::BAD_REQUEST)
+                            .body("Transaction failed with error".to_string())
+                            .unwrap();
+                    }
+                }
+
+                // Transaction successful
+                let amount_dec =
+                    query_params.amount as f64 / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
+
+                let mut miner_id = 1;
+
+                match app_database
+                    .get_miner_by_pubkey_str(query_params.pubkey.clone())
+                    .await
+                {
+                    Ok(miner) => miner_id = miner.id,
+                    Err(_) => {
+                        tracing::error!(target: "server_log", "Coal stake: Failed to get miner... retrying...");
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                    }
+                }
+
+                // Insert commissions earning
+                let user_earning = vec![InsertEarning {
+                    miner_id: miner_id,
+                    pool_id: app_config.pool_id,
+                    challenge_id: -1,
+                    amount_coal: query_params.amount,
+                    amount_ore: 0,
+                }];
+                tracing::info!(target: "server_log", "Coal stake: Inserting earning");
+                while let Err(_) = app_database
+                    .add_new_earnings_batch(user_earning.clone())
+                    .await
+                {
+                    tracing::error!(target: "server_log", "Coal stake: Failed to add earning... retrying...");
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+                tracing::info!(target: "server_log", "Coal stake: Inserted earning");
+
+                let new_rewards = vec![UpdateReward {
+                    miner_id: miner_id,
+                    balance_coal: query_params.amount,
+                    balance_ore: 0,
+                    balance_chromium: 0,
+                }];
+
+                tracing::info!(target: "server_log", "Coal stake: Updating rewards...");
+                while let Err(_) = app_database.update_rewards(new_rewards.clone()).await {
+                    tracing::error!(target: "server_log", "Coal stake: Failed to update rewards in db. Retrying...");
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+
+                info!(target: "server_log", "Miner {} successfully staked {}.\nSig: {:?}", user_pubkey, amount_dec, signature);
+                return Response::builder()
+                    .status(StatusCode::OK)
+                    .header("Content-Type", "text/text")
+                    .body("SUCCESS".to_string())
+                    .unwrap();
+            }
+            Err(e) => {
+                error!(target: "server_log", "Failed to send transaction. Error: {:?}", e);
+                return Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(format!("Transaction failed with error: {}", e))
+                    .unwrap();
+            }
+        }
+        //}
+    } else {
+        error!(target: "server_log", "Invalid pubkey in stake request");
+        return Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body("Invalid pubkey".to_string())
+            .unwrap();
+    }
+}
+
+#[derive(Deserialize)]
+struct GuildUnStakeParams {
+    pubkey: String,
+    amount: u64,
+    mint: String,
+}
+
+async fn post_guild_un_stake(
+    query_params: Query<GuildUnStakeParams>,
+    Extension(rpc_client): Extension<Arc<RpcClient>>,
+    Extension(wallet): Extension<Arc<WalletExtension>>,
+    Extension(app_config): Extension<Arc<Config>>,
+    body: String,
+) -> impl IntoResponse {
+    const MAX_RETRIES: u32 = 5; // Maximum number of retry attempts
+    const BASE_DELAY: u64 = 500; // Base delay in milliseconds
+
+    if let (Ok(user_pubkey), Ok(guild_pubkey)) = (
+        Pubkey::from_str(&query_params.pubkey),
+        Pubkey::from_str(&app_config.guild_address),
+    ) {
+        let serialized_tx = match BASE64_STANDARD.decode(&body) {
+            Ok(tx) => tx,
+            Err(e) => {
+                error!(target: "server_log", "Failed to decode transaction: {}", e);
+                return Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body("Invalid Tx encoding".to_string())
+                    .unwrap();
+            }
+        };
+
+        let mut tx: Transaction = match bincode::deserialize(&serialized_tx) {
+            Ok(tx) => tx,
+            Err(_) => {
+                error!(target: "server_log", "Failed to deserialize tx");
+                return Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body("Invalid Tx format".to_string())
+                    .unwrap();
+            }
+        };
+
+        // Verify fee payer and ensure transaction structure
+        if !tx.message.account_keys[0].eq(&wallet.fee_wallet.pubkey()) {
+            error!(target: "server_log", "Guild unstake: Unexpected fee payer detected in transaction.");
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body("Invalid fee payer".to_string())
+                .unwrap();
+        }
+
+        // check if the only transactions are new_member, unstake, and delegate. None is mandatory
+        if tx.message.instructions.len() == 0 {
+            error!(target: "server_log", "Guild unstake: No instructions detected in transaction.");
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body("Instructions error".to_string())
+                .unwrap();
+        }
+        if tx.message.instructions.len() > 1 {
+            error!(target: "server_log", "Guild unstake: Too many instructions detected in transaction. Count: {}.", tx.message.instructions.len());
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body("Instructions error".to_string())
+                .unwrap();
+        }
+
+        // check that only the new_member, unstake, and delegate instructions are present not only with id but checking the specific tx action, regardless of the position of the tx
+        let mut instruction_index = 0;
+        let mut program_id = tx.message.account_keys
+            [tx.message.instructions[instruction_index].program_id_index as usize];
+        while instruction_index < tx.message.instructions.len() {
+            if program_id != coal_guilds_api::ID {
+                error!(target: "server_log", "Guild unstake: Wrong program detected in transaction. Program: {}.", program_id);
+                return Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body("Wrong program".to_string())
+                    .unwrap();
+            }
+            program_id = tx.message.account_keys
+                [tx.message.instructions[instruction_index].program_id_index as usize];
+            instruction_index += 1;
+        }
+
+        // Sign the transaction
+        tx.sign(&[&*wallet.fee_wallet], tx.message.recent_blockhash);
+
+        // Retry mechanism for sending the transaction
+        //for attempt in 0..=MAX_RETRIES {
+        match rpc_client
+            .send_and_confirm_transaction_with_spinner_and_commitment(
+                &tx,
+                CommitmentConfig::confirmed(),
+            )
+            .await
+        {
+            Ok(signature) => {
+                // Transaction successful
+                let amount_dec =
+                    query_params.amount as f64 / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
+                info!(target: "server_log", "Miner {} successfully unstaked from the guild {}.\nSig: {:?}", user_pubkey, amount_dec, signature);
+                return Response::builder()
+                    .status(StatusCode::OK)
+                    .header("Content-Type", "text/text")
+                    .body("SUCCESS".to_string())
+                    .unwrap();
+            }
+            Err(e) => {
+                error!(target: "server_log", "Failed to send transaction. Error: {:?}", e);
+                return Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(format!("Transaction failed with error: {}", e))
+                    .unwrap();
+            }
+        }
+        //}
+    } else {
+        error!(target: "server_log", "Invalid pubkey in unstake request");
+        return Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body("Invalid pubkey".to_string())
+            .unwrap();
+    }
 }
 
 /*#[derive(Deserialize)]

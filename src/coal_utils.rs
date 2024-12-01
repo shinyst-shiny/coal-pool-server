@@ -102,7 +102,7 @@ pub fn get_claim_ix(signer: Pubkey, beneficiary: Pubkey, claim_amount: u64) -> I
 }
 
 pub fn get_stake_ix(signer: Pubkey, sender: Pubkey, stake_amount: u64) -> Instruction {
-    coal_instruction::stake_coal(sender, signer, stake_amount)
+    coal_instruction::stake_coal(signer, sender, stake_amount)
 }
 
 pub fn get_guild_member(miner: Pubkey) -> (Pubkey, u8) {

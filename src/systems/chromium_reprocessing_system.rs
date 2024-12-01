@@ -158,7 +158,7 @@ pub async fn chromium_reprocessing_system(
             .unwrap();
         let initial_balance = token_account.unwrap().token_amount.ui_amount.unwrap();
 
-        let mut reprocessor = get_reprocessor(&rpc_client, &signer.pubkey()).await;
+        /*let mut reprocessor = get_reprocessor(&rpc_client, &signer.pubkey()).await;
 
         while reprocessor.is_none() {
             info!(target: "server_log", "CHROMIUM: Reprocessor not found. Creating it...");
@@ -243,19 +243,22 @@ pub async fn chromium_reprocessing_system(
                     tokio::time::sleep(Duration::from_secs(400)).await;
                 }
             }
-        }
+        }*/
+        tracing::error!(target: "server_log", "CHROMIUM: Waiting a bit more for good measure 1");
         tokio::time::sleep(Duration::from_millis(25000)).await;
-
+        tracing::error!(target: "server_log", "CHROMIUM: Waiting a bit more for good measure 2");
+        tokio::time::sleep(Duration::from_millis(25000)).await;
+        tracing::error!(target: "server_log", "CHROMIUM: Waiting a bit more for good measure 3");
+        tokio::time::sleep(Duration::from_millis(25000)).await;
+        tracing::error!(target: "server_log", "CHROMIUM: Waiting a bit more for good measure 4");
+        tokio::time::sleep(Duration::from_millis(25000)).await;
         let token_account = rpc_client
             .get_token_account(&token_account_pubkey)
             .await
             .unwrap();
-        tokio::time::sleep(Duration::from_millis(25000)).await;
         let final_balance = token_account.unwrap().token_amount.ui_amount.unwrap();
-        tokio::time::sleep(Duration::from_millis(25000)).await;
-        tracing::error!(target: "server_log", "CHROMIUM: Waiting a bit more for good measure");
-        tokio::time::sleep(Duration::from_millis(25000)).await;
-        let mut full_reprocessed_amount = (final_balance - initial_balance) as u64;
+        tracing::error!(target: "server_log", "CHROMIUM: initial_balance {} final_balance {}",initial_balance, final_balance);
+        let mut full_reprocessed_amount = 19310391936u64; // (final_balance - initial_balance) as u64;
         if full_reprocessed_amount <= 0 {
             tracing::error!(target: "server_log", "CHROMIUM: Chromium reprocessing system: Got 0 reprocessed amount");
             full_reprocessed_amount = 0;

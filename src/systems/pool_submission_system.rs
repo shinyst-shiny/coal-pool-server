@@ -545,7 +545,7 @@ pub async fn pool_submission_system(
 
                             let result: Result<Signature, String> = loop {
                                 info!(target: "server_log", "Loop result timer {}",expired_timer.elapsed().as_secs());
-                                if expired_timer.elapsed().as_secs() >= 200 {
+                                if expired_timer.elapsed().as_secs() >= 30 {
                                     break Err("Transaction Expired".to_string());
                                 }
                                 let results = rpc_client.get_signature_statuses(&[signature]).await;

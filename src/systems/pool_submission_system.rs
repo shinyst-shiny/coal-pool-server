@@ -266,7 +266,6 @@ pub async fn pool_submission_system(
                             let rpc_config = RpcSendTransactionConfig {
                                 skip_preflight: false,
                                 preflight_commitment: Some(rpc_client.commitment().commitment),
-                                max_retries: Some(200),
                                 ..RpcSendTransactionConfig::default()
                             };
 
@@ -544,14 +543,11 @@ pub async fn pool_submission_system(
                             });
 
                             let result: Result<Signature, String> = loop {
-                                info!(target: "server_log", "Loop result timer {}",expired_timer.elapsed().as_secs());
-                                if expired_timer.elapsed().as_secs() >= 30 {
+                                if expired_timer.elapsed().as_secs() >= 200 {
                                     break Err("Transaction Expired".to_string());
                                 }
                                 let results = rpc_client.get_signature_statuses(&[signature]).await;
-                                info!(target: "server_log", "Loop result results {:?}",results);
                                 if let Ok(response) = results {
-                                    info!(target: "server_log", "Loop result response {:?}",response);
                                     let statuses = response.value;
                                     if let Some(status) = &statuses[0] {
                                         info!(target: "server_log", "Status: {:?}", status);
@@ -568,14 +564,10 @@ pub async fn pool_submission_system(
                                     }
                                 }
                                 // wait 500ms before checking status
-                                tokio::time::sleep(Duration::from_millis(1000)).await;
+                                tokio::time::sleep(Duration::from_millis(500)).await;
                             };
-
-                            info!(target: "server_log", "Post Loop result");
                             // stop the tx sender
                             let _ = tx_message_sender.send(0);
-
-                            info!(target: "server_log", "Post Loop result result {:?}",result);
 
                             match result {
                                 Ok(sig) => {

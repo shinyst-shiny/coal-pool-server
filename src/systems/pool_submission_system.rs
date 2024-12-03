@@ -543,7 +543,8 @@ pub async fn pool_submission_system(
                             });
 
                             let result: Result<Signature, String> = loop {
-                                if expired_timer.elapsed().as_secs() >= 120 {
+                                info!(target: "server_log", "Loop result");
+                                if expired_timer.elapsed().as_secs() >= 200 {
                                     break Err("Transaction Expired".to_string());
                                 }
                                 let results = rpc_client.get_signature_statuses(&[signature]).await;
@@ -566,8 +567,12 @@ pub async fn pool_submission_system(
                                 // wait 500ms before checking status
                                 tokio::time::sleep(Duration::from_millis(500)).await;
                             };
+
+                            info!(target: "server_log", "Post Loop result");
                             // stop the tx sender
                             let _ = tx_message_sender.send(0);
+
+                            info!(target: "server_log", "Post Loop result result {:?}",result);
 
                             match result {
                                 Ok(sig) => {

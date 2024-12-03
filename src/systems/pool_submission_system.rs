@@ -568,7 +568,7 @@ pub async fn pool_submission_system(
                                     }
                                 }
                                 // wait 500ms before checking status
-                                tokio::time::sleep(Duration::from_millis(500)).await;
+                                tokio::time::sleep(Duration::from_millis(1000)).await;
                             };
 
                             info!(target: "server_log", "Post Loop result");

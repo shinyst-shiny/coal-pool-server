@@ -14,7 +14,6 @@ use solana_client::{
     nonblocking::rpc_client::RpcClient,
     rpc_config::{RpcSendTransactionConfig, RpcSimulateTransactionConfig, RpcTransactionConfig},
 };
-use solana_sdk::commitment_config::CommitmentLevel;
 use solana_sdk::{
     compute_budget::ComputeBudgetInstruction,
     instruction::InstructionError,
@@ -266,7 +265,7 @@ pub async fn pool_submission_system(
 
                             let rpc_config = RpcSendTransactionConfig {
                                 skip_preflight: false,
-                                preflight_commitment: Some(CommitmentLevel::Finalized),
+                                preflight_commitment: Some(rpc_client.commitment().commitment),
                                 ..RpcSendTransactionConfig::default()
                             };
 

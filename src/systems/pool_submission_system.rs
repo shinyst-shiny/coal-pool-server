@@ -266,11 +266,13 @@ pub async fn pool_submission_system(
                             let rpc_config = RpcSendTransactionConfig {
                                 skip_preflight: false,
                                 preflight_commitment: Some(rpc_client.commitment().commitment),
+                                max_retries: 50,
                                 ..RpcSendTransactionConfig::default()
                             };
 
                             let rpc_sim_config = RpcSimulateTransactionConfig {
                                 sig_verify: false,
+                                max_retries: 50,
                                 ..RpcSimulateTransactionConfig::default()
                             };
 

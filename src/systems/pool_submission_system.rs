@@ -543,12 +543,14 @@ pub async fn pool_submission_system(
                             });
 
                             let result: Result<Signature, String> = loop {
-                                info!(target: "server_log", "Loop result");
+                                info!(target: "server_log", "Loop result timer {}",expired_timer.elapsed().as_secs());
                                 if expired_timer.elapsed().as_secs() >= 200 {
                                     break Err("Transaction Expired".to_string());
                                 }
                                 let results = rpc_client.get_signature_statuses(&[signature]).await;
+                                info!(target: "server_log", "Loop result results {:?}",results);
                                 if let Ok(response) = results {
+                                    info!(target: "server_log", "Loop result response {:?}",response);
                                     let statuses = response.value;
                                     if let Some(status) = &statuses[0] {
                                         info!(target: "server_log", "Status: {:?}", status);

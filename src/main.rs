@@ -906,7 +906,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_shared_state = shared_state.clone();
     let app = Router::new()
         .route("/v2/ws", get(ws_handler_v2))
-        .route("/pause", post(post_pause))
+        //.route("/pause", post(post_pause))
         .route("/latest-blockhash", get(get_latest_blockhash))
         .route("/pool/authority/pubkey", get(get_pool_authority_pubkey))
         .route("/pool/fee_payer/pubkey", get(get_pool_fee_payer_pubkey))

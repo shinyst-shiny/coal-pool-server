@@ -223,8 +223,14 @@ pub async fn pool_submission_system(
 
                         info!(target: "server_log","Using for the transaction Signer: {:?} tool: {:?}, member: {:?}, guild_address: {:?}", signer.pubkey(), tool_address, guild_member_address, guild_address);
 
-                        let coal_mine_ix =
-                            get_mine_ix(signer.pubkey(), best_solution, bus, None, None, None);
+                        let coal_mine_ix = get_mine_ix(
+                            signer.pubkey(),
+                            best_solution,
+                            bus,
+                            tool_address,
+                            guild_member_address,
+                            guild_address,
+                        );
 
                         let ore_mine_ix = get_ore_mine_ix(signer.pubkey(), best_solution, bus);
                         ixs.push(ore_mine_ix);

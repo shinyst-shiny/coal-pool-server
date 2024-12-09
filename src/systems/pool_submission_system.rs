@@ -160,7 +160,19 @@ pub async fn pool_submission_system(
                             let time_until_reset = (config.last_reset_at + 120) - now as i64;
                             if time_until_reset <= 5 {
                                 cu_limit += 50_000;
-                                prio_fee += 10_000;
+                                info!(target: "server_log", "Including reset tx ORE.");
+                                true
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                        let should_add_reset_ix_ore = if let Some(config) = loaded_config_ore {
+                            let time_until_reset = (config.last_reset_at + 300) - now as i64;
+                            if time_until_reset <= 5 {
+                                cu_limit += 50_000;
                                 info!(target: "server_log", "Including reset tx COAL.");
                                 true
                             } else {
@@ -218,6 +230,10 @@ pub async fn pool_submission_system(
 
                         if should_add_reset_ix_coal {
                             let reset_ix = get_reset_ix_coal(signer.pubkey());
+                            ixs.push(reset_ix);
+                        }
+                        if should_add_reset_ix_ore {
+                            let reset_ix = get_reset_ix_ore(signer.pubkey());
                             ixs.push(reset_ix);
                         }
 

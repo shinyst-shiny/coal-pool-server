@@ -281,10 +281,31 @@ pub async fn chromium_reprocessing_system(
             .add_new_earnings_extra_resources_batch(commissions_earning.clone())
             .await
         {
-            tracing::error!(target: "server_log", "CHROMIUM: Failed to add commmissions earning... retrying...");
+            tracing::error!(target: "server_log", "CHROMIUM: Failed to add commissions earning... retrying...");
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
         tracing::info!(target: "server_log", "CHROMIUM: Inserted commissions earning");
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        let commission_rewards = vec![UpdateReward {
+            miner_id: config.commissions_miner_id,
+            balance_chromium: commissions_chromium.floor(),
+            balance_coal: 0,
+            balance_ore: 0,
+        }];
+
+        if commission_rewards.len() > 0 {
+            for batch in commission_rewards.chunks(100) {
+                while let Err(_) = app_database.update_rewards(batch.to_vec()).await {
+                    tracing::error!(target: "server_log", "CHROMIUM: Failed to add new commissions rewards to db. Retrying...");
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+        }
+
+        tracing::info!(target: "server_log", "CHROMIUM: Inserted commissions rewards");
 
         let reprocessed_amount = full_reprocessed_amount - commissions_chromium;
 

@@ -1701,8 +1701,25 @@ async fn post_guild_stake(
                     .body("Instructions error".to_string())
                     .unwrap();
             }
+        } else if tx.message.instructions.len() == 5 {
+            if validate_compute_unit_instruction(&tx.message.instructions[0], &tx.message).is_err()
+                || validate_compute_unit_instruction(&tx.message.instructions[1], &tx.message)
+                    .is_err()
+                || tx.message.account_keys[tx.message.instructions[2].program_id_index as usize]
+                    != coal_guilds_api::ID
+                || tx.message.account_keys[tx.message.instructions[3].program_id_index as usize]
+                    != coal_guilds_api::ID
+                || tx.message.account_keys[tx.message.instructions[4].program_id_index as usize]
+                    != coal_guilds_api::ID
+            {
+                error!(target: "server_log", "Guild stake: Found four instructions, wrong program detected in transaction.");
+                return Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body("Instructions error".to_string())
+                    .unwrap();
+            }
         } else {
-            error!(target: "server_log", "Guild stake: Too many instructions detected in transaction. Count: {}.", tx.message.instructions.len());
+            error!(target: "server_log", "Guild stake: Too many instructions detected in transaction. Count: {}. Tx: {:?}", tx.message.instructions.len(), tx.message);
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
                 .body("Instructions error".to_string())
@@ -2638,12 +2655,6 @@ pub async fn get_guild_delegate_instruction(
         info!(target: "server_log", "Pubkey: {} is trying to delegate to Guild: {}", user_pubkey.to_string(), guild_pubkey.to_string());
 
         let delegate_instruction = coal_guilds_api::sdk::delegate(user_pubkey, guild_pubkey);
-
-        for acc in delegate_instruction.clone().accounts {
-            info!(target: "server_log", "Instruction: {:?}", acc);
-        }
-
-        info!(target: "server_log", "Instruction: {:?}", delegate_instruction);
 
         Response::builder()
             .status(StatusCode::OK)

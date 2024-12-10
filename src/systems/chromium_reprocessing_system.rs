@@ -290,7 +290,7 @@ pub async fn chromium_reprocessing_system(
 
         let commission_rewards = vec![UpdateReward {
             miner_id: config.commissions_miner_id,
-            balance_chromium: commissions_chromium.floor(),
+            balance_chromium: commissions_chromium,
             balance_coal: 0,
             balance_ore: 0,
         }];

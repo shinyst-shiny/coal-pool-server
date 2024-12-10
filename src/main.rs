@@ -46,7 +46,9 @@ use axum::{
     Extension, Json, Router,
 };
 use axum_extra::{headers::authorization::Basic, TypedHeader};
+use base64::engine::general_purpose;
 use base64::{prelude::BASE64_STANDARD, Engine};
+use clap::builder::TypedValueParser;
 use clap::Parser;
 use coal_api::consts::COAL_MINT_ADDRESS;
 use coal_guilds_api::state::member_pda;
@@ -60,6 +62,9 @@ use routes::{get_challenges, get_latest_mine_txn};
 use serde::{Deserialize, Serialize};
 use solana_account_decoder::StringDecimals;
 use solana_client::nonblocking::rpc_client::RpcClient;
+use solana_client::rpc_config::RpcSendTransactionConfig;
+use solana_sdk::instruction::{CompiledInstruction, Instruction};
+use solana_sdk::program_error::ProgramError;
 use solana_sdk::{
     commitment_config::CommitmentConfig,
     compute_budget::ComputeBudgetInstruction,
@@ -67,9 +72,11 @@ use solana_sdk::{
     pubkey::Pubkey,
     signature::{read_keypair_file, Keypair, Signature},
     signer::Signer,
+    sysvar,
     transaction::Transaction,
 };
 use spl_associated_token_account::get_associated_token_address;
+use spl_token::instruction::TokenInstruction;
 use tokio::{
     sync::{mpsc::UnboundedSender, Mutex, RwLock},
     time::Instant,
@@ -295,6 +302,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     let guild_env = std::env::var("GUILD_ADDRESS").expect("GUILD_ADDRESS must be set.");
+
+    let disable_reprocess_string =
+        std::env::var("DISABLE_REPROCESS").expect("DISABLE_REPROCESS must be set.");
+    let disable_reprocess = disable_reprocess_string == "true";
 
     let app_database = Arc::new(AppDatabase::new(database_url));
     let app_rr_database = Arc::new(AppRRDatabase::new(database_rr_url));
@@ -861,21 +872,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await;
     });
 
-    let app_config = config.clone();
-    let app_wallet = wallet_extension.clone();
-    let app_app_database = app_database.clone();
-    let app_rpc_client = rpc_client.clone();
-    let app_jito_client = jito_client.clone();
-    tokio::spawn(async move {
-        chromium_reprocessing_system(
-            app_wallet,
-            app_rpc_client,
-            app_jito_client,
-            app_app_database,
-            app_config,
-        )
-        .await;
-    });
+    if !disable_reprocess {
+        let app_config = config.clone();
+        let app_wallet = wallet_extension.clone();
+        let app_app_database = app_database.clone();
+        let app_rpc_client = rpc_client.clone();
+        let app_jito_client = jito_client.clone();
+        tokio::spawn(async move {
+            chromium_reprocessing_system(
+                app_wallet,
+                app_rpc_client,
+                app_jito_client,
+                app_app_database,
+                app_config,
+            )
+            .await;
+        });
+    }
 
     let app_shared_state = shared_state.clone();
     let app_app_database = app_database.clone();
@@ -938,6 +951,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/guild/check-member", get(get_guild_check_member))
         .route("/guild/stake", post(post_guild_stake))
         .route("/guild/unstake", post(post_guild_un_stake))
+        .route(
+            "/guild/new-member-instruction",
+            get(get_guild_new_member_instruction),
+        )
+        .route(
+            "/guild/delegate-instruction",
+            get(get_guild_delegate_instruction),
+        )
+        .route("/guild/stake-instruction", get(get_guild_stake_instruction))
         .route("/coal/stake", post(post_coal_stake))
         .with_state(app_shared_state)
         .layer(Extension(app_database))
@@ -1613,38 +1635,80 @@ async fn post_guild_stake(
                 .unwrap();
         }
 
-        // check if the only transactions are new_member, stake, and delegate. None is mandatory
-        if tx.message.instructions.len() == 0 {
-            error!(target: "server_log", "Guild stake: No instructions detected in transaction.");
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("Instructions error".to_string())
-                .unwrap();
-        }
-        if tx.message.instructions.len() > 3 {
+        if tx.message.instructions.len() == 1 {
+            if tx.message.account_keys[tx.message.instructions[0].program_id_index as usize]
+                != coal_guilds_api::ID
+            {
+                error!(target: "server_log", "Guild stake: found one instruction, wrong program detected in transaction.");
+                return Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body("Instructions error".to_string())
+                    .unwrap();
+            }
+        } else if tx.message.instructions.len() == 2 {
+            if (tx.message.account_keys[tx.message.instructions[0].program_id_index as usize]
+                != coal_guilds_api::ID
+                && validate_compute_unit_instruction(&tx.message.instructions[0], &tx.message)
+                    .is_err())
+                || (tx.message.account_keys[tx.message.instructions[1].program_id_index as usize]
+                    != coal_guilds_api::ID
+                    && tx.message.account_keys
+                        [tx.message.instructions[1].program_id_index as usize]
+                        != coal_guilds_api::ID)
+            {
+                error!(target: "server_log", "Guild stake: Found two instructions, wrong program detected in transaction.");
+                return Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body("Instructions error".to_string())
+                    .unwrap();
+            }
+        } else if tx.message.instructions.len() == 3 {
+            if (tx.message.account_keys[tx.message.instructions[0].program_id_index as usize]
+                != coal_guilds_api::ID
+                && validate_compute_unit_instruction(&tx.message.instructions[0], &tx.message)
+                    .is_err())
+                || (tx.message.account_keys[tx.message.instructions[1].program_id_index as usize]
+                    != coal_guilds_api::ID
+                    && validate_compute_unit_instruction(&tx.message.instructions[1], &tx.message)
+                        .is_err())
+                || (tx.message.account_keys[tx.message.instructions[2].program_id_index as usize]
+                    != coal_guilds_api::ID
+                    && tx.message.account_keys
+                        [tx.message.instructions[2].program_id_index as usize]
+                        != coal_guilds_api::ID)
+            {
+                error!(target: "server_log", "Guild stake: Found three instructions, wrong program detected in transaction.");
+                return Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body("Instructions error".to_string())
+                    .unwrap();
+            }
+        } else if tx.message.instructions.len() == 4 {
+            if validate_compute_unit_instruction(&tx.message.instructions[0], &tx.message).is_err()
+                || (validate_compute_unit_instruction(&tx.message.instructions[1], &tx.message)
+                    .is_err()
+                    && tx.message.account_keys
+                        [tx.message.instructions[1].program_id_index as usize]
+                        != coal_guilds_api::ID)
+                || tx.message.account_keys[tx.message.instructions[2].program_id_index as usize]
+                    != coal_guilds_api::ID
+                || tx.message.account_keys[tx.message.instructions[3].program_id_index as usize]
+                    != coal_guilds_api::ID
+            {
+                error!(target: "server_log", "Guild stake: Found four instructions, wrong program detected in transaction.");
+                return Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body("Instructions error".to_string())
+                    .unwrap();
+            }
+        } else {
             error!(target: "server_log", "Guild stake: Too many instructions detected in transaction. Count: {}.", tx.message.instructions.len());
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
                 .body("Instructions error".to_string())
                 .unwrap();
         }
-
-        // check that only the new_member, stake, and delegate instructions are present not only with id but checking the specific tx action, regardless of the position of the tx
-        let mut instruction_index = 0;
-        let mut program_id = tx.message.account_keys
-            [tx.message.instructions[instruction_index].program_id_index as usize];
-        while instruction_index < tx.message.instructions.len() {
-            if program_id != coal_guilds_api::ID {
-                error!(target: "server_log", "Guild stake: Wrong program detected in transaction. Program: {}.", program_id);
-                return Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body("Wrong program".to_string())
-                    .unwrap();
-            }
-            program_id = tx.message.account_keys
-                [tx.message.instructions[instruction_index].program_id_index as usize];
-            instruction_index += 1;
-        }
+        info!(target: "server_log", "Check tx: {:?}", tx.message);
 
         // Sign the transaction
         tx.sign(&[&*wallet.fee_wallet], tx.message.recent_blockhash);
@@ -1685,6 +1749,72 @@ async fn post_guild_stake(
             .body("Invalid pubkey".to_string())
             .unwrap();
     }
+}
+
+fn validate_compute_unit_instruction(
+    ix: &CompiledInstruction,
+    message: &solana_sdk::message::Message,
+) -> Result<(), ProgramError> {
+    if message.account_keys[ix.program_id_index as usize]
+        != Pubkey::from_str("ComputeBudget111111111111111111111111111111").unwrap()
+    {
+        return Err(ProgramError::InvalidInstructionData);
+    }
+
+    // Additional validation can be added if necessary
+    Ok(())
+}
+
+fn validate_token_transfer_instruction(
+    ix: &CompiledInstruction,
+    message: &solana_sdk::message::Message,
+    user_token_account: &Pubkey,
+    program_token_account: &Pubkey,
+) -> Result<(), ProgramError> {
+    let program_id_from_ix = get_program_id(ix, message)?;
+    if program_id_from_ix != spl_token::id() {
+        return Err(ProgramError::InvalidInstructionData);
+    }
+
+    // Parse the instruction data to confirm it's a Transfer
+    let token_instruction =
+        TokenInstruction::unpack(&ix.data).map_err(|_| ProgramError::InvalidInstructionData)?;
+
+    match token_instruction {
+        TokenInstruction::Transfer { amount: _ } => {
+            let source_account_index = ix
+                .accounts
+                .get(0)
+                .ok_or(ProgramError::InvalidInstructionData)?;
+            let destination_account_index = ix
+                .accounts
+                .get(1)
+                .ok_or(ProgramError::InvalidInstructionData)?;
+
+            let source_account = &message.account_keys[*source_account_index as usize];
+            let destination_account = &message.account_keys[*destination_account_index as usize];
+
+            // Ensure the source is the user's token account and the destination is the program's token account
+            if source_account != user_token_account || destination_account != program_token_account
+            {
+                return Err(ProgramError::InvalidInstructionData);
+            }
+        }
+        _ => return Err(ProgramError::InvalidInstructionData),
+    }
+
+    Ok(())
+}
+
+fn get_program_id(
+    ix: &CompiledInstruction,
+    message: &solana_sdk::message::Message,
+) -> Result<Pubkey, ProgramError> {
+    message
+        .account_keys
+        .get(ix.program_id_index as usize)
+        .cloned()
+        .ok_or(ProgramError::InvalidInstructionData)
 }
 
 #[derive(Deserialize)]
@@ -1746,22 +1876,72 @@ async fn post_coal_stake(
                 .body("Instructions error".to_string())
                 .unwrap();
         }
-        if tx.message.instructions.len() != 1 {
+
+        let pool_token_account_coal =
+            get_associated_token_address(&wallet.miner_wallet.pubkey(), &get_coal_mint());
+
+        let user_token_account_coal = get_associated_token_address(&user_pubkey, &get_coal_mint());
+
+        info!(target: "server_log", "tx.message {:?}.", tx.message);
+        info!(target: "server_log", "tx.message.instructions {:?}.", tx.message.instructions);
+
+        if tx.message.instructions.len() == 1 {
+            match validate_token_transfer_instruction(
+                &tx.message.instructions[0],
+                &tx.message,
+                &user_token_account_coal,
+                &pool_token_account_coal,
+            ) {
+                Ok(_) => {}
+                Err(e) => {
+                    error!(target: "server_log", "Coal stake: Failed to validate token transfer instruction. Error: {:?}", e);
+                    return Response::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .body("Instructions error".to_string())
+                        .unwrap();
+                }
+            }
+        } else if tx.message.instructions.len() == 3 {
+            match validate_compute_unit_instruction(&tx.message.instructions[0], &tx.message) {
+                Ok(_) => {}
+                Err(e) => {
+                    error!(target: "server_log", "Coal stake: Failed to validate compute unit 0 instruction. Error: {:?}", e);
+                    return Response::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .body("Instructions error".to_string())
+                        .unwrap();
+                }
+            }
+            match validate_compute_unit_instruction(&tx.message.instructions[1], &tx.message) {
+                Ok(_) => {}
+                Err(e) => {
+                    error!(target: "server_log", "Coal stake: Failed to validate compute unit 1 instruction. Error: {:?}", e);
+                    return Response::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .body("Instructions error".to_string())
+                        .unwrap();
+                }
+            }
+            match validate_token_transfer_instruction(
+                &tx.message.instructions[2],
+                &tx.message,
+                &user_token_account_coal,
+                &pool_token_account_coal,
+            ) {
+                Ok(_) => {}
+                Err(e) => {
+                    error!(target: "server_log", "Coal stake: Failed to validate token transfer instruction. Error: {:?}", e);
+                    return Response::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .body("Instructions error".to_string())
+                        .unwrap();
+                }
+            }
+        } else {
             error!(target: "server_log", "Coal stake: Too many instructions detected in transaction. Count: {}.", tx.message.instructions.len());
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
                 .body("Instructions error".to_string())
-                .unwrap();
-        }
-
-        // check that only the new_member, stake, and delegate instructions are present not only with id but checking the specific tx action, regardless of the position of the tx
-        let mut program_id =
-            tx.message.account_keys[tx.message.instructions[0].program_id_index as usize];
-        if program_id != spl_token::id() {
-            error!(target: "server_log", "Coal stake: Wrong program detected in transaction. Program: {}.", program_id);
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("Wrong program".to_string())
                 .unwrap();
         }
 
@@ -2010,305 +2190,6 @@ async fn post_guild_un_stake(
             .unwrap();
     }
 }
-
-/*#[derive(Deserialize)]
-struct StakeParams {
-    pubkey: String,
-    amount: u64,
-}*/
-
-/*async fn post_stake(
-    query_params: Query<StakeParams>,
-    Extension(rpc_client): Extension<Arc<RpcClient>>,
-    Extension(wallet): Extension<Arc<WalletExtension>>,
-    body: String,
-) -> impl IntoResponse {
-    if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
-        let serialized_tx = BASE64_STANDARD.decode(body.clone()).unwrap();
-        let mut tx: Transaction = if let Ok(tx) = bincode::deserialize(&serialized_tx) {
-            tx
-        } else {
-            error!(target: "server_log", "Failed to deserialize tx");
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("Invalid Tx".to_string())
-                .unwrap();
-        };
-
-        let ixs = tx.message.instructions.clone();
-
-        if ixs.len() > 1 {
-            error!(target: "server_log", "Too many instructions");
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("Invalid Tx".to_string())
-                .unwrap();
-        }
-
-        if let Err(_) =
-            get_delegated_stake_account(&rpc_client, user_pubkey, wallet.miner_wallet.pubkey())
-                .await
-        {
-            let init_ix = coal_miner_delegation::instruction::init_delegate_stake(
-                user_pubkey,
-                wallet.miner_wallet.pubkey(),
-                wallet.fee_wallet.pubkey(),
-            );
-
-            let prio_fee: u32 = 20_000;
-
-            let mut ixs = Vec::new();
-            let prio_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(prio_fee as u64);
-            ixs.push(prio_fee_ix);
-            ixs.push(init_ix);
-            if let Ok((hash, _slot)) = rpc_client
-                .get_latest_blockhash_with_commitment(rpc_client.commitment())
-                .await
-            {
-                let expired_timer = Instant::now();
-                let mut tx = Transaction::new_with_payer(&ixs, Some(&wallet.fee_wallet.pubkey()));
-
-                tx.sign(&[wallet.fee_wallet.as_ref()], hash);
-
-                let rpc_config = RpcSendTransactionConfig {
-                    preflight_commitment: Some(rpc_client.commitment().commitment),
-                    ..RpcSendTransactionConfig::default()
-                };
-
-                let signature;
-                loop {
-                    if let Ok(sig) = rpc_client
-                        .send_transaction_with_config(&tx, rpc_config)
-                        .await
-                    {
-                        signature = sig;
-                        break;
-                    } else {
-                        error!(target: "server_log", "Failed to send claim transaction. retrying in 2 seconds...");
-                        tokio::time::sleep(Duration::from_millis(2000)).await;
-                    }
-                }
-
-                let result: Result<Signature, String> = loop {
-                    if expired_timer.elapsed().as_secs() >= 200 {
-                        break Err("Transaction Expired".to_string());
-                    }
-                    let results = rpc_client.get_signature_statuses(&[signature]).await;
-                    if let Ok(response) = results {
-                        let statuses = response.value;
-                        if let Some(status) = &statuses[0] {
-                            if status.confirmation_status()
-                                == TransactionConfirmationStatus::Confirmed
-                            {
-                                if status.err.is_some() {
-                                    let e_str = format!("Transaction Failed: {:?}", status.err);
-                                    break Err(e_str);
-                                }
-                                break Ok(signature);
-                            }
-                        }
-                    }
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                };
-
-                match result {
-                    Ok(_sig) => {
-                        info!(target: "server_log", "Successfully created delegate stake account for: {}", user_pubkey.to_string());
-                    }
-                    Err(e) => {
-                        error!(target: "server_log", "ERROR: {:?}", e);
-                        return Response::builder()
-                            .status(StatusCode::INTERNAL_SERVER_ERROR)
-                            .body("Failed to init delegate stake account.".to_string())
-                            .unwrap();
-                    }
-                }
-            } else {
-                error!(target: "server_log", "Failed to confirm transaction for init delegate stake.");
-            }
-        }
-
-        let base_ix = coal_miner_delegation::instruction::delegate_stake(
-            user_pubkey,
-            wallet.miner_wallet.pubkey(),
-            query_params.amount,
-        );
-        let mut accts = Vec::new();
-        for account_index in ixs[0].accounts.clone() {
-            accts.push(tx.key(0, account_index.into()));
-        }
-
-        if ixs[0].data.ne(&base_ix.data) {
-            error!(target: "server_log", "data missmatch");
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("Invalid Tx".to_string())
-                .unwrap();
-        } else {
-            info!(target: "server_log", "Valid stake tx, submitting.");
-
-            let hash = tx.get_recent_blockhash();
-            if let Err(_) = tx.try_partial_sign(&[wallet.fee_wallet.as_ref()], *hash) {
-                error!(target: "server_log", "Failed to partially sign tx");
-                return Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body("Server Failed to sign tx.".to_string())
-                    .unwrap();
-            }
-
-            if !tx.is_signed() {
-                error!(target: "server_log", "Tx missing signer");
-                return Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body("Invalid Tx".to_string())
-                    .unwrap();
-            }
-
-            let result = rpc_client.send_and_confirm_transaction(&tx).await;
-
-            match result {
-                Ok(sig) => {
-                    let amount_dec =
-                        query_params.amount as f64 / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
-                    info!(target: "server_log", "Miner {} successfully delegated stake of {}.\nSig: {}", user_pubkey.to_string(), amount_dec, sig.to_string());
-                    return Response::builder()
-                        .status(StatusCode::OK)
-                        .body("SUCCESS".to_string())
-                        .unwrap();
-                }
-                Err(e) => {
-                    error!(target: "server_log", "{} stake transaction failed...", user_pubkey.to_string());
-                    error!(target: "server_log", "Stake Tx Error: {:?}", e);
-                    return Response::builder()
-                        .status(StatusCode::INTERNAL_SERVER_ERROR)
-                        .body("Failed to send tx".to_string())
-                        .unwrap();
-                }
-            }
-        }
-    } else {
-        error!(target: "server_log", "stake with invalid pubkey");
-        return Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body("Invalid Pubkey".to_string())
-            .unwrap();
-    }
-}*/
-
-/*#[derive(Deserialize)]
-struct UnstakeParams {
-    pubkey: String,
-    amount: u64,
-}*/
-
-/*async fn post_unstake(
-    query_params: Query<UnstakeParams>,
-    Extension(rpc_client): Extension<Arc<RpcClient>>,
-    Extension(wallet): Extension<Arc<WalletExtension>>,
-    body: String,
-) -> impl IntoResponse {
-    if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
-        let serialized_tx = BASE64_STANDARD.decode(body.clone()).unwrap();
-        let mut tx: Transaction = if let Ok(tx) = bincode::deserialize(&serialized_tx) {
-            tx
-        } else {
-            error!(target: "server_log", "Failed to deserialize tx");
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("Invalid Tx".to_string())
-                .unwrap();
-        };
-
-        let ixs = tx.message.instructions.clone();
-
-        if ixs.len() > 1 {
-            error!(target: "server_log", "Too many instructions");
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("Invalid Tx".to_string())
-                .unwrap();
-        }
-
-        if let Err(_) =
-            get_delegated_stake_account(&rpc_client, user_pubkey, wallet.miner_wallet.pubkey())
-                .await
-        {
-            error!(target: "server_log", "Cannot unstake, no delegate stake account is created for {}", user_pubkey.to_string());
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("No delegate stake account exists".to_string())
-                .unwrap();
-        }
-
-        let staker_ata = get_associated_token_address(&user_pubkey, &coal_api::consts::MINT_ADDRESS);
-
-        let base_ix = coal_miner_delegation::instruction::undelegate_stake(
-            user_pubkey,
-            wallet.miner_wallet.pubkey(),
-            staker_ata,
-            query_params.amount,
-        );
-        let mut accts = Vec::new();
-        for account_index in ixs[0].accounts.clone() {
-            accts.push(tx.key(0, account_index.into()));
-        }
-
-        if ixs[0].data.ne(&base_ix.data) {
-            error!(target: "server_log", "data missmatch");
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("Invalid Tx".to_string())
-                .unwrap();
-        } else {
-            info!(target: "server_log", "Valid unstake tx, submitting.");
-
-            let hash = tx.get_recent_blockhash();
-            if let Err(_) = tx.try_partial_sign(&[wallet.fee_wallet.as_ref()], *hash) {
-                error!(target: "server_log", "Failed to partially sign tx");
-                return Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body("Server Failed to sign tx.".to_string())
-                    .unwrap();
-            }
-
-            if !tx.is_signed() {
-                error!(target: "server_log", "Tx missing signer");
-                return Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body("Invalid Tx".to_string())
-                    .unwrap();
-            }
-
-            let result = rpc_client.send_and_confirm_transaction(&tx).await;
-
-            match result {
-                Ok(sig) => {
-                    let amount_dec =
-                        query_params.amount as f64 / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
-                    info!(target: "server_log", "Miner {} successfully undelegated stake of {}.\nSig: {}", user_pubkey.to_string(), amount_dec, sig.to_string());
-                    return Response::builder()
-                        .status(StatusCode::OK)
-                        .body("SUCCESS".to_string())
-                        .unwrap();
-                }
-                Err(e) => {
-                    error!(target: "server_log", "{} unstake transaction failed...", user_pubkey.to_string());
-                    error!(target: "server_log", "Unstake Tx Error: {:?}", e);
-                    return Response::builder()
-                        .status(StatusCode::INTERNAL_SERVER_ERROR)
-                        .body("Failed to send tx".to_string())
-                        .unwrap();
-                }
-            }
-        }
-    } else {
-        error!(target: "server_log", "unstake with invalid pubkey");
-        return Response::builder()
-            .status(StatusCode::BAD_REQUEST)
-            .body("Invalid Pubkey".to_string())
-            .unwrap();
-    }
-}*/
 
 #[derive(Deserialize)]
 struct WsQueryParams {
@@ -2719,5 +2600,95 @@ pub async fn get_guild_check_member(
             .header("Content-Type", "text/text")
             .body("Invalid public key".to_string())
             .unwrap();
+    }
+}
+
+pub async fn get_guild_new_member_instruction(
+    query_params: Query<PubkeyParam>,
+) -> impl IntoResponse {
+    if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
+        let new_member_instruction = coal_guilds_api::sdk::new_member(user_pubkey);
+
+        Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "text/text")
+            .body(
+                serde_json::to_string(&new_member_instruction)
+                    .unwrap()
+                    .to_string(),
+            )
+            .unwrap()
+    } else {
+        Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .header("Content-Type", "text/text")
+            .body("Invalid public key".to_string())
+            .unwrap()
+    }
+}
+
+pub async fn get_guild_delegate_instruction(
+    query_params: Query<PubkeyParam>,
+    Extension(app_config): Extension<Arc<Config>>,
+) -> impl IntoResponse {
+    if let (Ok(user_pubkey), Ok(guild_pubkey)) = (
+        Pubkey::from_str(&query_params.pubkey),
+        Pubkey::from_str(&app_config.guild_address),
+    ) {
+        info!(target: "server_log", "Pubkey: {} is trying to delegate to Guild: {}", user_pubkey.to_string(), guild_pubkey.to_string());
+
+        let delegate_instruction = coal_guilds_api::sdk::delegate(user_pubkey, guild_pubkey);
+
+        for acc in delegate_instruction.clone().accounts {
+            info!(target: "server_log", "Instruction: {:?}", acc);
+        }
+
+        info!(target: "server_log", "Instruction: {:?}", delegate_instruction);
+
+        Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "text/text")
+            .body(
+                serde_json::to_string(&delegate_instruction)
+                    .unwrap()
+                    .to_string(),
+            )
+            .unwrap()
+    } else {
+        Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .header("Content-Type", "text/text")
+            .body("Invalid public key".to_string())
+            .unwrap()
+    }
+}
+
+pub async fn get_guild_stake_instruction(
+    query_params: Query<GuildStakeParams>,
+    Extension(app_config): Extension<Arc<Config>>,
+) -> impl IntoResponse {
+    if let (Ok(user_pubkey), Ok(guild_pubkey)) = (
+        Pubkey::from_str(&query_params.pubkey),
+        Pubkey::from_str(&app_config.guild_address),
+    ) {
+        info!(target: "server_log", "Pubkey: {} is trying to stake to Guild: {} {} LP", user_pubkey.to_string(), guild_pubkey.to_string(), query_params.amount);
+        let stake_instruction =
+            coal_guilds_api::sdk::stake(user_pubkey, guild_pubkey, query_params.amount);
+
+        Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "text/text")
+            .body(
+                serde_json::to_string(&stake_instruction)
+                    .unwrap()
+                    .to_string(),
+            )
+            .unwrap()
+    } else {
+        Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .header("Content-Type", "text/text")
+            .body("Invalid public key".to_string())
+            .unwrap()
     }
 }

@@ -1519,7 +1519,7 @@ async fn post_claim_v2(
                 if amount_coal < 500_000_000_000 && amount_ore < 5_000_000_000 {
                     return Err((
                         StatusCode::BAD_REQUEST,
-                        "claim minimum is 1 COAL or 0.05 ORE".to_string(),
+                        "claim minimum is 5 COAL or 0.05 ORE".to_string(),
                     ));
                 }
 

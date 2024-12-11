@@ -324,7 +324,7 @@ pub async fn claim_system(
                                     miner.id,
                                     amount_coal,
                                     amount_ore,
-                                    0, // amount_chromium,
+                                    amount_chromium,
                                 )
                                 .await
                             {
@@ -336,7 +336,7 @@ pub async fn claim_system(
                                     wallet.pubkey().to_string(),
                                     amount_coal,
                                     amount_ore,
-                                    0, // amount_chromium,
+                                    amount_chromium,
                                 )
                                 .await
                             {

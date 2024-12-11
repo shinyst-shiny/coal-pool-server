@@ -25,11 +25,14 @@ use steel::AccountDeserialize;
 
 use self::models::*;
 use crate::coal_utils::{
-    calculate_tool_multiplier, deserialize_guild, deserialize_guild_config,
+    calculate_multiplier, calculate_tool_multiplier, deserialize_guild, deserialize_guild_config,
     deserialize_guild_member, deserialize_tool, get_chromium_mint, get_config_pubkey,
-    get_tool_pubkey, proof_pubkey, Resource, ToolType,
+    get_proof_and_config_with_busses as get_proof_and_config_with_busses_coal, get_tool_pubkey,
+    proof_pubkey, Resource, ToolType,
 };
-use crate::ore_utils::get_ore_mint;
+use crate::ore_utils::{
+    get_ore_mint, get_proof_and_config_with_busses as get_proof_and_config_with_busses_ore,
+};
 use crate::routes::get_guild_addresses;
 use crate::send_and_confirm::{send_and_confirm, ComputeBudget};
 use crate::systems::chromium_reprocessing_system::chromium_reprocessing_system;
@@ -946,6 +949,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/challenges", get(get_challenges))
         .route("/pool", get(routes::get_pool))
         .route("/pool/staked", get(routes::get_pool_staked))
+        .route(
+            "/pool/stakes-multipliers",
+            get(get_pool_stakes_and_multipliers),
+        )
         .route("/txns/latest-mine", get(get_latest_mine_txn))
         .route("/guild/addresses", get(get_guild_addresses))
         .route("/guild/check-member", get(get_guild_check_member))
@@ -2702,4 +2709,135 @@ pub async fn get_guild_stake_instruction(
             .body("Invalid public key".to_string())
             .unwrap()
     }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct StakeAndMultipliers {
+    coal_multiplier: f64,
+    coal_stake: f64,
+    guild_multiplier: f64,
+    guild_stake: f64,
+    tool_multiplier: f64,
+    ore_stake: f64,
+}
+
+pub async fn get_pool_stakes_and_multipliers(
+    Extension(app_wallet): Extension<Arc<WalletExtension>>,
+    Extension(rpc_client): Extension<Arc<RpcClient>>,
+) -> Result<Json<StakeAndMultipliers>, String> {
+    // Fetch coal_proof
+    let config_address = get_config_pubkey(&Resource::Coal);
+    let tool_address = get_tool_pubkey(
+        app_wallet.clone().miner_wallet.clone().pubkey(),
+        &Resource::Coal,
+    );
+    let guild_config_address = coal_guilds_api::state::config_pda().0;
+    let guild_member_address =
+        coal_guilds_api::state::member_pda(app_wallet.clone().miner_wallet.clone().pubkey()).0;
+
+    let mut accounts_multipliers = vec![
+        config_address,
+        tool_address,
+        guild_config_address,
+        guild_member_address,
+    ];
+    let accounts_multipliers = rpc_client
+        .get_multiple_accounts(&accounts_multipliers)
+        .await
+        .unwrap();
+
+    let mut tool: Option<ToolType> = None;
+    let mut member: Option<coal_guilds_api::state::Member> = None;
+    let mut guild_config: Option<coal_guilds_api::state::Config> = None;
+    let mut guild: Option<coal_guilds_api::state::Guild> = None;
+    let mut guild_address: Option<Pubkey> = None;
+
+    info!(target: "server_log", "setting up accounts");
+
+    if accounts_multipliers.len() > 1 {
+        if accounts_multipliers[1].as_ref().is_some() {
+            tool = Some(deserialize_tool(
+                &accounts_multipliers[1].as_ref().unwrap().data,
+                &Resource::Coal,
+            ));
+        }
+
+        if accounts_multipliers.len() > 2 && accounts_multipliers[2].as_ref().is_some() {
+            guild_config = Some(deserialize_guild_config(
+                &accounts_multipliers[2].as_ref().unwrap().data,
+            ));
+        }
+
+        if accounts_multipliers.len() > 3 && accounts_multipliers[3].as_ref().is_some() {
+            member = Some(deserialize_guild_member(
+                &accounts_multipliers[3].as_ref().unwrap().data,
+            ));
+        }
+
+        if accounts_multipliers.len() > 4 && accounts_multipliers[4].as_ref().is_some() {
+            guild = Some(deserialize_guild(
+                &accounts_multipliers[4].as_ref().unwrap().data,
+            ));
+        }
+    }
+
+    info!(target: "server_log", "getting guild info");
+
+    if member.is_some() && member.unwrap().guild.ne(&coal_guilds_api::ID) && guild_address.is_none()
+    {
+        let guild_data = rpc_client
+            .get_account_data(&member.unwrap().guild)
+            .await
+            .unwrap();
+        guild = Some(deserialize_guild(&guild_data));
+        guild_address = Some(member.unwrap().guild);
+    }
+
+    let tool_multiplier = calculate_tool_multiplier(&tool);
+
+    let guild_stake = guild.unwrap().total_stake as f64;
+    let guild_multiplier = calculate_multiplier(
+        guild_config.unwrap().total_stake,
+        guild_config.unwrap().total_multiplier,
+        guild.unwrap().total_stake,
+    );
+
+    let mut loaded_config_coal = None;
+    let mut loaded_config_proof_coal = None;
+    info!(target: "server_log", "Getting latest config and busses data.");
+    if let (Ok(p), Ok(config), Ok(_busses)) =
+        get_proof_and_config_with_busses_coal(&rpc_client, app_wallet.miner_wallet.pubkey()).await
+    {
+        loaded_config_coal = Some(config);
+        loaded_config_proof_coal = Some(p);
+    }
+
+    let coal_stake = loaded_config_proof_coal.unwrap().balance as f64;
+
+    let coal_multiplier = calculate_multiplier(
+        loaded_config_coal.unwrap().top_balance,
+        2,
+        loaded_config_proof_coal.unwrap().balance,
+    );
+
+    let mut loaded_config_ore = None;
+    let mut loaded_config_proof_ore = None;
+    info!(target: "server_log", "Getting latest config and busses data.");
+    if let (Ok(p), Ok(config), Ok(_busses)) =
+        get_proof_and_config_with_busses_ore(&rpc_client, app_wallet.miner_wallet.pubkey()).await
+    {
+        loaded_config_ore = Some(config);
+        loaded_config_proof_ore = Some(p);
+    }
+
+    let ore_stake = loaded_config_proof_ore.unwrap().balance as f64;
+
+    return Ok(Json(StakeAndMultipliers {
+        coal_multiplier,
+        coal_stake,
+        guild_multiplier,
+        guild_stake,
+        tool_multiplier,
+        ore_stake,
+    }));
 }

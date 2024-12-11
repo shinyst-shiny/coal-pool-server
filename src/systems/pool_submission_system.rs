@@ -32,9 +32,9 @@ use tokio::{
 use tracing::info;
 
 use crate::coal_utils::{
-    amount_u64_to_string, calculate_guild_multiplier, calculate_tool_multiplier,
-    deserialize_config, deserialize_guild, deserialize_guild_config, deserialize_guild_member,
-    deserialize_tool, get_config_pubkey, get_tool_pubkey, Resource, ToolType,
+    amount_u64_to_string, calculate_multiplier, calculate_tool_multiplier, deserialize_config,
+    deserialize_guild, deserialize_guild_config, deserialize_guild_member, deserialize_tool,
+    get_config_pubkey, get_tool_pubkey, Resource, ToolType,
 };
 use crate::ore_utils::{
     get_ore_auth_ix, get_ore_balance, get_ore_mine_ix,
@@ -652,7 +652,7 @@ pub async fn pool_submission_system(
 
                                                 let guild_total_stake =
                                                     guild.unwrap().total_stake as f64;
-                                                let guild_multiplier = calculate_guild_multiplier(
+                                                let guild_multiplier = calculate_multiplier(
                                                     guild_config.unwrap().total_stake,
                                                     guild_config.unwrap().total_multiplier,
                                                     guild.unwrap().total_stake,

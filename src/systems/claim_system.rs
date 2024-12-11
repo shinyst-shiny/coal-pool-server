@@ -372,6 +372,7 @@ pub async fn claim_system(
                                 txn_id,
                                 amount_coal,
                                 amount_ore,
+                                amount_chromium,
                             };
                             while let Err(_) = app_database.add_new_claim(iclaim).await {
                                 error!(target: "server_log", "Failed add new claim to db! Retrying...");

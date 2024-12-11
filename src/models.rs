@@ -99,6 +99,7 @@ pub struct InsertClaim {
     pub txn_id: i32,
     pub amount_coal: u64,
     pub amount_ore: u64,
+    pub amount_chromium: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]

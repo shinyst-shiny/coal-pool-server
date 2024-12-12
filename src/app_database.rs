@@ -537,12 +537,13 @@ impl AppDatabase {
     pub async fn add_new_claim(&self, claim: models::InsertClaim) -> Result<(), AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn.interact(move |conn: &mut MysqlConnection| {
-                diesel::sql_query("INSERT INTO claims (miner_id, pool_id, txn_id, amount_coal, amount_ore) VALUES (?, ?, ?, ?, ?)")
+                diesel::sql_query("INSERT INTO claims (miner_id, pool_id, txn_id, amount_coal, amount_ore, amount_chromium) VALUES (?, ?, ?, ?, ?)")
                     .bind::<Integer, _>(claim.miner_id)
                     .bind::<Integer, _>(claim.pool_id)
                     .bind::<Integer, _>(claim.txn_id)
                     .bind::<Unsigned<BigInt>, _>(claim.amount_coal)
                     .bind::<Unsigned<BigInt>, _>(claim.amount_ore)
+                    .bind::<Unsigned<BigInt>, _>(claim.amount_chromium)
                     .execute(conn)
             }).await;
 

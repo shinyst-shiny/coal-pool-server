@@ -157,10 +157,10 @@ pub async fn pool_submission_system(
 
                         let mut cu_limit = 980_000;
                         let should_add_reset_ix_coal = if let Some(config) = loaded_config_coal {
-                            let time_until_reset = (config.last_reset_at + 120) - now as i64;
+                            let time_until_reset = (config.last_reset_at + 300) - now as i64;
                             if time_until_reset <= 5 {
                                 cu_limit += 50_000;
-                                prio_fee += 10_000;
+                                prio_fee += 1_000;
                                 info!(target: "server_log", "Including reset tx ORE.");
                                 true
                             } else {
@@ -174,7 +174,7 @@ pub async fn pool_submission_system(
                             let time_until_reset = (config.last_reset_at + 300) - now as i64;
                             if time_until_reset <= 5 {
                                 cu_limit += 50_000;
-                                prio_fee += 10_000;
+                                prio_fee += 1_000;
                                 info!(target: "server_log", "Including reset tx COAL.");
                                 true
                             } else {

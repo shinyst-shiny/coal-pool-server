@@ -647,7 +647,7 @@ pub fn calculate_tool_multiplier(tool: &Option<ToolType>) -> f64 {
     match tool {
         Some(tool) => {
             if tool.durability().gt(&0) {
-                return 1.0 + (tool.multiplier() as f64 / 100.0);
+                return tool.multiplier() as f64 / 100.0;
             }
             0.0
         }

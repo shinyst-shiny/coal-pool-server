@@ -937,41 +937,6 @@ impl AppDatabase {
         };
     }
 
-    pub async fn get_last_chromium_reprocessing(
-        &self,
-        pool_id: i32,
-    ) -> Result<models::ExtraResourcesGeneration, AppDatabaseError> {
-        if let Ok(db_conn) = self.connection_pool.get().await {
-            let res = db_conn
-                .interact(move |conn: &mut MysqlConnection| {
-                    diesel::sql_query(
-                        "SELECT * FROM extra_resources_generation WHERE finished_at is not null AND pool_id = ? ORDER BY created_at DESC",
-                    )
-                        .bind::<Integer, _>(pool_id)
-                    .get_result::<models::ExtraResourcesGeneration>(conn)
-                })
-                .await;
-
-            match res {
-                Ok(interaction) => match interaction {
-                    Ok(query) => {
-                        return Ok(query);
-                    }
-                    Err(e) => {
-                        error!(target: "server_log", "{:?}", e);
-                        return Err(AppDatabaseError::QueryFailed);
-                    }
-                },
-                Err(e) => {
-                    error!(target: "server_log", "{:?}", e);
-                    return Err(AppDatabaseError::InteractionFailed);
-                }
-            }
-        } else {
-            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
-        };
-    }
-
     pub async fn get_submissions_in_range(
         &self,
         start_time: NaiveDateTime,

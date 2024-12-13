@@ -15,11 +15,13 @@ use crate::ore_utils::get_proof_with_authority;
 use crate::{
     app_rr_database,
     coal_utils::{get_coal_mint, get_proof as get_proof_coal},
-    ChallengeWithDifficulty, Config, PoolGuild, Txn,
+    ChallengeWithDifficulty, Config, Txn,
 };
+use chrono::{NaiveDateTime, Utc};
 use coal_guilds_api::prelude::Member;
 use coal_guilds_api::state::Guild;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use std::{str::FromStr, sync::Arc};
 
 pub async fn get_challenges(
@@ -97,6 +99,30 @@ pub async fn get_pool(
     }
 }
 
+pub async fn get_chromium_reprocess_info(
+    Extension(app_rr_database): Extension<Arc<AppRRDatabase>>,
+    Extension(app_config): Extension<Arc<Config>>,
+) -> impl IntoResponse {
+    if app_config.stats_enabled {
+        let res = app_rr_database
+            .get_last_chromium_reprocessing(app_config.pool_id)
+            .await;
+
+        match res {
+            Ok(pool) => {
+                let next_preprocess = pool.created_at + Duration::from_secs(60 * 60 * 24 * 3);
+                return Ok(Json(ChromiumReprocessInfo {
+                    last_reprocess: pool.created_at,
+                    next_reprocess: next_preprocess,
+                }));
+            }
+            Err(_) => Err("Failed to get pool data".to_string()),
+        }
+    } else {
+        return Err("Stats not enabled for this server.".to_string());
+    }
+}
+
 #[derive(Serialize)]
 struct BalanceData {
     coal_balance: u64,
@@ -130,4 +156,16 @@ pub async fn get_pool_staked(
     } else {
         return Err("Stats not enabled for this server.".to_string());
     }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct PoolGuild {
+    pub pubkey: String,
+    pub authority: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ChromiumReprocessInfo {
+    pub last_reprocess: NaiveDateTime,
+    pub next_reprocess: NaiveDateTime,
 }

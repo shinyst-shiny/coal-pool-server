@@ -1,4 +1,5 @@
 use crate::app_database::{AppDatabase, AppDatabaseError};
+use crate::app_rr_database::AppRRDatabase;
 use crate::coal_utils::{get_reprocessor, get_resource_mint, Resource, Tip, COAL_TOKEN_DECIMALS};
 use crate::models::{
     ExtraResourcesGeneration, InsertEarningExtraResources, Submission, UpdateReward,
@@ -27,11 +28,12 @@ pub async fn chromium_reprocessing_system(
     jito_client: Arc<RpcClient>,
     app_database: Arc<AppDatabase>,
     config: Arc<Config>,
+    app_rr_database: Arc<AppRRDatabase>,
 ) {
     tokio::time::sleep(Duration::from_millis(10000)).await;
     loop {
         let mut last_reprocess: Option<ExtraResourcesGeneration> = None;
-        match app_database
+        match app_rr_database
             .get_last_chromium_reprocessing(config.pool_id)
             .await
         {
@@ -51,7 +53,7 @@ pub async fn chromium_reprocessing_system(
             && last_reprocess.unwrap().created_at > three_days_ago.naive_utc()
         {
             info!(target: "server_log", "CHROMIUM: Last reprocessing was less than 3 days ago, waiting then retrying");
-            tokio::time::sleep(Duration::from_secs(20)).await;
+            tokio::time::sleep(Duration::from_secs(25)).await;
             continue;
         }
 
@@ -309,7 +311,7 @@ pub async fn chromium_reprocessing_system(
 
         let reprocessed_amount = full_reprocessed_amount - commissions_chromium;
 
-        let last_reprocess_time = match app_database
+        let last_reprocess_time = match app_rr_database
             .get_last_chromium_reprocessing(config.pool_id)
             .await
         {

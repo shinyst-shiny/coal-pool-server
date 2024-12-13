@@ -51,6 +51,7 @@ use axum::{
 use axum_extra::{headers::authorization::Basic, TypedHeader};
 use base64::engine::general_purpose;
 use base64::{prelude::BASE64_STANDARD, Engine};
+use chrono::NaiveDateTime;
 use clap::builder::TypedValueParser;
 use clap::Parser;
 use coal_api::consts::COAL_MINT_ADDRESS;
@@ -628,7 +629,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Arc::new(Config {
         password,
         pool_id: db_pool.id,
-        stats_enabled: args.stats,
+        stats_enabled: true,
         signup_fee: args.signup_fee,
         commissions_pubkey: commission_pubkey.to_string(),
         commissions_miner_id: commission_miner_id,
@@ -879,6 +880,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let app_config = config.clone();
         let app_wallet = wallet_extension.clone();
         let app_app_database = app_database.clone();
+        let app_app_rr_database = app_rr_database.clone();
         let app_rpc_client = rpc_client.clone();
         let app_jito_client = jito_client.clone();
         tokio::spawn(async move {
@@ -888,6 +890,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 app_jito_client,
                 app_app_database,
                 app_config,
+                app_app_rr_database,
             )
             .await;
         });
@@ -949,6 +952,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/challenges", get(get_challenges))
         .route("/pool", get(routes::get_pool))
         .route("/pool/staked", get(routes::get_pool_staked))
+        .route(
+            "/pool/chromium/reprocess-info",
+            get(routes::get_chromium_reprocess_info),
+        )
         .route(
             "/pool/stakes-multipliers",
             get(get_pool_stakes_and_multipliers),
@@ -2511,12 +2518,6 @@ async fn ping_check_system(shared_state: &Arc<RwLock<AppState>>) {
 struct PubkeyMintParam {
     pubkey: String,
     mint: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct PoolGuild {
-    pub pubkey: String,
-    pub authority: String,
 }
 
 async fn get_miner_balance_v2(

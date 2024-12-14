@@ -55,6 +55,7 @@ use chrono::NaiveDateTime;
 use clap::builder::TypedValueParser;
 use clap::Parser;
 use coal_api::consts::COAL_MINT_ADDRESS;
+use coal_guilds_api::consts::LP_MINT_ADDRESS;
 use coal_guilds_api::state::member_pda;
 use coal_guilds_api::state::Member;
 use coal_utils::{get_coal_mint, get_config, get_proof, get_register_ix, COAL_TOKEN_DECIMALS};
@@ -939,6 +940,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/timestamp", get(get_timestamp))
         .route("/miner/balance", get(get_miner_balance))
         .route("/v2/miner/balance", get(get_miner_balance_v2))
+        .route("/miner/guild-stake", get(get_miner_guild_stake))
         //.route("/miner/stake", get(get_miner_stake))
         .route("/stake-multiplier", get(get_stake_multiplier))
         // App RR Database routes
@@ -2841,4 +2843,34 @@ pub async fn get_pool_stakes_and_multipliers(
         tool_multiplier,
         ore_stake,
     }));
+}
+
+async fn get_miner_guild_stake(
+    query_params: Query<PubkeyParam>,
+    Extension(rpc_client): Extension<Arc<RpcClient>>,
+) -> impl IntoResponse {
+    if let Ok(user_pubkey) = (Pubkey::from_str(&query_params.pubkey)) {
+        let member_address = coal_guilds_api::state::member_pda(user_pubkey).0;
+        let miner_token_account = get_associated_token_address(&member_address, &LP_MINT_ADDRESS);
+        if let Ok(response) = rpc_client
+            .get_token_account_balance(&miner_token_account)
+            .await
+        {
+            Response::builder()
+                .status(StatusCode::OK)
+                .body(response.ui_amount_string)
+                .unwrap()
+        } else {
+            Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body("Failed to get token account balance".to_string())
+                .unwrap()
+        }
+    } else {
+        Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .header("Content-Type", "text/text")
+            .body("Invalid public key".to_string())
+            .unwrap()
+    }
 }

@@ -977,6 +977,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             get(get_guild_delegate_instruction),
         )
         .route("/guild/stake-instruction", get(get_guild_stake_instruction))
+        .route(
+            "/guild/unstake-instruction",
+            get(get_guild_unstake_instruction),
+        )
         .route("/coal/stake", post(post_coal_stake))
         .with_state(app_shared_state)
         .layer(Extension(app_database))
@@ -2273,19 +2277,10 @@ async fn post_guild_un_stake(
                 .body("Instructions error".to_string())
                 .unwrap();
         }
-        if tx.message.instructions.len() > 1 {
-            error!(target: "server_log", "Guild unstake: Too many instructions detected in transaction. Count: {}.", tx.message.instructions.len());
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("Instructions error".to_string())
-                .unwrap();
-        }
 
-        // check that only the new_member, unstake, and delegate instructions are present not only with id but checking the specific tx action, regardless of the position of the tx
-        let mut instruction_index = 0;
-        let mut program_id = tx.message.account_keys
-            [tx.message.instructions[instruction_index].program_id_index as usize];
-        while instruction_index < tx.message.instructions.len() {
+        if tx.message.instructions.len() == 1 {
+            let mut program_id =
+                tx.message.account_keys[tx.message.instructions[0].program_id_index as usize];
             if program_id != coal_guilds_api::ID {
                 error!(target: "server_log", "Guild unstake: Wrong program detected in transaction. Program: {}.", program_id);
                 return Response::builder()
@@ -2293,9 +2288,33 @@ async fn post_guild_un_stake(
                     .body("Wrong program".to_string())
                     .unwrap();
             }
-            program_id = tx.message.account_keys
-                [tx.message.instructions[instruction_index].program_id_index as usize];
-            instruction_index += 1;
+        } else if tx.message.instructions.len() == 3 {
+            if validate_compute_unit_instruction(&tx.message.instructions[0], &tx.message).is_err()
+                || validate_compute_unit_instruction(&tx.message.instructions[1], &tx.message)
+                    .is_err()
+            {
+                error!(target: "server_log", "Guild unstake: Wrong program detected in transaction.");
+                return Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body("Wrong program".to_string())
+                    .unwrap();
+            } else {
+                let mut program_id =
+                    tx.message.account_keys[tx.message.instructions[2].program_id_index as usize];
+                if program_id != coal_guilds_api::ID {
+                    error!(target: "server_log", "Guild unstake: Wrong program detected in transaction. Program: {}.", program_id);
+                    return Response::builder()
+                        .status(StatusCode::BAD_REQUEST)
+                        .body("Wrong program".to_string())
+                        .unwrap();
+                }
+            }
+        } else {
+            error!(target: "server_log", "Guild unstake: Too many instructions detected in transaction. Count: {}.", tx.message.instructions.len());
+            return Response::builder()
+                .status(StatusCode::BAD_REQUEST)
+                .body("Instructions error".to_string())
+                .unwrap();
         }
 
         // Sign the transaction
@@ -2810,6 +2829,36 @@ pub async fn get_guild_stake_instruction(
         info!(target: "server_log", "Pubkey: {} is trying to stake to Guild: {} {} LP", user_pubkey.to_string(), guild_pubkey.to_string(), query_params.amount);
         let stake_instruction =
             coal_guilds_api::sdk::stake(user_pubkey, guild_pubkey, query_params.amount);
+
+        Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "text/text")
+            .body(
+                serde_json::to_string(&stake_instruction)
+                    .unwrap()
+                    .to_string(),
+            )
+            .unwrap()
+    } else {
+        Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .header("Content-Type", "text/text")
+            .body("Invalid public key".to_string())
+            .unwrap()
+    }
+}
+
+pub async fn get_guild_unstake_instruction(
+    query_params: Query<GuildStakeParams>,
+    Extension(app_config): Extension<Arc<Config>>,
+) -> impl IntoResponse {
+    if let (Ok(user_pubkey), Ok(guild_pubkey)) = (
+        Pubkey::from_str(&query_params.pubkey),
+        Pubkey::from_str(&app_config.guild_address),
+    ) {
+        info!(target: "server_log", "Pubkey: {} is trying to stake to Guild: {} {} LP", user_pubkey.to_string(), guild_pubkey.to_string(), query_params.amount);
+        let stake_instruction =
+            coal_guilds_api::sdk::unstake(user_pubkey, guild_pubkey, query_params.amount);
 
         Response::builder()
             .status(StatusCode::OK)

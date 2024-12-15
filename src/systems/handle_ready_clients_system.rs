@@ -13,7 +13,10 @@ use futures::SinkExt;
 use solana_sdk::pubkey::Pubkey;
 use tokio::sync::{Mutex, RwLock};
 
-use crate::{coal_utils::get_cutoff, message::ServerMessageStartMining, AppState, EpochHashes, SubmissionWindow};
+use crate::{
+    coal_utils::get_cutoff, message::ServerMessageStartMining, AppState, EpochHashes,
+    SubmissionWindow,
+};
 
 const NONCE_RANGE_SIZE: u64 = 40_000_000;
 
@@ -47,7 +50,7 @@ pub async fn handle_ready_clients_system(
                 let latest_proof = lock.clone();
                 drop(lock);
 
-                let cutoff = get_cutoff(latest_proof, 4);
+                let cutoff = get_cutoff(latest_proof, 10);
                 let mut should_mine = true;
 
                 // only distribute challenge if 10 seconds or more is left

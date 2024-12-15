@@ -934,6 +934,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/signup-fee", get(get_signup_fee))
         .route("/sol-balance", get(get_sol_balance))
         .route("/v2/claim", post(post_claim_v2))
+        .route("/v2/claim-all", post(post_claim_all_v2))
         //.route("/stake", post(post_stake))
         //.route("/unstake", post(post_unstake))
         .route("/active-miners", get(get_connected_miners))
@@ -1593,6 +1594,120 @@ async fn post_claim_v2(
         } else {
             return Err((StatusCode::UNAUTHORIZED, "Invalid signature".to_string()));
         }
+    } else {
+        error!(target: "server_log", "Claim with invalid pubkey");
+        return Err((StatusCode::BAD_REQUEST, "Invalid Pubkey".to_string()));
+    }
+}
+
+#[derive(Deserialize)]
+struct ClaimAllParamsV2 {
+    timestamp: u64,
+    receiver_pubkey: String,
+    amount_coal: u64,
+    amount_ore: u64,
+    amount_chromium: u64,
+    username: String,
+    password: String,
+}
+
+async fn post_claim_all_v2(
+    // TypedHeader(auth_header): TypedHeader<axum_extra::headers::Authorization<Basic>>,
+    Extension(app_database): Extension<Arc<AppDatabase>>,
+    Extension(claims_queue): Extension<Arc<ClaimsQueue>>,
+    query_params: Query<ClaimAllParamsV2>,
+) -> impl IntoResponse {
+    let msg_timestamp = query_params.timestamp;
+
+    let miner_pubkey_str = query_params.username.to_string();
+    let signed_msg = query_params.password.to_string();
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs();
+
+    // Signed authentication message is only valid for 30 seconds
+    if (now - msg_timestamp) >= 30 {
+        return Err((StatusCode::UNAUTHORIZED, "Timestamp too old.".to_string()));
+    }
+
+    if let Ok(miner_pubkey) = Pubkey::from_str(&miner_pubkey_str) {
+        // if let Ok(_) = Signature::from_str(&signed_msg) {
+        let reader = claims_queue.queue.read().await;
+        let queue = reader.clone();
+        drop(reader);
+
+        if queue.contains_key(&miner_pubkey) {
+            return Err((StatusCode::TOO_MANY_REQUESTS, "QUEUED".to_string()));
+        }
+
+        let amount_coal = query_params.amount_coal;
+        let amount_ore = query_params.amount_ore;
+        let amount_chromium = query_params.amount_chromium;
+
+        // 5 COAL 0.05 ORE
+        if amount_coal < 500_000_000_000 && amount_ore < 5_000_000_000 {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "claim minimum is 5 COAL or 0.05 ORE".to_string(),
+            ));
+        }
+
+        if let Ok(miner_rewards) = app_database
+            .get_miner_rewards(miner_pubkey.to_string())
+            .await
+        {
+            if amount_coal > miner_rewards.balance_coal {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "claim amount for COAL exceeds miner rewards balance.".to_string(),
+                ));
+            }
+            if amount_ore > miner_rewards.balance_ore {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    "claim amount for ORE exceeds miner rewards balance.".to_string(),
+                ));
+            }
+
+            if let Ok(last_claim) = app_database.get_last_claim(miner_rewards.miner_id).await {
+                let last_claim_ts = last_claim.created_at.and_utc().timestamp();
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("Time went backwards")
+                    .as_secs() as i64;
+                let time_difference = now - last_claim_ts;
+                if time_difference <= 1800 {
+                    return Err((StatusCode::TOO_MANY_REQUESTS, time_difference.to_string()));
+                }
+            }
+
+            let mut writer = claims_queue.queue.write().await;
+            writer.insert(
+                miner_pubkey,
+                ClaimsQueueItem {
+                    receiver_pubkey: miner_pubkey,
+                    amount_coal,
+                    amount_ore,
+                    amount_chromium,
+                },
+            );
+            drop(writer);
+            return Ok((StatusCode::OK, "SUCCESS"));
+        } else {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to get miner account from database".to_string(),
+            ));
+        }
+        /*} else {
+            error!(target: "server_log", "Invalid signature");
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                "Sig verification failed".to_string(),
+            ));
+        }*/
     } else {
         error!(target: "server_log", "Claim with invalid pubkey");
         return Err((StatusCode::BAD_REQUEST, "Invalid Pubkey".to_string()));

@@ -1909,6 +1909,8 @@ fn validate_compute_unit_instruction(
 ) -> Result<(), ProgramError> {
     if message.account_keys[ix.program_id_index as usize]
         != Pubkey::from_str("ComputeBudget111111111111111111111111111111").unwrap()
+        && message.account_keys[ix.program_id_index as usize]
+            != Pubkey::from_str("L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95").unwrap()
     {
         return Err(ProgramError::InvalidInstructionData);
     }

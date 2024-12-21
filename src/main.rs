@@ -1787,9 +1787,8 @@ async fn post_guild_stake(
                     .is_err())
                 || (tx.message.account_keys[tx.message.instructions[1].program_id_index as usize]
                     != coal_guilds_api::ID
-                    && tx.message.account_keys
-                        [tx.message.instructions[1].program_id_index as usize]
-                        != coal_guilds_api::ID)
+                    && validate_compute_unit_instruction(&tx.message.instructions[1], &tx.message)
+                        .is_err())
             {
                 error!(target: "server_log", "Guild stake: Found two instructions, wrong program detected in transaction. {:?}",tx.message);
                 return Response::builder()
@@ -1808,9 +1807,8 @@ async fn post_guild_stake(
                         .is_err())
                 || (tx.message.account_keys[tx.message.instructions[2].program_id_index as usize]
                     != coal_guilds_api::ID
-                    && tx.message.account_keys
-                        [tx.message.instructions[2].program_id_index as usize]
-                        != coal_guilds_api::ID)
+                    && validate_compute_unit_instruction(&tx.message.instructions[2], &tx.message)
+                        .is_err())
             {
                 error!(target: "server_log", "Guild stake: Found three instructions, wrong program detected in transaction. {:?}",tx.message);
                 return Response::builder()
@@ -1825,10 +1823,14 @@ async fn post_guild_stake(
                     && tx.message.account_keys
                         [tx.message.instructions[1].program_id_index as usize]
                         != coal_guilds_api::ID)
-                || tx.message.account_keys[tx.message.instructions[2].program_id_index as usize]
+                || (tx.message.account_keys[tx.message.instructions[2].program_id_index as usize]
                     != coal_guilds_api::ID
-                || tx.message.account_keys[tx.message.instructions[3].program_id_index as usize]
+                    && validate_compute_unit_instruction(&tx.message.instructions[2], &tx.message)
+                        .is_err())
+                || (tx.message.account_keys[tx.message.instructions[3].program_id_index as usize]
                     != coal_guilds_api::ID
+                    && validate_compute_unit_instruction(&tx.message.instructions[3], &tx.message)
+                        .is_err())
             {
                 error!(target: "server_log", "Guild stake: Found four instructions, wrong program detected in transaction. {:?}",tx.message);
                 return Response::builder()
@@ -1840,12 +1842,18 @@ async fn post_guild_stake(
             if validate_compute_unit_instruction(&tx.message.instructions[0], &tx.message).is_err()
                 || validate_compute_unit_instruction(&tx.message.instructions[1], &tx.message)
                     .is_err()
-                || tx.message.account_keys[tx.message.instructions[2].program_id_index as usize]
+                || (tx.message.account_keys[tx.message.instructions[2].program_id_index as usize]
                     != coal_guilds_api::ID
-                || tx.message.account_keys[tx.message.instructions[3].program_id_index as usize]
+                    && validate_compute_unit_instruction(&tx.message.instructions[2], &tx.message)
+                        .is_err())
+                || (tx.message.account_keys[tx.message.instructions[3].program_id_index as usize]
                     != coal_guilds_api::ID
-                || tx.message.account_keys[tx.message.instructions[4].program_id_index as usize]
+                    && validate_compute_unit_instruction(&tx.message.instructions[3], &tx.message)
+                        .is_err())
+                || (tx.message.account_keys[tx.message.instructions[4].program_id_index as usize]
                     != coal_guilds_api::ID
+                    && validate_compute_unit_instruction(&tx.message.instructions[4], &tx.message)
+                        .is_err())
             {
                 error!(target: "server_log", "Guild stake: Found five instructions, wrong program detected in transaction. {:?}",tx.message);
                 return Response::builder()

@@ -1763,7 +1763,7 @@ async fn post_guild_stake(
 
         // Verify fee payer and ensure transaction structure
         if !tx.message.account_keys[0].eq(&wallet.fee_wallet.pubkey()) {
-            error!(target: "server_log", "Guild stake: Unexpected fee payer detected in transaction.");
+            error!(target: "server_log", "Guild stake: Unexpected fee payer detected in transaction. {:?}",tx.message);
             return Response::builder()
                 .status(StatusCode::BAD_REQUEST)
                 .body("Invalid fee payer".to_string())
@@ -1774,7 +1774,7 @@ async fn post_guild_stake(
             if tx.message.account_keys[tx.message.instructions[0].program_id_index as usize]
                 != coal_guilds_api::ID
             {
-                error!(target: "server_log", "Guild stake: found one instruction, wrong program detected in transaction.");
+                error!(target: "server_log", "Guild stake: found one instruction, wrong program detected in transaction. {:?}",tx.message);
                 return Response::builder()
                     .status(StatusCode::BAD_REQUEST)
                     .body("Instructions error".to_string())
@@ -1791,7 +1791,7 @@ async fn post_guild_stake(
                         [tx.message.instructions[1].program_id_index as usize]
                         != coal_guilds_api::ID)
             {
-                error!(target: "server_log", "Guild stake: Found two instructions, wrong program detected in transaction.");
+                error!(target: "server_log", "Guild stake: Found two instructions, wrong program detected in transaction. {:?}",tx.message);
                 return Response::builder()
                     .status(StatusCode::BAD_REQUEST)
                     .body("Instructions error".to_string())
@@ -1812,7 +1812,7 @@ async fn post_guild_stake(
                         [tx.message.instructions[2].program_id_index as usize]
                         != coal_guilds_api::ID)
             {
-                error!(target: "server_log", "Guild stake: Found three instructions, wrong program detected in transaction.");
+                error!(target: "server_log", "Guild stake: Found three instructions, wrong program detected in transaction. {:?}",tx.message);
                 return Response::builder()
                     .status(StatusCode::BAD_REQUEST)
                     .body("Instructions error".to_string())
@@ -1830,7 +1830,7 @@ async fn post_guild_stake(
                 || tx.message.account_keys[tx.message.instructions[3].program_id_index as usize]
                     != coal_guilds_api::ID
             {
-                error!(target: "server_log", "Guild stake: Found four instructions, wrong program detected in transaction.");
+                error!(target: "server_log", "Guild stake: Found four instructions, wrong program detected in transaction. {:?}",tx.message);
                 return Response::builder()
                     .status(StatusCode::BAD_REQUEST)
                     .body("Instructions error".to_string())
@@ -1847,7 +1847,7 @@ async fn post_guild_stake(
                 || tx.message.account_keys[tx.message.instructions[4].program_id_index as usize]
                     != coal_guilds_api::ID
             {
-                error!(target: "server_log", "Guild stake: Found four instructions, wrong program detected in transaction.");
+                error!(target: "server_log", "Guild stake: Found five instructions, wrong program detected in transaction. {:?}",tx.message);
                 return Response::builder()
                     .status(StatusCode::BAD_REQUEST)
                     .body("Instructions error".to_string())

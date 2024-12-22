@@ -65,7 +65,7 @@ pub async fn claim_system(
                 if let Some(_amount) = response.ui_amount {
                     info!(target: "server_log", "miner has valid token account COAL.");
                 } else {
-                    info!(target: "server_log", "will create token account for miner COAL");
+                    /*info!(target: "server_log", "will create token account for miner COAL");
                     ixs.push(
                         spl_associated_token_account::instruction::create_associated_token_account(
                             &wallet.pubkey(),
@@ -73,10 +73,15 @@ pub async fn claim_system(
                             &coal_api::consts::COAL_MINT_ADDRESS,
                             &spl_token::id(),
                         ),
-                    )
+                    )*/
+                    error!(target: "server_log", "will NOT create token account for miner COAL");
+                    let mut writer = claims_queue.queue.write().await;
+                    writer.remove(&miner_pubkey);
+                    drop(writer);
+                    continue;
                 }
             } else {
-                info!(target: "server_log", "Adding create ata ix for miner claim COAL");
+                /*info!(target: "server_log", "Adding create ata ix for miner claim COAL");
                 is_creating_ata_coal = true;
                 ixs.push(
                     spl_associated_token_account::instruction::create_associated_token_account(
@@ -85,7 +90,12 @@ pub async fn claim_system(
                         &coal_api::consts::COAL_MINT_ADDRESS,
                         &spl_token::id(),
                     ),
-                )
+                )*/
+                error!(target: "server_log", "will NOT create token account for miner COAL");
+                let mut writer = claims_queue.queue.write().await;
+                writer.remove(&miner_pubkey);
+                drop(writer);
+                continue;
             }
 
             if let Ok(response) = rpc_client
@@ -95,7 +105,7 @@ pub async fn claim_system(
                 if let Some(_amount) = response.ui_amount {
                     info!(target: "server_log", "miner has valid token account ORE.");
                 } else {
-                    info!(target: "server_log", "will create token account for miner ORE");
+                    /*info!(target: "server_log", "will create token account for miner ORE");
                     ixs.push(
                         spl_associated_token_account::instruction::create_associated_token_account(
                             &wallet.pubkey(),
@@ -103,10 +113,15 @@ pub async fn claim_system(
                             &ore_api::consts::MINT_ADDRESS,
                             &spl_token::id(),
                         ),
-                    )
+                    )*/
+                    error!(target: "server_log", "will NOT create token account for miner ORE");
+                    let mut writer = claims_queue.queue.write().await;
+                    writer.remove(&miner_pubkey);
+                    drop(writer);
+                    continue;
                 }
             } else {
-                info!(target: "server_log", "Adding create ata ix for miner claim ORE");
+                /*info!(target: "server_log", "Adding create ata ix for miner claim ORE");
                 is_creating_ata_ore = true;
                 ixs.push(
                     spl_associated_token_account::instruction::create_associated_token_account(
@@ -115,7 +130,12 @@ pub async fn claim_system(
                         &ore_api::consts::MINT_ADDRESS,
                         &spl_token::id(),
                     ),
-                )
+                )*/
+                error!(target: "server_log", "will NOT create token account for miner ORE");
+                let mut writer = claims_queue.queue.write().await;
+                writer.remove(&miner_pubkey);
+                drop(writer);
+                continue;
             }
 
             if let Ok(response) = rpc_client
@@ -125,7 +145,7 @@ pub async fn claim_system(
                 if let Some(_amount) = response.ui_amount {
                     info!(target: "server_log", "miner has valid token account CHROMIUM.");
                 } else {
-                    info!(target: "server_log", "will create token account for miner CHROMIUM");
+                    /*info!(target: "server_log", "will create token account for miner CHROMIUM");
                     ixs.push(
                         spl_associated_token_account::instruction::create_associated_token_account(
                             &wallet.pubkey(),
@@ -133,10 +153,15 @@ pub async fn claim_system(
                             &coal_api::consts::CHROMIUM_MINT_ADDRESS,
                             &spl_token::id(),
                         ),
-                    )
+                    )*/
+                    error!(target: "server_log", "will NOT create token account for miner CHROMIUM");
+                    let mut writer = claims_queue.queue.write().await;
+                    writer.remove(&miner_pubkey);
+                    drop(writer);
+                    continue;
                 }
             } else {
-                info!(target: "server_log", "Adding create ata ix for miner claim CHROMIUM");
+                /*info!(target: "server_log", "Adding create ata ix for miner claim CHROMIUM");
                 is_creating_ata_chromium = true;
                 ixs.push(
                     spl_associated_token_account::instruction::create_associated_token_account(
@@ -145,7 +170,12 @@ pub async fn claim_system(
                         &coal_api::consts::CHROMIUM_MINT_ADDRESS,
                         &spl_token::id(),
                     ),
-                )
+                )*/
+                error!(target: "server_log", "will NOT create token account for miner CHROMIUM");
+                let mut writer = claims_queue.queue.write().await;
+                writer.remove(&miner_pubkey);
+                drop(writer);
+                continue;
             }
 
             let amount_coal = claim_queue_item.amount_coal;

@@ -6,17 +6,17 @@ use std::{
     time::Duration,
 };
 
+use crate::{
+    coal_utils::get_cutoff, message::ServerMessageStartMining, AppState, EpochHashes,
+    SubmissionWindow,
+};
 use axum::extract::ws::Message;
 use base64::{prelude::BASE64_STANDARD, Engine};
 use coal_api::state::Proof;
 use futures::SinkExt;
 use solana_sdk::pubkey::Pubkey;
 use tokio::sync::{Mutex, RwLock};
-
-use crate::{
-    coal_utils::get_cutoff, message::ServerMessageStartMining, AppState, EpochHashes,
-    SubmissionWindow,
-};
+use tracing::info;
 
 const NONCE_RANGE_SIZE: u64 = 40_000_000;
 
@@ -68,6 +68,8 @@ pub async fn handle_ready_clients_system(
                 let reader = app_submission_window.read().await;
                 let is_window_closed = reader.closed;
                 drop(reader);
+
+                info!(target: "server_log", "should_mine {} is_window_closed {}.", should_mine,is_window_closed);
 
                 if should_mine && !is_window_closed {
                     tracing::info!(target: "server_log", "Handling {} ready clients.", clients.len());

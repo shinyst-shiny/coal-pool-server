@@ -926,6 +926,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_shared_state = shared_state.clone();
     let app = Router::new()
         .route("/v2/ws", get(ws_handler_v2))
+        .route("/v2/ws-web", get(ws_handler_web))
         //.route("/pause", post(post_pause))
         .route("/latest-blockhash", get(get_latest_blockhash))
         .route("/pool/authority/pubkey", get(get_pool_authority_pubkey))
@@ -2384,6 +2385,7 @@ async fn ws_handler_v2(
     query_params: Query<WsQueryParams>,
 ) -> impl IntoResponse {
     let msg_timestamp = query_params.timestamp;
+    info!(target:"server_log", "New WebSocket connection from: {:?}", addr);
 
     let pubkey = auth_header.username();
     let signed_msg = auth_header.password();
@@ -2462,6 +2464,86 @@ async fn ws_handler_v2(
     }
 }
 
+#[derive(Deserialize)]
+struct WsWebQueryParams {
+    timestamp: u64,
+    pubkey: String,
+}
+async fn ws_handler_web(
+    ws: WebSocketUpgrade,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(app_state): State<Arc<RwLock<AppState>>>,
+    Extension(client_channel): Extension<UnboundedSender<ClientMessage>>,
+    Extension(app_database): Extension<Arc<AppDatabase>>,
+    query_params: Query<WsWebQueryParams>,
+) -> impl IntoResponse {
+    let msg_timestamp = query_params.timestamp;
+    info!(target:"server_log", "New WebSocket connection from: {:?}", addr);
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs();
+
+    // Signed authentication message is only valid for 30 seconds
+    if (now - query_params.timestamp) >= 30 {
+        return Err((StatusCode::UNAUTHORIZED, "Timestamp too old."));
+    }
+
+    // verify client
+    if let Ok(user_pubkey) = Pubkey::from_str(query_params.pubkey.as_str()) {
+        let db_miner = app_database
+            .get_miner_by_pubkey_str(user_pubkey.to_string())
+            .await;
+
+        let miner;
+        match db_miner {
+            Ok(db_miner) => {
+                miner = db_miner;
+            }
+            Err(AppDatabaseError::QueryFailed) => {
+                return Err((
+                    StatusCode::UNAUTHORIZED,
+                    "pubkey is not authorized to mine. please sign up.",
+                ));
+            }
+            Err(AppDatabaseError::InteractionFailed) => {
+                return Err((
+                    StatusCode::UNAUTHORIZED,
+                    "pubkey is not authorized to mine. please sign up.",
+                ));
+            }
+            Err(AppDatabaseError::FailedToGetConnectionFromPool) => {
+                error!(target: "server_log", "Failed to get database pool connection.");
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error"));
+            }
+            Err(_) => {
+                error!(target: "server_log", "DB Error: Catch all.");
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error"));
+            }
+        }
+
+        if !miner.enabled {
+            return Err((StatusCode::UNAUTHORIZED, "pubkey is not authorized to mine"));
+        }
+
+        info!(target: "server_log", "Client: {addr} connected with pubkey {user_pubkey} on V2.");
+        return Ok(ws.on_upgrade(move |socket| {
+            handle_socket(
+                socket,
+                addr,
+                user_pubkey,
+                miner.id,
+                ClientVersion::V2,
+                app_state,
+                client_channel,
+            )
+        }));
+    } else {
+        return Err((StatusCode::UNAUTHORIZED, "Invalid pubkey"));
+    }
+}
+
 async fn handle_socket(
     mut socket: WebSocket,
     who: SocketAddr,
@@ -2490,6 +2572,7 @@ async fn handle_socket(
         info!(target: "server_log", "Socket addr: {who} already has an active connection");
         return;
     } else {
+        info!(target: "server_log", "Client: {} connected!", who_pubkey.to_string());
         let new_app_client_connection = AppClientConnection {
             pubkey: who_pubkey,
             miner_id: who_miner_id,
@@ -2521,6 +2604,7 @@ fn process_message(
     who: SocketAddr,
     client_channel: UnboundedSender<ClientMessage>,
 ) -> ControlFlow<(), ()> {
+    info!(target: "server_log", "Received message from {who}: {msg:?}");
     match msg {
         Message::Text(_t) => {
             //println!(">>> {who} sent str: {t:?}");

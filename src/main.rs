@@ -1771,105 +1771,17 @@ async fn post_guild_stake(
                 .unwrap();
         }
 
-        if tx.message.instructions.len() == 1 {
-            if tx.message.account_keys[tx.message.instructions[0].program_id_index as usize]
-                != coal_guilds_api::ID
+        for instruction in tx.message.instructions {
+            if tx.message.account_keys[instruction.program_id_index as usize] != coal_guilds_api::ID
+                && validate_compute_unit_instruction(&instruction, &tx.message).is_err()
             {
-                error!(target: "server_log", "Guild stake: found one instruction, wrong program detected in transaction. {:?}",tx.message);
+                error!(target: "server_log", "Guild stake: Wrong program detected in transaction. {:?}",tx.message);
                 return Response::builder()
                     .status(StatusCode::BAD_REQUEST)
                     .body("Instructions error".to_string())
                     .unwrap();
             }
-        } else if tx.message.instructions.len() == 2 {
-            if (tx.message.account_keys[tx.message.instructions[0].program_id_index as usize]
-                != coal_guilds_api::ID
-                && validate_compute_unit_instruction(&tx.message.instructions[0], &tx.message)
-                    .is_err())
-                || (tx.message.account_keys[tx.message.instructions[1].program_id_index as usize]
-                    != coal_guilds_api::ID
-                    && validate_compute_unit_instruction(&tx.message.instructions[1], &tx.message)
-                        .is_err())
-            {
-                error!(target: "server_log", "Guild stake: Found two instructions, wrong program detected in transaction. {:?}",tx.message);
-                return Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body("Instructions error".to_string())
-                    .unwrap();
-            }
-        } else if tx.message.instructions.len() == 3 {
-            if (tx.message.account_keys[tx.message.instructions[0].program_id_index as usize]
-                != coal_guilds_api::ID
-                && validate_compute_unit_instruction(&tx.message.instructions[0], &tx.message)
-                    .is_err())
-                || (tx.message.account_keys[tx.message.instructions[1].program_id_index as usize]
-                    != coal_guilds_api::ID
-                    && validate_compute_unit_instruction(&tx.message.instructions[1], &tx.message)
-                        .is_err())
-                || (tx.message.account_keys[tx.message.instructions[2].program_id_index as usize]
-                    != coal_guilds_api::ID
-                    && validate_compute_unit_instruction(&tx.message.instructions[2], &tx.message)
-                        .is_err())
-            {
-                error!(target: "server_log", "Guild stake: Found three instructions, wrong program detected in transaction. {:?}",tx.message);
-                return Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body("Instructions error".to_string())
-                    .unwrap();
-            }
-        } else if tx.message.instructions.len() == 4 {
-            if validate_compute_unit_instruction(&tx.message.instructions[0], &tx.message).is_err()
-                || (validate_compute_unit_instruction(&tx.message.instructions[1], &tx.message)
-                    .is_err()
-                    && tx.message.account_keys
-                        [tx.message.instructions[1].program_id_index as usize]
-                        != coal_guilds_api::ID)
-                || (tx.message.account_keys[tx.message.instructions[2].program_id_index as usize]
-                    != coal_guilds_api::ID
-                    && validate_compute_unit_instruction(&tx.message.instructions[2], &tx.message)
-                        .is_err())
-                || (tx.message.account_keys[tx.message.instructions[3].program_id_index as usize]
-                    != coal_guilds_api::ID
-                    && validate_compute_unit_instruction(&tx.message.instructions[3], &tx.message)
-                        .is_err())
-            {
-                error!(target: "server_log", "Guild stake: Found four instructions, wrong program detected in transaction. {:?}",tx.message);
-                return Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body("Instructions error".to_string())
-                    .unwrap();
-            }
-        } else if tx.message.instructions.len() == 5 {
-            if validate_compute_unit_instruction(&tx.message.instructions[0], &tx.message).is_err()
-                || validate_compute_unit_instruction(&tx.message.instructions[1], &tx.message)
-                    .is_err()
-                || (tx.message.account_keys[tx.message.instructions[2].program_id_index as usize]
-                    != coal_guilds_api::ID
-                    && validate_compute_unit_instruction(&tx.message.instructions[2], &tx.message)
-                        .is_err())
-                || (tx.message.account_keys[tx.message.instructions[3].program_id_index as usize]
-                    != coal_guilds_api::ID
-                    && validate_compute_unit_instruction(&tx.message.instructions[3], &tx.message)
-                        .is_err())
-                || (tx.message.account_keys[tx.message.instructions[4].program_id_index as usize]
-                    != coal_guilds_api::ID
-                    && validate_compute_unit_instruction(&tx.message.instructions[4], &tx.message)
-                        .is_err())
-            {
-                error!(target: "server_log", "Guild stake: Found five instructions, wrong program detected in transaction. {:?}",tx.message);
-                return Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body("Instructions error".to_string())
-                    .unwrap();
-            }
-        } else {
-            error!(target: "server_log", "Guild stake: Too many instructions detected in transaction. Count: {}. Tx: {:?}", tx.message.instructions.len(), tx.message);
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("Instructions error".to_string())
-                .unwrap();
         }
-        info!(target: "server_log", "Check tx: {:?}", tx.message);
 
         // Sign the transaction
         tx.sign(&[&*wallet.fee_wallet], tx.message.recent_blockhash);
@@ -2048,64 +1960,23 @@ async fn post_coal_stake(
         info!(target: "server_log", "tx.message {:?}.", tx.message);
         info!(target: "server_log", "tx.message.instructions {:?}.", tx.message.instructions);
 
-        if tx.message.instructions.len() == 1 {
-            match validate_token_transfer_instruction(
-                &tx.message.instructions[0],
-                &tx.message,
-                &user_token_account_coal,
-                &pool_token_account_coal,
-            ) {
-                Ok(_) => {}
-                Err(e) => {
-                    error!(target: "server_log", "Coal stake: Failed to validate token transfer instruction. Error: {:?}", e);
-                    return Response::builder()
-                        .status(StatusCode::BAD_REQUEST)
-                        .body("Instructions error".to_string())
-                        .unwrap();
-                }
+        for instruction in tx.message.instructions {
+            if tx.message.account_keys[instruction.program_id_index as usize] != coal_guilds_api::ID
+                && validate_compute_unit_instruction(&instruction, &tx.message).is_err()
+                && validate_token_transfer_instruction(
+                    &instruction,
+                    &tx.message,
+                    &user_token_account_coal,
+                    &pool_token_account_coal,
+                )
+                .is_err()
+            {
+                error!(target: "server_log", "Pool stake: Wrong program detected in transaction. {:?}",tx.message);
+                return Response::builder()
+                    .status(StatusCode::BAD_REQUEST)
+                    .body("Instructions error".to_string())
+                    .unwrap();
             }
-        } else if tx.message.instructions.len() == 3 {
-            match validate_compute_unit_instruction(&tx.message.instructions[0], &tx.message) {
-                Ok(_) => {}
-                Err(e) => {
-                    error!(target: "server_log", "Coal stake: Failed to validate compute unit 0 instruction. Error: {:?}", e);
-                    return Response::builder()
-                        .status(StatusCode::BAD_REQUEST)
-                        .body("Instructions error".to_string())
-                        .unwrap();
-                }
-            }
-            match validate_compute_unit_instruction(&tx.message.instructions[1], &tx.message) {
-                Ok(_) => {}
-                Err(e) => {
-                    error!(target: "server_log", "Coal stake: Failed to validate compute unit 1 instruction. Error: {:?}", e);
-                    return Response::builder()
-                        .status(StatusCode::BAD_REQUEST)
-                        .body("Instructions error".to_string())
-                        .unwrap();
-                }
-            }
-            match validate_token_transfer_instruction(
-                &tx.message.instructions[2],
-                &tx.message,
-                &user_token_account_coal,
-                &pool_token_account_coal,
-            ) {
-                Ok(_) => {}
-                Err(e) => {
-                    error!(target: "server_log", "Coal stake: Failed to validate token transfer instruction. Error: {:?}", e);
-                    return Response::builder()
-                        .status(StatusCode::BAD_REQUEST)
-                        .body("Instructions error".to_string())
-                        .unwrap();
-                }
-            }
-        } else {
-            error!(target: "server_log", "Coal stake: Too many instructions detected in transaction. Count: {}.", tx.message.instructions.len());
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("Instructions error".to_string())
-                .unwrap();
         }
 
         // Sign the transaction
@@ -2289,43 +2160,16 @@ async fn post_guild_un_stake(
                 .unwrap();
         }
 
-        if tx.message.instructions.len() == 1 {
-            let mut program_id =
-                tx.message.account_keys[tx.message.instructions[0].program_id_index as usize];
-            if program_id != coal_guilds_api::ID {
-                error!(target: "server_log", "Guild unstake: Wrong program detected in transaction. Program: {}.", program_id);
-                return Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body("Wrong program".to_string())
-                    .unwrap();
-            }
-        } else if tx.message.instructions.len() == 3 {
-            if validate_compute_unit_instruction(&tx.message.instructions[0], &tx.message).is_err()
-                || validate_compute_unit_instruction(&tx.message.instructions[1], &tx.message)
-                    .is_err()
+        for instruction in tx.message.instructions {
+            if tx.message.account_keys[instruction.program_id_index as usize] != coal_guilds_api::ID
+                && validate_compute_unit_instruction(&instruction, &tx.message).is_err()
             {
-                error!(target: "server_log", "Guild unstake: Wrong program detected in transaction.");
+                error!(target: "server_log", "Guild unstake: Wrong program detected in transaction. {:?}",tx.message);
                 return Response::builder()
                     .status(StatusCode::BAD_REQUEST)
-                    .body("Wrong program".to_string())
+                    .body("Instructions error".to_string())
                     .unwrap();
-            } else {
-                let mut program_id =
-                    tx.message.account_keys[tx.message.instructions[2].program_id_index as usize];
-                if program_id != coal_guilds_api::ID {
-                    error!(target: "server_log", "Guild unstake: Wrong program detected in transaction. Program: {}.", program_id);
-                    return Response::builder()
-                        .status(StatusCode::BAD_REQUEST)
-                        .body("Wrong program".to_string())
-                        .unwrap();
-                }
             }
-        } else {
-            error!(target: "server_log", "Guild unstake: Too many instructions detected in transaction. Count: {}.", tx.message.instructions.len());
-            return Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body("Instructions error".to_string())
-                .unwrap();
         }
 
         // Sign the transaction
@@ -2604,7 +2448,7 @@ fn process_message(
     who: SocketAddr,
     client_channel: UnboundedSender<ClientMessage>,
 ) -> ControlFlow<(), ()> {
-    info!(target: "server_log", "Received message from {who}: {msg:?}");
+    // info!(target: "server_log", "Received message from {who}: {msg:?}");
     match msg {
         Message::Text(_t) => {
             //println!(">>> {who} sent str: {t:?}");

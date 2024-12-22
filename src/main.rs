@@ -1771,7 +1771,7 @@ async fn post_guild_stake(
                 .unwrap();
         }
 
-        for instruction in tx.message.instructions {
+        for instruction in tx.message.instructions.clone() {
             if tx.message.account_keys[instruction.program_id_index as usize] != coal_guilds_api::ID
                 && validate_compute_unit_instruction(&instruction, &tx.message).is_err()
             {
@@ -1960,7 +1960,7 @@ async fn post_coal_stake(
         info!(target: "server_log", "tx.message {:?}.", tx.message);
         info!(target: "server_log", "tx.message.instructions {:?}.", tx.message.instructions);
 
-        for instruction in tx.message.instructions {
+        for instruction in tx.message.instructions.clone() {
             if tx.message.account_keys[instruction.program_id_index as usize] != coal_guilds_api::ID
                 && validate_compute_unit_instruction(&instruction, &tx.message).is_err()
                 && validate_token_transfer_instruction(
@@ -2160,7 +2160,7 @@ async fn post_guild_un_stake(
                 .unwrap();
         }
 
-        for instruction in tx.message.instructions {
+        for instruction in tx.message.instructions.clone() {
             if tx.message.account_keys[instruction.program_id_index as usize] != coal_guilds_api::ID
                 && validate_compute_unit_instruction(&instruction, &tx.message).is_err()
             {

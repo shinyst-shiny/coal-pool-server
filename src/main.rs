@@ -294,6 +294,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::var("FEE_WALLET_PATH").expect("FEE_WALLET_PATH must be set.");
     let rpc_url = std::env::var("RPC_URL").expect("RPC_URL must be set.");
     let rpc_ws_url = std::env::var("RPC_WS_URL").expect("RPC_WS_URL must be set.");
+    let rpc_url_miner = std::env::var("RPC_URL_MINER").expect("RPC_URL must be set.");
     let password = std::env::var("PASSWORD").expect("PASSWORD must be set.");
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set.");
     let database_rr_url = std::env::var("DATABASE_RR_URL").expect("DATABASE_RR_URL must be set.");
@@ -343,6 +344,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!(target: "server_log", "establishing rpc connection...");
     let rpc_client = RpcClient::new_with_commitment(rpc_url, CommitmentConfig::confirmed());
+    let rpc_client_miner =
+        RpcClient::new_with_commitment(rpc_url_miner, CommitmentConfig::confirmed());
     let jito_url = "https://mainnet.block-engine.jito.wtf/api/v1/transactions".to_string();
     let jito_client = RpcClient::new(jito_url);
 
@@ -672,6 +675,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let submission_window = Arc::new(RwLock::new(SubmissionWindow { closed: false }));
 
     let rpc_client = Arc::new(rpc_client);
+    let rpc_client_miner = Arc::new(rpc_client_miner);
     let jito_client = Arc::new(jito_client);
 
     let last_challenge = Arc::new(Mutex::new([0u8; 32]));
@@ -770,6 +774,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_prio_fee = priority_fee.clone();
     let app_jito_tip = jito_tip.clone();
     let app_rpc_client = rpc_client.clone();
+    let app_rpc_client_miner = rpc_client_miner.clone();
     let app_jito_client = jito_client.clone();
     let app_config = config.clone();
     let app_app_database = app_database.clone();
@@ -856,7 +861,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_nonce,
             app_prio_fee,
             app_jito_tip,
-            app_rpc_client,
+            app_rpc_client_miner,
             app_jito_client,
             app_config,
             app_app_database,

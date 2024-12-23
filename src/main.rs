@@ -2453,7 +2453,7 @@ fn process_message(
     who: SocketAddr,
     client_channel: UnboundedSender<ClientMessage>,
 ) -> ControlFlow<(), ()> {
-    // info!(target: "server_log", "Received message from {who}: {msg:?}");
+    info!(target: "server_log", "Received message from {who}: {msg:?}");
     match msg {
         Message::Text(_t) => {
             //println!(">>> {who} sent str: {t:?}");
@@ -2494,29 +2494,30 @@ fn process_message(
 
                     b_index += 32;
 
-                    let signature_bytes = d[b_index..].to_vec();
-                    if let Ok(sig_str) = String::from_utf8(signature_bytes.clone()) {
-                        if let Ok(sig) = Signature::from_str(&sig_str) {
-                            let pubkey = Pubkey::new_from_array(pubkey);
+                    // REMOVED MINING SIGNATURE
+                    //let signature_bytes = d[b_index..].to_vec();
+                    //if let Ok(sig_str) = String::from_utf8(signature_bytes.clone()) {
+                    //    if let Ok(sig) = Signature::from_str(&sig_str) {
+                    let pubkey = Pubkey::new_from_array(pubkey);
 
-                            let mut hash_nonce_message = [0; 24];
-                            hash_nonce_message[0..16].copy_from_slice(&solution_bytes);
-                            hash_nonce_message[16..24].copy_from_slice(&nonce);
+                    let mut hash_nonce_message = [0; 24];
+                    hash_nonce_message[0..16].copy_from_slice(&solution_bytes);
+                    hash_nonce_message[16..24].copy_from_slice(&nonce);
 
-                            if sig.verify(&pubkey.to_bytes(), &hash_nonce_message) {
-                                let solution = Solution::new(solution_bytes, nonce);
+                    //if sig.verify(&pubkey.to_bytes(), &hash_nonce_message) {
+                    let solution = Solution::new(solution_bytes, nonce);
 
-                                let msg = ClientMessage::BestSolution(who, solution, pubkey);
-                                let _ = client_channel.send(msg);
-                            } else {
-                                error!(target: "server_log", "Client submission sig verification failed.");
-                            }
-                        } else {
-                            error!(target: "server_log", "Failed to parse into Signature.");
-                        }
-                    } else {
-                        error!(target: "server_log", "Failed to parse signed message from client.");
-                    }
+                    let msg = ClientMessage::BestSolution(who, solution, pubkey);
+                    let _ = client_channel.send(msg);
+                    //} else {
+                    //    error!(target: "server_log", "Client submission sig verification failed.");
+                    //}
+                    //} else {
+                    //    error!(target: "server_log", "Failed to parse into Signature.");
+                    //}
+                    //} else {
+                    //    error!(target: "server_log", "Failed to parse signed message from client.");
+                    //}
                 }
                 _ => {
                     error!(target: "server_log", ">>> {} sent an invalid message", who);

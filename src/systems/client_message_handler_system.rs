@@ -16,7 +16,10 @@ use tokio::{
     time::Instant,
 };
 
-use crate::{AppState, ClientMessage, EpochHashes, InternalMessageSubmission, LastPong, SubmissionWindow, MAX_CALCULATED_HASHPOWER, MIN_DIFF, MIN_HASHPOWER};
+use crate::{
+    AppState, ClientMessage, EpochHashes, InternalMessageSubmission, LastPong, SubmissionWindow,
+    MAX_CALCULATED_HASHPOWER, MIN_DIFF, MIN_HASHPOWER,
+};
 
 pub async fn client_message_handler_system(
     mut receiver_channel: UnboundedReceiver<ClientMessage>,
@@ -125,7 +128,7 @@ pub async fn client_message_handler_system(
                     if solution.is_valid(&challenge) {
                         let diff = solution.to_hash().difficulty();
                         let submission_uuid = Uuid::new_v4();
-                        tracing::info!(target: "submission_log", "{} - {} found diff: {}", submission_uuid, pubkey_str, diff);
+                        // tracing::info!(target: "submission_log", "{} - {} found diff: {}", submission_uuid, pubkey_str, diff);
                         if diff >= MIN_DIFF {
                             // calculate rewards
                             let real_hashpower = MIN_HASHPOWER * 2u64.pow(diff - MIN_DIFF);

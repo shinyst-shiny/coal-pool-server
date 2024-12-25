@@ -279,7 +279,7 @@ pub async fn claim_system(
                 if signature.is_some() {
                     let signature = signature.unwrap();
                     let result: Result<Signature, String> = loop {
-                        if expired_timer.elapsed().as_secs() >= 200 {
+                        if expired_timer.elapsed().as_secs() >= 120 {
                             break Err("Transaction Expired".to_string());
                         }
                         let results = rpc_client.get_signature_statuses(&[signature]).await;

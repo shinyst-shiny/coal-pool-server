@@ -771,13 +771,13 @@ pub async fn pool_submission_system(
                                                             let full_rewards_ore = ore_balance_after_tx - ore_balance_before_tx;
                                                             let commissions_ore = full_rewards_ore.mul(5).saturating_div(100);
                                                             let rewards_ore = full_rewards_ore - commissions_ore;
-                                                            // info!(target: "server_log", "Miners Rewards COAL: {}", rewards_coal);
-                                                            // info!(target: "server_log", "Commission COAL: {}", commissions_coal);
-                                                            // info!(target: "server_log", "Guild total stake: {}", guild_total_stake);
-                                                            // info!(target: "server_log", "Guild multiplier: {}", guild_multiplier);
-                                                            // info!(target: "server_log", "Guild last stake at: {}", guild_last_stake_at);
-                                                            // info!(target: "server_log", "Miners Rewards ORE: {}", rewards_ore);
-                                                            // info!(target: "server_log", "Commission ORE: {}", commissions_ore);
+                                                            info!(target: "server_log", "Miners Rewards COAL: {}", rewards_coal);
+                                                            info!(target: "server_log", "Commission COAL: {}", commissions_coal);
+                                                            info!(target: "server_log", "Guild total stake: {}", guild_total_stake);
+                                                            info!(target: "server_log", "Guild multiplier: {}", guild_multiplier);
+                                                            info!(target: "server_log", "Guild last stake at: {}", guild_last_stake_at);
+                                                            info!(target: "server_log", "Miners Rewards ORE: {}", rewards_ore);
+                                                            info!(target: "server_log", "Commission ORE: {}", commissions_ore);
 
                                                             // handle sending mine success message
                                                             let mut total_real_hashpower: u64 = 0;

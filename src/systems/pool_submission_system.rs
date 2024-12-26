@@ -68,14 +68,6 @@ pub async fn pool_submission_system(
     app_submission_window: Arc<RwLock<SubmissionWindow>>,
     app_client_nonce_ranges: Arc<RwLock<HashMap<Pubkey, Vec<Range<u64>>>>>,
     app_last_challenge: Arc<Mutex<[u8; 32]>>,
-    tool_address: Option<Pubkey>,
-    guild_member_address: Option<Pubkey>,
-    tool: Option<ToolType>,
-    member: Option<coal_guilds_api::state::Member>,
-    guild_config: Option<coal_guilds_api::state::Config>,
-    guild: Option<coal_guilds_api::state::Guild>,
-    guild_address: Option<Pubkey>,
-    tool_multiplier: f64,
 ) {
     loop {
         let lock = app_proof.lock().await;
@@ -117,6 +109,90 @@ pub async fn pool_submission_system(
                             i, difficulty
                         );
                         info!(target: "server_log", "Submission Challenge: {}", BASE64_STANDARD.encode(old_proof.challenge));
+
+                        // Fetch coal_proof
+                        let config_address = get_config_pubkey(&Resource::Coal);
+                        let tool_address = get_tool_pubkey(
+                            app_wallet.clone().miner_wallet.clone().pubkey(),
+                            &Resource::Coal,
+                        );
+                        let guild_config_address = coal_guilds_api::state::config_pda().0;
+                        let guild_member_address = coal_guilds_api::state::member_pda(
+                            app_wallet.clone().miner_wallet.clone().pubkey(),
+                        )
+                        .0;
+
+                        let mut accounts_multipliers = vec![
+                            config_address,
+                            tool_address,
+                            guild_config_address,
+                            guild_member_address,
+                        ];
+                        let accounts_multipliers = rpc_client
+                            .get_multiple_accounts(&accounts_multipliers)
+                            .await
+                            .unwrap();
+
+                        let mut tool: Option<ToolType> = None;
+                        let mut member: Option<coal_guilds_api::state::Member> = None;
+                        let mut guild_config: Option<coal_guilds_api::state::Config> = None;
+                        let mut guild: Option<coal_guilds_api::state::Guild> = None;
+                        let mut guild_address: Option<Pubkey> = None;
+
+                        info!(target: "server_log", "setting up accounts");
+
+                        if accounts_multipliers.len() > 1 {
+                            if accounts_multipliers[1].as_ref().is_some() {
+                                tool = Some(deserialize_tool(
+                                    &accounts_multipliers[1].as_ref().unwrap().data,
+                                    &Resource::Coal,
+                                ));
+                            }
+
+                            if accounts_multipliers.len() > 2
+                                && accounts_multipliers[2].as_ref().is_some()
+                            {
+                                guild_config = Some(deserialize_guild_config(
+                                    &accounts_multipliers[2].as_ref().unwrap().data,
+                                ));
+                            }
+
+                            if accounts_multipliers.len() > 3
+                                && accounts_multipliers[3].as_ref().is_some()
+                            {
+                                member = Some(deserialize_guild_member(
+                                    &accounts_multipliers[3].as_ref().unwrap().data,
+                                ));
+                            }
+
+                            if accounts_multipliers.len() > 4
+                                && accounts_multipliers[4].as_ref().is_some()
+                            {
+                                guild = Some(deserialize_guild(
+                                    &accounts_multipliers[4].as_ref().unwrap().data,
+                                ));
+                            }
+                        }
+
+                        info!(target: "server_log", "getting guild info");
+
+                        if member.is_some()
+                            && member.unwrap().guild.ne(&coal_guilds_api::ID)
+                            && guild_address.is_none()
+                        {
+                            let guild_data = rpc_client
+                                .get_account_data(&member.unwrap().guild)
+                                .await
+                                .unwrap();
+                            guild = Some(deserialize_guild(&guild_data));
+                            guild_address = Some(member.unwrap().guild);
+                        }
+
+                        let tool_multiplier = calculate_tool_multiplier(&tool);
+
+                        // TODO add actual guild members
+                        let guild_members: Vec<coal_guilds_api::state::Member> = vec![];
+
                         let mut loaded_config_coal = None;
                         info!(target: "server_log", "Getting latest config and busses data.");
                         tokio::time::sleep(Duration::from_millis(1000)).await;
@@ -245,9 +321,9 @@ pub async fn pool_submission_system(
                             signer.pubkey(),
                             best_solution,
                             bus,
-                            tool_address,
-                            guild_member_address,
-                            guild_address,
+                            Option::from(tool_address),
+                            Option::from(guild_member_address),
+                            Option::from(guild_address),
                         );
 
                         let ore_mine_ix = get_ore_mine_ix(signer.pubkey(), best_solution, bus);

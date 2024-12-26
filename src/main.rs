@@ -783,76 +783,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_client_nonce_ranges = client_nonce_ranges.clone();
     let app_last_challenge = last_challenge.clone();
 
-    // Fetch coal_proof
-    let config_address = get_config_pubkey(&Resource::Coal);
-    let tool_address = get_tool_pubkey(
-        app_wallet.clone().miner_wallet.clone().pubkey(),
-        &Resource::Coal,
-    );
-    let guild_config_address = coal_guilds_api::state::config_pda().0;
-    let guild_member_address =
-        coal_guilds_api::state::member_pda(app_wallet.clone().miner_wallet.clone().pubkey()).0;
-
-    let mut accounts_multipliers = vec![
-        config_address,
-        tool_address,
-        guild_config_address,
-        guild_member_address,
-    ];
-    let accounts_multipliers = rpc_client
-        .get_multiple_accounts(&accounts_multipliers)
-        .await
-        .unwrap();
-
-    let mut tool: Option<ToolType> = None;
-    let mut member: Option<coal_guilds_api::state::Member> = None;
-    let mut guild_config: Option<coal_guilds_api::state::Config> = None;
-    let mut guild: Option<coal_guilds_api::state::Guild> = None;
-    let mut guild_address: Option<Pubkey> = None;
-
-    info!(target: "server_log", "setting up accounts");
-
-    if accounts_multipliers.len() > 1 {
-        if accounts_multipliers[1].as_ref().is_some() {
-            tool = Some(deserialize_tool(
-                &accounts_multipliers[1].as_ref().unwrap().data,
-                &Resource::Coal,
-            ));
-        }
-
-        if accounts_multipliers.len() > 2 && accounts_multipliers[2].as_ref().is_some() {
-            guild_config = Some(deserialize_guild_config(
-                &accounts_multipliers[2].as_ref().unwrap().data,
-            ));
-        }
-
-        if accounts_multipliers.len() > 3 && accounts_multipliers[3].as_ref().is_some() {
-            member = Some(deserialize_guild_member(
-                &accounts_multipliers[3].as_ref().unwrap().data,
-            ));
-        }
-
-        if accounts_multipliers.len() > 4 && accounts_multipliers[4].as_ref().is_some() {
-            guild = Some(deserialize_guild(
-                &accounts_multipliers[4].as_ref().unwrap().data,
-            ));
-        }
-    }
-
-    info!(target: "server_log", "getting guild info");
-
-    if member.is_some() && member.unwrap().guild.ne(&coal_guilds_api::ID) && guild_address.is_none()
-    {
-        let guild_data = rpc_client
-            .get_account_data(&member.unwrap().guild)
-            .await
-            .unwrap();
-        guild = Some(deserialize_guild(&guild_data));
-        guild_address = Some(member.unwrap().guild);
-    }
-
-    let tool_multiplier = calculate_tool_multiplier(&tool);
-
     tokio::spawn(async move {
         pool_submission_system(
             app_proof,
@@ -870,14 +800,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_submission_window,
             app_client_nonce_ranges,
             app_last_challenge,
-            Option::from(tool_address),
-            Option::from(guild_member_address),
-            tool,
-            member,
-            guild_config,
-            guild,
-            guild_address,
-            tool_multiplier,
         )
         .await;
     });

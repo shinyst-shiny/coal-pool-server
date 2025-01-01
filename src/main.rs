@@ -158,6 +158,11 @@ pub struct InternalMessageSubmission {
     real_hashpower: u64,
 }
 
+pub struct PoolGuildMember {
+    stake_percentage: u128,
+    member: coal_guilds_api::state::Member,
+}
+
 pub struct MessageInternalMineSuccess {
     difficulty: u32,
     total_balance_coal: f64,
@@ -177,6 +182,8 @@ pub struct MessageInternalMineSuccess {
     guild_total_stake: f64,
     guild_multiplier: f64,
     tool_multiplier: f64,
+    guild_stake_rewards_coal: u64,
+    guild_members: Vec<PoolGuildMember>,
 }
 
 pub struct LastPong {
@@ -1993,6 +2000,9 @@ async fn post_coal_stake(
                     balance_coal: query_params.amount,
                     balance_ore: 0,
                     balance_chromium: 0,
+                    balance_ingot: 0,
+                    balance_sol: 0,
+                    balance_wood: 0,
                 }];
 
                 tracing::info!(target: "server_log", "Coal stake: Updating rewards...");

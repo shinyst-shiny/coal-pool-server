@@ -2,7 +2,8 @@ use crate::app_database::{AppDatabase, AppDatabaseError};
 use crate::app_rr_database::AppRRDatabase;
 use crate::coal_utils::{get_reprocessor, get_resource_mint, Resource, Tip, COAL_TOKEN_DECIMALS};
 use crate::models::{
-    ExtraResourcesGeneration, InsertEarningExtraResources, Submission, UpdateReward,
+    ExtraResourcesGeneration, ExtraResourcesGenerationType, InsertEarningExtraResources,
+    Submission, UpdateReward,
 };
 use crate::send_and_confirm::{send_and_confirm, ComputeBudget};
 use crate::{models, Config, WalletExtension, MIN_DIFF, MIN_HASHPOWER};
@@ -10,6 +11,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use solana_client::client_error::reqwest;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::signer::Signer;
+use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::ops::Mul;
 use std::sync::Arc;
@@ -60,7 +62,10 @@ pub async fn chromium_reprocessing_system(
         let mut check_current_reprocessing: Option<ExtraResourcesGeneration> = None;
 
         match app_database
-            .get_pending_chromium_reprocessing(config.pool_id)
+            .get_pending_extra_resources_generation(
+                config.pool_id,
+                ExtraResourcesGenerationType::ChromiumReprocess,
+            )
             .await
         {
             Ok(current_reprocessing) => {
@@ -74,7 +79,13 @@ pub async fn chromium_reprocessing_system(
             tokio::time::sleep(Duration::from_secs(20)).await;
             continue;
         } else {
-            while let Err(_) = app_database.add_chromium_reprocessing(config.pool_id).await {
+            while let Err(_) = app_database
+                .add_extra_resources_generation(
+                    config.pool_id,
+                    ExtraResourcesGenerationType::ChromiumReprocess,
+                )
+                .await
+            {
                 tracing::error!(target: "server_log", "Failed to add chromium reprocessing to db. Retrying...");
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
@@ -83,9 +94,11 @@ pub async fn chromium_reprocessing_system(
         let mut current_reprocessing: ExtraResourcesGeneration;
 
         loop {
-            // get every submission from the last reprocess time to now. If there was no process before now get every submission
             match app_database
-                .get_pending_chromium_reprocessing(config.pool_id)
+                .get_pending_extra_resources_generation(
+                    config.pool_id,
+                    ExtraResourcesGenerationType::ChromiumReprocess,
+                )
                 .await
             {
                 Ok(resp) => {
@@ -277,6 +290,12 @@ pub async fn chromium_reprocessing_system(
             pool_id: config.pool_id,
             extra_resources_generation_id: current_reprocessing.id,
             amount_chromium: commissions_chromium,
+            amount_sol: 0,
+            amount_coal: 0,
+            amount_ingot: 0,
+            amount_ore: 0,
+            amount_wood: 0,
+            generation_type: ExtraResourcesGenerationType::ChromiumReprocess as i32,
         }];
         tracing::info!(target: "server_log", "CHROMIUM: Inserting commissions earning");
         while let Err(_) = app_database
@@ -295,6 +314,9 @@ pub async fn chromium_reprocessing_system(
             balance_chromium: commissions_chromium,
             balance_coal: 0,
             balance_ore: 0,
+            balance_sol: 0,
+            balance_ingot: 0,
+            balance_wood: 0,
         }];
 
         if commission_rewards.len() > 0 {
@@ -396,12 +418,21 @@ pub async fn chromium_reprocessing_system(
                 pool_id: config.pool_id,
                 extra_resources_generation_id: current_reprocessing.id,
                 amount_chromium: chromium_earned.floor() as u64,
+                amount_sol: 0,
+                amount_coal: 0,
+                amount_ingot: 0,
+                amount_ore: 0,
+                amount_wood: 0,
+                generation_type: ExtraResourcesGenerationType::ChromiumReprocess as i32,
             });
             miners_rewards.push(UpdateReward {
                 miner_id,
                 balance_chromium: chromium_earned.floor() as u64,
                 balance_coal: 0,
                 balance_ore: 0,
+                balance_ingot: 0,
+                balance_sol: 0,
+                balance_wood: 0,
             });
         }
 
@@ -438,7 +469,10 @@ pub async fn chromium_reprocessing_system(
                 app_wallet.miner_wallet.pubkey().to_string(),
                 0,
                 0,
+                0,
                 full_reprocessed_amount,
+                0,
+                0,
             )
             .await
         {
@@ -449,7 +483,16 @@ pub async fn chromium_reprocessing_system(
         info!(target: "server_log", "Updated pool rewards");
 
         while let Err(_) = app_database
-            .finish_chromium_reprocessing(current_reprocessing.id, full_reprocessed_amount)
+            .finish_extra_resources_generation(
+                current_reprocessing.id,
+                0,
+                0,
+                0,
+                full_reprocessed_amount,
+                0,
+                0,
+                ExtraResourcesGenerationType::ChromiumReprocess,
+            )
             .await
         {
             tracing::error!(target: "server_log", "CHROMIUM: Failed to finish chromium reprocessing to db. Retrying...");

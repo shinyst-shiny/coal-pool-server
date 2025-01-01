@@ -9,6 +9,7 @@ use std::{
 
 use base64::{prelude::BASE64_STANDARD, Engine};
 use coal_api::{consts::BUS_COUNT, event::MineEvent, state::Proof};
+use coal_guilds_api::state::config_pda;
 use rand::Rng;
 use solana_client::{
     nonblocking::rpc_client::RpcClient,
@@ -34,7 +35,7 @@ use tracing::info;
 use crate::coal_utils::{
     amount_u64_to_string, calculate_multiplier, calculate_tool_multiplier, deserialize_config,
     deserialize_guild, deserialize_guild_config, deserialize_guild_member, deserialize_tool,
-    get_config_pubkey, get_tool_pubkey, Resource, ToolType,
+    get_coal_balance, get_config_pubkey, get_tool_pubkey, Resource, ToolType,
 };
 use crate::ore_utils::{
     get_ore_auth_ix, get_ore_balance, get_ore_mine_ix,
@@ -49,7 +50,7 @@ use crate::{
         get_reset_ix as get_reset_ix_coal, MineEventWithBoosts, COAL_TOKEN_DECIMALS,
     },
     Config, EpochHashes, InsertChallenge, InsertEarning, InsertTxn, MessageInternalAllClients,
-    MessageInternalMineSuccess, SubmissionWindow, UpdateReward, WalletExtension,
+    MessageInternalMineSuccess, PoolGuildMember, SubmissionWindow, UpdateReward, WalletExtension,
 };
 
 pub async fn pool_submission_system(
@@ -69,6 +70,62 @@ pub async fn pool_submission_system(
     app_client_nonce_ranges: Arc<RwLock<HashMap<Pubkey, Vec<Range<u64>>>>>,
     app_last_challenge: Arc<Mutex<[u8; 32]>>,
 ) {
+    let coal_guild_accounts = rpc_client
+        .get_program_accounts(&coal_guilds_api::id())
+        .await
+        .unwrap();
+
+    let mut guilds = Vec::new();
+    let mut guild_members = Vec::new();
+    let mut solo_stakers = Vec::new();
+    let mut pool_guild_members = Vec::new();
+
+    for (pubkey, account) in coal_guild_accounts {
+        if account.data[0].eq(&(coal_guilds_api::state::GuildsAccount::Guild as u8)) {
+            let guild = deserialize_guild(&account.data);
+            if guild.total_stake.gt(&0) {
+                guilds.push((pubkey, guild));
+            }
+        } else if account.data[0].eq(&(coal_guilds_api::state::GuildsAccount::Member as u8)) {
+            let member = deserialize_guild_member(&account.data);
+            if member.guild.eq(&solana_sdk::system_program::id()) && member.total_stake.gt(&0) {
+                solo_stakers.push((pubkey, member));
+            } else if member.total_stake.gt(&0) {
+                guild_members.push((pubkey, member));
+            }
+        }
+    }
+    println!("Guilds found: {}", guilds.len());
+
+    for (pubkey, guild) in guilds {
+        println!("{}: {}", pubkey.to_string(), guild.total_stake);
+
+        if (pubkey.to_string().eq(&config.guild_address.to_string())) {
+            let guild_members_in_guild: Vec<_> = guild_members
+                .iter()
+                .filter(|(_, member)| member.guild.eq(&pubkey))
+                .collect();
+
+            println!("  Members: {}", guild_members_in_guild.len());
+            for (_, member) in guild_members_in_guild {
+                let percentage_of_guild_stake = (member.total_stake as u128)
+                    .saturating_mul(1_000_000)
+                    .saturating_div(guild.total_stake as u128);
+                pool_guild_members.push(PoolGuildMember {
+                    stake_percentage: percentage_of_guild_stake,
+                    member: member.clone(),
+                });
+                println!(
+                    "    {}: {} ({}%)",
+                    member.authority.to_string(),
+                    member.total_stake,
+                    percentage_of_guild_stake
+                );
+            }
+            break;
+        }
+    }
+
     loop {
         let lock = app_proof.lock().await;
         let old_proof = lock.clone();
@@ -190,8 +247,67 @@ pub async fn pool_submission_system(
 
                         let tool_multiplier = calculate_tool_multiplier(&tool);
 
-                        // TODO add actual guild members
-                        let guild_members: Vec<coal_guilds_api::state::Member> = vec![];
+                        let coal_guild_accounts = rpc_client
+                            .get_program_accounts(&coal_guilds_api::id())
+                            .await
+                            .unwrap();
+
+                        let mut guilds = Vec::new();
+                        let mut guild_members = Vec::new();
+                        let mut solo_stakers = Vec::new();
+                        let mut pool_guild_members = Vec::new();
+
+                        for (pubkey, account) in coal_guild_accounts {
+                            if account.data[0]
+                                .eq(&(coal_guilds_api::state::GuildsAccount::Guild as u8))
+                            {
+                                let guild = deserialize_guild(&account.data);
+                                if guild.total_stake.gt(&0) {
+                                    guilds.push((pubkey, guild));
+                                }
+                            } else if account.data[0]
+                                .eq(&(coal_guilds_api::state::GuildsAccount::Member as u8))
+                            {
+                                let member = deserialize_guild_member(&account.data);
+                                if member.guild.eq(&solana_sdk::system_program::id())
+                                    && member.total_stake.gt(&0)
+                                {
+                                    solo_stakers.push((pubkey, member));
+                                } else if member.total_stake.gt(&0) {
+                                    guild_members.push((pubkey, member));
+                                }
+                            }
+                        }
+                        println!("Guilds found: {}", guilds.len());
+
+                        for (pubkey, guild) in guilds {
+                            println!("{}: {}", pubkey.to_string(), guild.total_stake);
+
+                            if (pubkey.to_string().eq(&config.guild_address.to_string())) {
+                                let guild_members_in_guild: Vec<_> = guild_members
+                                    .iter()
+                                    .filter(|(_, member)| member.guild.eq(&pubkey))
+                                    .collect();
+
+                                println!("  Members: {}", guild_members_in_guild.len());
+                                for (_, member) in guild_members_in_guild {
+                                    let percentage_of_guild_stake = (member.total_stake as u128)
+                                        .saturating_mul(1_000_000)
+                                        .saturating_div(guild.total_stake as u128);
+                                    pool_guild_members.push(PoolGuildMember {
+                                        stake_percentage: percentage_of_guild_stake,
+                                        member: member.clone(),
+                                    });
+                                    println!(
+                                        "    {}: {} ({}%)",
+                                        member.authority.to_string(),
+                                        member.total_stake,
+                                        percentage_of_guild_stake
+                                    );
+                                }
+                                break;
+                            }
+                        }
 
                         let mut loaded_config_coal = None;
                         info!(target: "server_log", "Getting latest config and busses data.");
@@ -343,7 +459,18 @@ pub async fn pool_submission_system(
                             ore_balance_before_tx = ore_balance
                         }
 
-                        info!(target: "server_log", "got balance {}, sending to rpc_client", ore_balance_before_tx);
+                        let mut coal_balance_before_tx = std::u64::MAX;
+
+                        if let Ok(coal_balance) = get_coal_balance(
+                            app_wallet.clone().miner_wallet.pubkey(),
+                            &rpc_client.clone(),
+                        )
+                        .await
+                        {
+                            coal_balance_before_tx = coal_balance
+                        }
+
+                        info!(target: "server_log", "got balance {} ORE {} COAL, sending to rpc_client", ore_balance_before_tx, coal_balance_before_tx);
 
                         if let Ok((hash, _slot)) = rpc_client
                             .get_latest_blockhash_with_commitment(rpc_client.commitment())
@@ -742,6 +869,7 @@ pub async fn pool_submission_system(
 
                                                         if let Ok(mine_event) = bytemuck::try_from_bytes::<MineEvent>(&bytes) {
                                                             let mut ore_balance_after_tx = 0;
+                                                            let mut coal_balance_after_tx = 0;
 
                                                             if let Ok(ore_balance) = get_ore_balance(
                                                                 app_wallet.clone().miner_wallet.pubkey(),
@@ -759,23 +887,63 @@ pub async fn pool_submission_system(
                                                                 ore_balance_before_tx = ore_balance_after_tx.clone();
                                                             }
 
+                                                            if let Ok(coal_balance) = get_coal_balance(
+                                                                app_wallet.clone().miner_wallet.pubkey(),
+                                                                &rpc_client.clone(),
+                                                            ).await {
+                                                                coal_balance_after_tx = coal_balance.clone();
+                                                                if(coal_balance_before_tx == std::u64::MAX) {
+                                                                    coal_balance_before_tx = coal_balance.clone();
+                                                                }
+                                                            } else {
+                                                                coal_balance_before_tx = 0;
+                                                            }
+
+                                                            if coal_balance_before_tx > coal_balance_after_tx {
+                                                                coal_balance_before_tx = coal_balance_after_tx.clone();
+                                                            }
+
                                                             info!(target: "server_log", "ORE balance before: {:?} ORE balance after: {:?}", ore_balance_before_tx, ore_balance_after_tx);
+
+                                                            let balance_coal = (coal_balance_after_tx) as f64
+                                                                / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
+
+                                                            let balance_ore = (ore_balance_after_tx) as f64
+                                                                / 10f64.powf(ORE_TOKEN_DECIMALS as f64);
+
+                                                            let stake_multiplier_coal = if let Some(config) = loaded_config_coal {
+                                                                if config.top_balance > 0 {
+                                                                    1.0 + (coal_balance_after_tx as f64 / config.top_balance as f64).min(1.0f64)
+                                                                } else {
+                                                                    1.0f64
+                                                                }
+                                                            } else {
+                                                                1.0f64
+                                                            };
+
 
                                                             info!(target: "server_log", "MineEvent: {:?}", mine_event);
                                                             info!(target: "submission_log", "MineEvent: {:?}", mine_event);
                                                             info!(target: "server_log", "For Challenge: {:?}", BASE64_STANDARD.encode(old_proof.challenge));
                                                             info!(target: "submission_log", "For Challenge: {:?}", BASE64_STANDARD.encode(old_proof.challenge));
-                                                            let full_rewards_coal = mine_event.reward;
+                                                            let mut full_multiplier_coal = stake_multiplier_coal * tool_multiplier * guild_multiplier;
+                                                            if(full_multiplier_coal < 1.0) {
+                                                                full_multiplier_coal = 1.0f64;
+                                                            }
+                                                            let full_rewards_coal = coal_balance_after_tx - coal_balance_before_tx;
                                                             let commissions_coal = full_rewards_coal.mul(5).saturating_div(100);
-                                                            let rewards_coal = full_rewards_coal - commissions_coal;
+                                                            let guild_stake_rewards_coal = ((((full_rewards_coal - commissions_coal) as f64 / full_multiplier_coal).mul(guild_multiplier) as u64).mul(5)).saturating_div(100);
+                                                            let rewards_coal = full_rewards_coal - commissions_coal - guild_stake_rewards_coal;
                                                             let full_rewards_ore = ore_balance_after_tx - ore_balance_before_tx;
                                                             let commissions_ore = full_rewards_ore.mul(5).saturating_div(100);
                                                             let rewards_ore = full_rewards_ore - commissions_ore;
                                                             info!(target: "server_log", "Miners Rewards COAL: {}", rewards_coal);
                                                             info!(target: "server_log", "Commission COAL: {}", commissions_coal);
+                                                            info!(target: "server_log", "Guild Staker Rewards COAL: {}", guild_stake_rewards_coal);
                                                             info!(target: "server_log", "Guild total stake: {}", guild_total_stake);
                                                             info!(target: "server_log", "Guild multiplier: {}", guild_multiplier);
-                                                            info!(target: "server_log", "Guild last stake at: {}", guild_last_stake_at);
+                                                            info!(target: "server_log", "Tool multiplier: {}", tool_multiplier);
+                                                            info!(target: "server_log", "Stake multiplier: {}", stake_multiplier_coal);
                                                             info!(target: "server_log", "Miners Rewards ORE: {}", rewards_ore);
                                                             info!(target: "server_log", "Commission ORE: {}", commissions_ore);
 
@@ -848,7 +1016,10 @@ pub async fn pool_submission_system(
                                                                 miner_id: app_config.commissions_miner_id,
                                                                 balance_coal: commissions_coal,
                                                                 balance_ore: commissions_ore,
-                                                                balance_chromium: 0
+                                                                balance_chromium: 0,
+                                                                balance_ingot: 0,
+                                                                balance_sol: 0,
+                                                                balance_wood: 0,
                                                             }];
 
                                                             tracing::info!(target: "server_log", "Updating commissions rewards...");
@@ -857,26 +1028,6 @@ pub async fn pool_submission_system(
                                                                 tokio::time::sleep(Duration::from_millis(500)).await;
                                                             }
                                                             tracing::info!(target: "server_log", "Updated commissions rewards");
-                                                            tokio::time::sleep(Duration::from_millis(200)).await;
-
-                                                            let latest_proof = { app_proof.lock().await.clone() };
-                                                            let balance_coal = (latest_proof.balance as f64)
-                                                                / 10f64.powf(COAL_TOKEN_DECIMALS as f64);
-
-                                                            let balance_ore = (ore_balance_after_tx) as f64
-                                                                / 10f64.powf(ORE_TOKEN_DECIMALS as f64);
-
-                                                            let multiplier = if let Some(config) = loaded_config_coal {
-                                                                if config.top_balance > 0 {
-                                                                    1.0 + (latest_proof.balance as f64 / config.top_balance as f64).min(1.0f64)
-                                                                } else {
-                                                                    1.0f64
-                                                                }
-                                                            } else {
-                                                                1.0f64
-                                                            };
-
-                                                            info!(target: "server_log", "tool_multiplier: {}", tool_multiplier);
 
                                                             info!(target: "server_log", "Sending internal mine success for challenge: {}", BASE64_STANDARD.encode(old_proof.challenge));
                                                             let _ = mine_success_sender.send(
@@ -894,11 +1045,13 @@ pub async fn pool_submission_system(
                                                                     total_hashpower,
                                                                     total_real_hashpower,
                                                                     coal_config: loaded_config_coal,
-                                                                    multiplier,
+                                                                    multiplier: stake_multiplier_coal,
                                                                     submissions,
                                                                     guild_total_stake,
                                                                     guild_multiplier,
                                                                     tool_multiplier,
+                                                                    guild_stake_rewards_coal,
+                                                                    guild_members: pool_guild_members
                                                                 },
                                                             );
                                                             tokio::time::sleep(Duration::from_millis(200)).await;

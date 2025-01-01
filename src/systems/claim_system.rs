@@ -13,6 +13,7 @@ use tokio::time::Instant;
 use tracing::{error, info};
 
 use crate::coal_utils::get_chromium_mint;
+use crate::models::UpdateReward;
 use crate::ore_utils::{get_ore_mint, ORE_TOKEN_DECIMALS};
 use crate::{
     app_database::AppDatabase,
@@ -320,12 +321,15 @@ pub async fn claim_system(
                                 .await
                                 .unwrap();
                             while let Err(_) = app_database
-                                .decrease_miner_reward(
-                                    miner.id,
-                                    amount_coal,
-                                    amount_ore,
-                                    amount_chromium,
-                                )
+                                .decrease_miner_reward(UpdateReward {
+                                    miner_id: miner.id,
+                                    balance_coal: amount_coal,
+                                    balance_ore: amount_ore,
+                                    balance_chromium: amount_chromium,
+                                    balance_ingot: 0,
+                                    balance_sol: 0,
+                                    balance_wood: 0,
+                                })
                                 .await
                             {
                                 error!(target: "server_log", "Failed to decrease miner rewards! Retrying...");
@@ -334,9 +338,12 @@ pub async fn claim_system(
                             while let Err(_) = app_database
                                 .update_pool_claimed(
                                     wallet.pubkey().to_string(),
+                                    0,
                                     amount_coal,
                                     amount_ore,
                                     amount_chromium,
+                                    0,
+                                    0,
                                 )
                                 .await
                             {
@@ -373,6 +380,9 @@ pub async fn claim_system(
                                 amount_coal,
                                 amount_ore,
                                 amount_chromium,
+                                amount_sol: 0,
+                                amount_wood: 0,
+                                amount_ingot: 0,
                             };
                             while let Err(_) = app_database.add_new_claim(iclaim).await {
                                 error!(target: "server_log", "Failed add new claim to db! Retrying...");

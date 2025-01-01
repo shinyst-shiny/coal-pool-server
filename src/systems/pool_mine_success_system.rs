@@ -1,4 +1,5 @@
 use axum::extract::ws::Message;
+use axum::http::{Response, StatusCode};
 use base64::{prelude::BASE64_STANDARD, Engine};
 use futures::SinkExt;
 use solana_sdk::signer::Signer;
@@ -9,9 +10,13 @@ use tokio::{
     sync::{mpsc::UnboundedReceiver, RwLock},
     time::Instant,
 };
-use tracing::info;
+use tracing::{error, info};
 
+use crate::app_database::AppDatabaseError;
 use crate::message::{CoalDetails, MinerDetails, OreBoost, OreDetails, RewardDetails};
+use crate::models::{
+    ExtraResourcesGeneration, ExtraResourcesGenerationType, InsertEarningExtraResources,
+};
 use crate::ore_utils::ORE_TOKEN_DECIMALS;
 use crate::{
     app_database::AppDatabase, coal_utils::COAL_TOKEN_DECIMALS,
@@ -48,8 +53,113 @@ pub async fn pool_mine_success_system(
 
                 let instant = Instant::now();
                 info!(target: "server_log", "{} - Processing submission results for challenge: {}.", id, c);
+                let guild_stake_rewards_coal = msg.guild_stake_rewards_coal;
                 let total_rewards_ore = msg.rewards_ore - msg.commissions_ore;
-                let total_rewards_coal = msg.rewards_coal - msg.commissions_coal;
+                let total_rewards_coal =
+                    msg.rewards_coal - msg.commissions_coal - msg.guild_stake_rewards_coal;
+
+                if msg.guild_members.len() > 0 {
+                    let mut miners_earnings: Vec<InsertEarningExtraResources> = Vec::new();
+                    let mut miners_rewards: Vec<UpdateReward> = Vec::new();
+
+                    while let Err(_) = app_database
+                        .add_extra_resources_generation(
+                            app_config.pool_id,
+                            ExtraResourcesGenerationType::CoalStakingRewards,
+                        )
+                        .await
+                    {
+                        tracing::error!(target: "server_log", "COAL STAKING REWARDS: Failed to add chromium reprocessing to db. Retrying...");
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+
+                    let mut current_reprocessing: ExtraResourcesGeneration;
+
+                    loop {
+                        match app_database
+                            .get_pending_extra_resources_generation(
+                                app_config.pool_id,
+                                ExtraResourcesGenerationType::ChromiumReprocess,
+                            )
+                            .await
+                        {
+                            Ok(resp) => {
+                                current_reprocessing = resp;
+                                break;
+                            }
+                            Err(_) => {
+                                tracing::error!(target: "server_log", "COAL STAKING REWARDS: Failed to get current reprocessing. Retrying...");
+                                tokio::time::sleep(Duration::from_millis(200)).await;
+                            }
+                        }
+                    }
+
+                    for (guild_member) in msg.guild_members.iter() {
+                        let db_miner = app_database
+                            .get_miner_by_pubkey_str(guild_member.member.authority.to_string())
+                            .await;
+
+                        match db_miner {
+                            Ok(_) => {}
+                            Err(AppDatabaseError::FailedToGetConnectionFromPool) => {
+                                error!(target: "server_log", "COAL STAKING REWARDS: Failed to get database pool connection");
+                            }
+                            Err(_) => {
+                                info!(target: "server_log", "COAL STAKING REWARDS: No miner account exists. Signing up new user.");
+                                let _ = app_database
+                                    .signup_user_transaction(
+                                        guild_member.member.authority.to_string(),
+                                        app_wallet.miner_wallet.pubkey().to_string(),
+                                    )
+                                    .await;
+                            }
+                        }
+
+                        let member_revenue_coal = guild_member
+                            .stake_percentage
+                            .saturating_mul(guild_stake_rewards_coal as u128)
+                            .saturating_div(1_000_000)
+                            as u64;
+
+                        let db_miner = app_database
+                            .get_miner_by_pubkey_str(guild_member.member.authority.to_string())
+                            .await;
+
+                        match db_miner {
+                            Ok(miner) => {
+                                miners_earnings.push(InsertEarningExtraResources {
+                                    miner_id: miner.id,
+                                    pool_id: app_config.pool_id,
+                                    extra_resources_generation_id: current_reprocessing.id,
+                                    amount_chromium: 0,
+                                    amount_sol: 0,
+                                    amount_coal: member_revenue_coal,
+                                    amount_ingot: 0,
+                                    amount_ore: 0,
+                                    amount_wood: 0,
+                                    generation_type:
+                                        ExtraResourcesGenerationType::CoalStakingRewards as i32,
+                                });
+                                miners_rewards.push(UpdateReward {
+                                    miner_id: miner.id,
+                                    balance_chromium: 0,
+                                    balance_coal: member_revenue_coal,
+                                    balance_ore: 0,
+                                    balance_ingot: 0,
+                                    balance_wood: 0,
+                                    balance_sol: 0,
+                                });
+                            }
+                            Err(AppDatabaseError::FailedToGetConnectionFromPool) => {
+                                error!(target: "server_log", "Failed to get database pool connection");
+                            }
+                            Err(_) => {
+                                info!(target: "server_log", "No miner account still exists. Will retry later.");
+                            }
+                        }
+                    }
+                }
+
                 for (miner_pubkey, msg_submission) in msg.submissions.iter() {
                     let miner_rewards = app_database
                         .get_miner_rewards(miner_pubkey.to_string())
@@ -96,6 +206,9 @@ pub async fn pool_mine_success_system(
                         balance_coal: earned_rewards_coal,
                         balance_ore: earned_rewards_ore,
                         balance_chromium: 0,
+                        balance_ingot: 0,
+                        balance_wood: 0,
+                        balance_sol: 0,
                     };
 
                     i_earnings.push(new_earning);
@@ -287,8 +400,11 @@ pub async fn pool_mine_success_system(
                 while let Err(_) = app_database
                     .update_pool_rewards(
                         app_wallet.miner_wallet.pubkey().to_string(),
+                        0,
                         msg.rewards_coal,
                         msg.rewards_ore,
+                        0,
+                        0,
                         0,
                     )
                     .await

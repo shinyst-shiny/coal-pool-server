@@ -20,9 +20,12 @@ diesel::table! {
         miner_id -> Integer,
         pool_id -> Integer,
         txn_id -> Integer,
+        amount_sol -> Unsigned<Bigint>,
         amount_coal -> Unsigned<Bigint>,
         amount_ore -> Unsigned<Bigint>,
         amount_chromium -> Unsigned<Bigint>,
+        amount_wood -> Unsigned<Bigint>,
+        amount_ingot -> Unsigned<Bigint>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }
@@ -48,9 +51,15 @@ diesel::table! {
         miner_id -> Integer,
         pool_id -> Integer,
         extra_resources_generation_id -> Integer,
+        amount_sol -> Unsigned<Bigint>,
+        amount_coal -> Unsigned<Bigint>,
+        amount_ore -> Unsigned<Bigint>,
         amount_chromium -> Unsigned<Bigint>,
+        amount_wood -> Unsigned<Bigint>,
+        amount_ingot -> Unsigned<Bigint>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
+        generation_type -> Integer,
     }
 }
 
@@ -58,10 +67,16 @@ diesel::table! {
     extra_resources_generation (id) {
         id -> Integer,
         pool_id -> Integer,
-        amount_chromium -> Nullable<Unsigned<Bigint>>,
+        amount_sol -> Unsigned<Bigint>,
+        amount_coal -> Unsigned<Bigint>,
+        amount_ore -> Unsigned<Bigint>,
+        amount_chromium -> Unsigned<Bigint>,
+        amount_wood -> Unsigned<Bigint>,
+        amount_ingot -> Unsigned<Bigint>,
         created_at -> Timestamp,
         finished_at -> Nullable<Timestamp>,
         updated_at -> Timestamp,
+        generation_type -> Integer,
     }
 }
 
@@ -83,12 +98,18 @@ diesel::table! {
         proof_pubkey -> Varchar,
         #[max_length = 44]
         authority_pubkey -> Varchar,
+        total_rewards_sol -> Unsigned<Bigint>,
         total_rewards_coal -> Unsigned<Bigint>,
         total_rewards_ore -> Unsigned<Bigint>,
         total_rewards_chromium -> Unsigned<Bigint>,
+        total_rewards_wood -> Unsigned<Bigint>,
+        total_rewards_ingot -> Unsigned<Bigint>,
+        claimed_rewards_sol -> Unsigned<Bigint>,
         claimed_rewards_coal -> Unsigned<Bigint>,
         claimed_rewards_ore -> Unsigned<Bigint>,
         claimed_rewards_chromium -> Unsigned<Bigint>,
+        claimed_rewards_wood -> Unsigned<Bigint>,
+        claimed_rewards_ingot -> Unsigned<Bigint>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }
@@ -99,9 +120,12 @@ diesel::table! {
         id -> Integer,
         miner_id -> Integer,
         pool_id -> Integer,
+        balance_sol -> Unsigned<Bigint>,
         balance_coal -> Unsigned<Bigint>,
         balance_ore -> Unsigned<Bigint>,
         balance_chromium -> Unsigned<Bigint>,
+        balance_wood -> Unsigned<Bigint>,
+        balance_ingot -> Unsigned<Bigint>,
         created_at -> Timestamp,
         updated_at -> Timestamp,
     }

@@ -1,7 +1,40 @@
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use diesel::sql_types::{BigInt, Integer, Nullable, Text, Timestamp, TinyInt, Unsigned};
+use diesel::*;
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+pub enum ExtraResourcesGenerationType {
+    None = 0,
+    ChromiumReprocess = 1,
+    CoalStakingRewards = 2,
+    OreStakingRewards = 3,
+    ActivityReprocess = 4,
+}
+
+impl From<usize> for ExtraResourcesGenerationType {
+    fn from(value: usize) -> Self {
+        match value {
+            _ if value == ExtraResourcesGenerationType::None as usize => {
+                ExtraResourcesGenerationType::None
+            }
+            _ if value == ExtraResourcesGenerationType::ChromiumReprocess as usize => {
+                ExtraResourcesGenerationType::ChromiumReprocess
+            }
+            _ if value == ExtraResourcesGenerationType::CoalStakingRewards as usize => {
+                ExtraResourcesGenerationType::CoalStakingRewards
+            }
+            _ if value == ExtraResourcesGenerationType::OreStakingRewards as usize => {
+                ExtraResourcesGenerationType::OreStakingRewards
+            }
+            _ if value == ExtraResourcesGenerationType::ActivityReprocess as usize => {
+                ExtraResourcesGenerationType::ActivityReprocess
+            }
+            _ => ExtraResourcesGenerationType::None,
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]
 #[diesel(table_name = crate::schema::extra_resources_generation)]
@@ -9,12 +42,26 @@ use serde::{Deserialize, Serialize};
 pub struct ExtraResourcesGeneration {
     pub id: i32,
     pub pool_id: i32,
-    #[diesel(sql_type = Nullable<Unsigned<BigInt>>)]
-    pub amount_chromium: Option<u64>,
+    #[diesel(sql_type = Unsigned<BigInt>)]
+    pub amount_sol: u64,
+    #[diesel(sql_type = Unsigned<BigInt>)]
+    pub amount_coal: u64,
+    #[diesel(sql_type = Unsigned<BigInt>)]
+    pub amount_ore: u64,
+    #[diesel(sql_type = Unsigned<BigInt>)]
+    pub amount_chromium: u64,
+    #[diesel(sql_type = Unsigned<BigInt>)]
+    pub amount_wood: u64,
+    #[diesel(sql_type = Unsigned<BigInt>)]
+    pub amount_ingot: u64,
+    #[diesel(sql_type = Timestamp)]
+    pub created_at: NaiveDateTime,
     #[diesel(sql_type = Nullable<Timestamp>)]
     pub finished_at: Option<NaiveDateTime>,
     #[diesel(sql_type = Timestamp)]
-    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+    #[diesel(sql_type = Integer)]
+    pub generation_type: i32,
 }
 
 #[derive(Debug, Copy, Clone, Deserialize, Insertable)]
@@ -24,7 +71,13 @@ pub struct InsertEarningExtraResources {
     pub miner_id: i32,
     pub pool_id: i32,
     pub extra_resources_generation_id: i32,
+    pub amount_sol: u64,
+    pub amount_coal: u64,
+    pub amount_ore: u64,
     pub amount_chromium: u64,
+    pub amount_wood: u64,
+    pub amount_ingot: u64,
+    pub generation_type: i32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]
@@ -78,9 +131,12 @@ pub struct Claim {
     pub miner_id: i32,
     pub pool_id: i32,
     pub txn_id: i32,
+    pub amount_sol: u64,
     pub amount_coal: u64,
     pub amount_ore: u64,
     pub amount_chromium: u64,
+    pub amount_wood: u64,
+    pub amount_ingot: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]
@@ -97,9 +153,12 @@ pub struct InsertClaim {
     pub miner_id: i32,
     pub pool_id: i32,
     pub txn_id: i32,
+    pub amount_sol: u64,
     pub amount_coal: u64,
     pub amount_ore: u64,
     pub amount_chromium: u64,
+    pub amount_wood: u64,
+    pub amount_ingot: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]
@@ -118,12 +177,18 @@ pub struct Pool {
     pub id: i32,
     pub proof_pubkey: String,
     pub authority_pubkey: String,
+    pub total_rewards_sol: u64,
     pub total_rewards_coal: u64,
     pub total_rewards_ore: u64,
     pub total_rewards_chromium: u64,
+    pub total_rewards_wood: u64,
+    pub total_rewards_ingot: u64,
+    pub claimed_rewards_sol: u64,
     pub claimed_rewards_coal: u64,
     pub claimed_rewards_ore: u64,
     pub claimed_rewards_chromium: u64,
+    pub claimed_rewards_wood: u64,
+    pub claimed_rewards_ingot: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]
@@ -215,19 +280,25 @@ pub struct InsertReward {
 #[diesel(check_for_backend(diesel::mysql::Mysql))]
 pub struct UpdateReward {
     pub miner_id: i32,
+    pub balance_sol: u64,
     pub balance_coal: u64,
     pub balance_ore: u64,
     pub balance_chromium: u64,
+    pub balance_wood: u64,
+    pub balance_ingot: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]
 #[diesel(table_name = crate::schema::rewards)]
 #[diesel(check_for_backend(diesel::mysql::Mysql))]
 pub struct Reward {
+    pub miner_id: i32,
+    pub balance_sol: u64,
     pub balance_coal: u64,
     pub balance_ore: u64,
     pub balance_chromium: u64,
-    pub miner_id: i32,
+    pub balance_wood: u64,
+    pub balance_ingot: u64,
 }
 
 #[derive(Debug, Copy, Clone, Deserialize, Insertable)]

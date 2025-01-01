@@ -36,6 +36,14 @@ pub struct MineEventWithBoosts {
 
 // event!(MineEventWithBoosts);
 
+pub async fn get_coal_balance(address: Pubkey, client: &RpcClient) -> Result<u64, ()> {
+    if let Ok(proof) = get_original_proof(client, address).await {
+        Ok(proof.balance)
+    } else {
+        Err(())
+    }
+}
+
 fn get_reprocessor_address(signer: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[REPROCESSOR, signer.as_ref()], &coal_api::id()).0
 }
@@ -77,6 +85,7 @@ pub fn get_mine_ix(
     guild_member: Option<Pubkey>,
     guild: Option<Pubkey>,
 ) -> Instruction {
+    // info!(target: "server_log", "get_mine_ix coal: {:?} - {:?} - {:?} - {:?} - {:?} - {:?}",signer, solution, bus, tool, guild_member, guild);
     // coal_instruction::mine_coal(signer, signer, COAL_BUS_ADDRESSES[bus], Option::None, Option::None, Option::None, solution)
     coal_instruction::mine_coal(
         signer,

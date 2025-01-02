@@ -223,19 +223,6 @@ pub async fn chromium_reprocessing_system(
             }
         };
 
-        if let Ok(tips) = serde_json::from_str::<Vec<Tip>>(&response.await.unwrap()) {
-            for item in tips {
-                tip = (item.landed_tips_50th_percentile * (10_f64).powf(9.0)) as u64;
-            }
-        } else {
-            tracing::error!(target: "server_log", "CHROMIUM: Exiting Chromium reprocessing system: Failed to deserialize tip floor");
-        }
-
-        if tip == 0 {
-            tracing::error!(target: "server_log", "CHROMIUM: Exiting Chromium reprocessing system: Got 0 tips");
-            continue;
-        }
-
         loop {
             match rpc_client.get_slot().await {
                 Ok(current_slot) => {
@@ -249,8 +236,8 @@ pub async fn chromium_reprocessing_system(
                             &jito_client.clone(),
                             &signer.clone(),
                             &fee_payer.clone(),
-                            Some(10_000),
-                            Some(tip),
+                            Some(200_000),
+                            None,
                         )
                         .await
                         .ok();

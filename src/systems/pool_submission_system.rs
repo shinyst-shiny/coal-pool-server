@@ -75,7 +75,7 @@ pub async fn pool_submission_system(
         let old_proof = lock.clone();
         drop(lock);
 
-        let cutoff = get_cutoff(old_proof, 2);
+        let cutoff = get_cutoff(old_proof, 1);
         if cutoff <= 0 {
             // process solutions
             let reader = app_epoch_hashes.read().await;

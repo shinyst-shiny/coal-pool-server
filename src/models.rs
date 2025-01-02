@@ -83,6 +83,35 @@ pub struct InsertEarningExtraResources {
 }
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]
+#[diesel(table_name = crate::schema::earnings_extra_resources)]
+#[diesel(check_for_backend(diesel::mysql::Mysql))]
+pub struct EarningExtraResources {
+    pub id: i32,
+    pub miner_id: i32,
+    pub pool_id: i32,
+    #[diesel(sql_type = Integer)]
+    pub extra_resources_generation_id: i32,
+    #[diesel(sql_type = Unsigned<BigInt>)]
+    pub amount_sol: u64,
+    #[diesel(sql_type = Unsigned<BigInt>)]
+    pub amount_coal: u64,
+    #[diesel(sql_type = Unsigned<BigInt>)]
+    pub amount_ore: u64,
+    #[diesel(sql_type = Unsigned<BigInt>)]
+    pub amount_chromium: u64,
+    #[diesel(sql_type = Unsigned<BigInt>)]
+    pub amount_wood: u64,
+    #[diesel(sql_type = Unsigned<BigInt>)]
+    pub amount_ingot: u64,
+    #[diesel(sql_type = Timestamp)]
+    pub created_at: NaiveDateTime,
+    #[diesel(sql_type = Timestamp)]
+    pub updated_at: NaiveDateTime,
+    #[diesel(sql_type = Integer)]
+    pub generation_type: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]
 #[diesel(table_name = crate::schema::challenges)]
 #[diesel(check_for_backend(diesel::mysql::Mysql))]
 pub struct Challenge {

@@ -282,4 +282,74 @@ impl AppRRDatabase {
             return Err(AppDatabaseError::FailedToGetConnectionFromPool);
         };
     }
+
+    pub async fn get_extra_resources_rewards_by_pubkey(
+        &self,
+        pubkey: String,
+        generation_type: ExtraResourcesGenerationType,
+    ) -> Result<Vec<models::EarningExtraResources>, AppDatabaseError> {
+        if let Ok(db_conn) = self.connection_pool.get().await {
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    diesel::sql_query("SELECT * FROM earnings_extra_resources eer JOIN miners m ON eer.miner_id = m.id WHERE m.pubkey = ? AND eer.generation_type = ? ORDER BY eer.created_at DESC")
+                        .bind::<Text, _>(pubkey)
+                        .bind::<Integer, _>(generation_type as i32)
+                        .get_results::<models::EarningExtraResources>(conn)
+                })
+                .await;
+
+            match res {
+                Ok(interaction) => match interaction {
+                    Ok(query) => {
+                        return Ok(query);
+                    }
+                    Err(e) => {
+                        error!(target: "server_log", "{:?}", e);
+                        return Err(AppDatabaseError::QueryFailed);
+                    }
+                },
+                Err(e) => {
+                    error!(target: "server_log", "{:?}", e);
+                    return Err(AppDatabaseError::InteractionFailed);
+                }
+            }
+        } else {
+            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
+        };
+    }
+
+    pub async fn get_extra_resources_rewards_24h_by_pubkey(
+        &self,
+        pubkey: String,
+        generation_type: ExtraResourcesGenerationType,
+    ) -> Result<Vec<models::EarningExtraResources>, AppDatabaseError> {
+        if let Ok(db_conn) = self.connection_pool.get().await {
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    diesel::sql_query("SELECT * FROM earnings_extra_resources eer JOIN miners m ON eer.miner_id = m.id WHERE m.pubkey = ? AND eer.generation_type = ? AND eer.created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR) ORDER BY eer.created_at DESC")
+                        .bind::<Text, _>(pubkey)
+                        .bind::<Integer, _>(generation_type as i32)
+                        .get_results::<models::EarningExtraResources>(conn)
+                })
+                .await;
+
+            match res {
+                Ok(interaction) => match interaction {
+                    Ok(query) => {
+                        return Ok(query);
+                    }
+                    Err(e) => {
+                        error!(target: "server_log", "{:?}", e);
+                        return Err(AppDatabaseError::QueryFailed);
+                    }
+                },
+                Err(e) => {
+                    error!(target: "server_log", "{:?}", e);
+                    return Err(AppDatabaseError::InteractionFailed);
+                }
+            }
+        } else {
+            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
+        };
+    }
 }

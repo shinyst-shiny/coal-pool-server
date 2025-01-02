@@ -25,10 +25,10 @@ use steel::AccountDeserialize;
 
 use self::models::*;
 use crate::coal_utils::{
-    calculate_multiplier, calculate_tool_multiplier, deserialize_guild, deserialize_guild_config,
-    deserialize_guild_member, deserialize_tool, get_chromium_mint, get_config_pubkey,
-    get_proof_and_config_with_busses as get_proof_and_config_with_busses_coal, get_tool_pubkey,
-    proof_pubkey, Resource, ToolType,
+    amount_u64_to_string, calculate_multiplier, calculate_tool_multiplier, deserialize_guild,
+    deserialize_guild_config, deserialize_guild_member, deserialize_tool, get_chromium_mint,
+    get_config_pubkey, get_proof_and_config_with_busses as get_proof_and_config_with_busses_coal,
+    get_tool_pubkey, proof_pubkey, Resource, ToolType,
 };
 use crate::ore_utils::{
     get_ore_mint, get_proof_and_config_with_busses as get_proof_and_config_with_busses_ore,
@@ -915,6 +915,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route(
             "/guild/unstake-instruction",
             get(get_guild_unstake_instruction),
+        )
+        .route(
+            "/guild/lp-staking-rewards",
+            get(get_guild_lp_staking_rewards),
+        )
+        .route(
+            "/guild/lp-staking-rewards-24h",
+            get(get_guild_lp_staking_rewards_24h),
         )
         .route("/coal/stake", post(post_coal_stake))
         .with_state(app_shared_state)
@@ -2630,6 +2638,94 @@ pub async fn get_guild_check_member(
                         .body("Invalid public key".to_string())
                         .unwrap();
                 }
+            }
+        }
+    } else {
+        return Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .header("Content-Type", "text/text")
+            .body("Invalid public key".to_string())
+            .unwrap();
+    }
+}
+
+pub async fn get_guild_lp_staking_rewards(
+    query_params: Query<PubkeyParam>,
+    Extension(app_rr_database): Extension<Arc<AppRRDatabase>>,
+) -> impl IntoResponse {
+    if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
+        let db_rewards = app_rr_database
+            .get_extra_resources_rewards_by_pubkey(
+                user_pubkey.to_string(),
+                ExtraResourcesGenerationType::CoalStakingRewards,
+            )
+            .await;
+
+        match db_rewards {
+            Ok(rewards) => {
+                // sum all the COAL rewards from the array
+                let total_coal_rewards =
+                    rewards.iter().map(|reward| reward.amount_coal).sum::<u64>();
+
+                // convert the total COAL rewards to UI amount
+                let ui_amount = amount_u64_to_string(total_coal_rewards);
+
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .body(ui_amount)
+                    .unwrap()
+            }
+            Err(e) => {
+                error!(target: "server_log", "Error fetching extra resources rewards: {:?}", e);
+                Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .header("Content-Type", "text/text")
+                    .body("Error fetching extra resources rewards".to_string())
+                    .unwrap()
+            }
+        }
+    } else {
+        return Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .header("Content-Type", "text/text")
+            .body("Invalid public key".to_string())
+            .unwrap();
+    }
+}
+
+pub async fn get_guild_lp_staking_rewards_24h(
+    query_params: Query<PubkeyParam>,
+    Extension(app_rr_database): Extension<Arc<AppRRDatabase>>,
+) -> impl IntoResponse {
+    if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
+        let db_rewards = app_rr_database
+            .get_extra_resources_rewards_24h_by_pubkey(
+                user_pubkey.to_string(),
+                ExtraResourcesGenerationType::CoalStakingRewards,
+            )
+            .await;
+
+        match db_rewards {
+            Ok(rewards) => {
+                // sum all the COAL rewards from the array
+                let total_coal_rewards =
+                    rewards.iter().map(|reward| reward.amount_coal).sum::<u64>();
+
+                // convert the total COAL rewards to UI amount
+                let ui_amount = amount_u64_to_string(total_coal_rewards);
+
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .body(ui_amount)
+                    .unwrap()
+            }
+            Err(e) => {
+                error!(target: "server_log", "Error fetching extra resources rewards: {:?}", e);
+                Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .header("Content-Type", "text/text")
+                    .body("Error fetching extra resources rewards".to_string())
+                    .unwrap()
             }
         }
     } else {

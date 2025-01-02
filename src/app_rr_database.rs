@@ -3,6 +3,7 @@ use diesel::sql_types::Integer;
 use diesel::{sql_types::Text, MysqlConnection, RunQueryDsl};
 use tracing::error;
 
+use crate::models::ExtraResourcesGenerationType;
 use crate::{
     app_database::AppDatabaseError, models, ChallengeWithDifficulty, Submission,
     SubmissionWithPubkey, Txn,
@@ -245,17 +246,19 @@ impl AppRRDatabase {
         };
     }
 
-    pub async fn get_last_chromium_reprocessing(
+    pub async fn get_last_reprocessing(
         &self,
         pool_id: i32,
+        generation_type: ExtraResourcesGenerationType,
     ) -> Result<models::ExtraResourcesGeneration, AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn
                 .interact(move |conn: &mut MysqlConnection| {
                     diesel::sql_query(
-                        "SELECT * FROM extra_resources_generation WHERE finished_at is not null AND pool_id = ? ORDER BY created_at DESC",
+                        "SELECT * FROM extra_resources_generation WHERE finished_at is not null AND pool_id = ? AND generation_type = ? ORDER BY created_at DESC",
                     )
                         .bind::<Integer, _>(pool_id)
+                        .bind::<Integer, _>(generation_type as i32)
                         .get_result::<models::ExtraResourcesGeneration>(conn)
                 })
                 .await;

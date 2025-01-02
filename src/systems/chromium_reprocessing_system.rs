@@ -36,7 +36,10 @@ pub async fn chromium_reprocessing_system(
     loop {
         let mut last_reprocess: Option<ExtraResourcesGeneration> = None;
         match app_rr_database
-            .get_last_chromium_reprocessing(config.pool_id)
+            .get_last_reprocessing(
+                config.pool_id,
+                ExtraResourcesGenerationType::ChromiumReprocess,
+            )
             .await
         {
             Ok(db_last_reprocess) => {
@@ -335,7 +338,10 @@ pub async fn chromium_reprocessing_system(
         let reprocessed_amount = full_reprocessed_amount - commissions_chromium;
 
         let last_reprocess_time = match app_rr_database
-            .get_last_chromium_reprocessing(config.pool_id)
+            .get_last_reprocessing(
+                config.pool_id,
+                ExtraResourcesGenerationType::ChromiumReprocess,
+            )
             .await
         {
             Ok(db_last_reprocess) => db_last_reprocess.created_at,

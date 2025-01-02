@@ -11,6 +11,7 @@ use steel::AccountDeserialize;
 use tracing::error;
 
 use crate::coal_utils::Resource;
+use crate::models::ExtraResourcesGenerationType;
 use crate::ore_utils::get_proof_with_authority;
 use crate::{
     app_rr_database,
@@ -105,7 +106,10 @@ pub async fn get_chromium_reprocess_info(
 ) -> impl IntoResponse {
     if app_config.stats_enabled {
         let res = app_rr_database
-            .get_last_chromium_reprocessing(app_config.pool_id)
+            .get_last_reprocessing(
+                app_config.pool_id,
+                ExtraResourcesGenerationType::ChromiumReprocess,
+            )
             .await;
 
         match res {

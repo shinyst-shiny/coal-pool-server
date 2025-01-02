@@ -70,62 +70,6 @@ pub async fn pool_submission_system(
     app_client_nonce_ranges: Arc<RwLock<HashMap<Pubkey, Vec<Range<u64>>>>>,
     app_last_challenge: Arc<Mutex<[u8; 32]>>,
 ) {
-    let coal_guild_accounts = rpc_client
-        .get_program_accounts(&coal_guilds_api::id())
-        .await
-        .unwrap();
-
-    let mut guilds = Vec::new();
-    let mut guild_members = Vec::new();
-    let mut solo_stakers = Vec::new();
-    let mut pool_guild_members = Vec::new();
-
-    for (pubkey, account) in coal_guild_accounts {
-        if account.data[0].eq(&(coal_guilds_api::state::GuildsAccount::Guild as u8)) {
-            let guild = deserialize_guild(&account.data);
-            if guild.total_stake.gt(&0) {
-                guilds.push((pubkey, guild));
-            }
-        } else if account.data[0].eq(&(coal_guilds_api::state::GuildsAccount::Member as u8)) {
-            let member = deserialize_guild_member(&account.data);
-            if member.guild.eq(&solana_sdk::system_program::id()) && member.total_stake.gt(&0) {
-                solo_stakers.push((pubkey, member));
-            } else if member.total_stake.gt(&0) {
-                guild_members.push((pubkey, member));
-            }
-        }
-    }
-    println!("Guilds found: {}", guilds.len());
-
-    for (pubkey, guild) in guilds {
-        println!("{}: {}", pubkey.to_string(), guild.total_stake);
-
-        if (pubkey.to_string().eq(&config.guild_address.to_string())) {
-            let guild_members_in_guild: Vec<_> = guild_members
-                .iter()
-                .filter(|(_, member)| member.guild.eq(&pubkey))
-                .collect();
-
-            println!("  Members: {}", guild_members_in_guild.len());
-            for (_, member) in guild_members_in_guild {
-                let percentage_of_guild_stake = (member.total_stake as u128)
-                    .saturating_mul(1_000_000)
-                    .saturating_div(guild.total_stake as u128);
-                pool_guild_members.push(PoolGuildMember {
-                    stake_percentage: percentage_of_guild_stake,
-                    member: member.clone(),
-                });
-                println!(
-                    "    {}: {} ({}%)",
-                    member.authority.to_string(),
-                    member.total_stake,
-                    percentage_of_guild_stake
-                );
-            }
-            break;
-        }
-    }
-
     loop {
         let lock = app_proof.lock().await;
         let old_proof = lock.clone();
@@ -185,10 +129,16 @@ pub async fn pool_submission_system(
                             guild_config_address,
                             guild_member_address,
                         ];
-                        let accounts_multipliers = rpc_client
+                        let accounts_multipliers = match rpc_client
                             .get_multiple_accounts(&accounts_multipliers)
                             .await
-                            .unwrap();
+                        {
+                            Ok(accounts) => accounts,
+                            Err(e) => {
+                                tracing::error!(target: "server_log", "Failed to get program accounts: {:?}", e);
+                                Vec::new() // Return an empty vector in case of error
+                            }
+                        };
 
                         let mut tool: Option<ToolType> = None;
                         let mut member: Option<coal_guilds_api::state::Member> = None;
@@ -247,10 +197,16 @@ pub async fn pool_submission_system(
 
                         let tool_multiplier = calculate_tool_multiplier(&tool);
 
-                        let coal_guild_accounts = rpc_client
+                        let coal_guild_accounts = match rpc_client
                             .get_program_accounts(&coal_guilds_api::id())
                             .await
-                            .unwrap();
+                        {
+                            Ok(accounts) => accounts,
+                            Err(e) => {
+                                tracing::error!(target: "server_log", "Failed to get program accounts: {:?}", e);
+                                Vec::new() // Return an empty vector in case of error
+                            }
+                        };
 
                         let mut guilds = Vec::new();
                         let mut guild_members = Vec::new();

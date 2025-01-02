@@ -66,10 +66,11 @@ pub async fn pool_mine_success_system(
                         .add_extra_resources_generation(
                             app_config.pool_id,
                             ExtraResourcesGenerationType::CoalStakingRewards,
+                            Some(msg.challenge_id),
                         )
                         .await
                     {
-                        tracing::error!(target: "server_log", "COAL STAKING REWARDS: Failed to add chromium reprocessing to db. Retrying...");
+                        tracing::error!(target: "server_log", "COAL STAKING REWARDS: Failed to add reprocessing to db. Retrying...");
                         tokio::time::sleep(Duration::from_secs(1)).await;
                     }
 
@@ -79,7 +80,7 @@ pub async fn pool_mine_success_system(
                         match app_database
                             .get_pending_extra_resources_generation(
                                 app_config.pool_id,
-                                ExtraResourcesGenerationType::ChromiumReprocess,
+                                ExtraResourcesGenerationType::CoalStakingRewards,
                             )
                             .await
                         {
@@ -121,9 +122,13 @@ pub async fn pool_mine_success_system(
                             .saturating_div(1_000_000)
                             as u64;
 
+                        info!(target: "server_log", "COAL STAKING REWARDS: Total revenue for {}: {} - out of {}", guild_member.member.authority, member_revenue_coal, guild_stake_rewards_coal);
+
                         let db_miner = app_database
                             .get_miner_by_pubkey_str(guild_member.member.authority.to_string())
                             .await;
+
+                        info!(target: "server_log", "COAL STAKING REWARDS: db_miner {:?}",db_miner);
 
                         match db_miner {
                             Ok(miner) => {
@@ -157,6 +162,51 @@ pub async fn pool_mine_success_system(
                                 info!(target: "server_log", "No miner account still exists. Will retry later.");
                             }
                         }
+                    }
+
+                    let batch_size = 200;
+                    if miners_earnings.len() > 0 {
+                        for batch in miners_earnings.chunks(batch_size) {
+                            while let Err(_) = app_database
+                                .add_new_earnings_extra_resources_batch(batch.to_vec())
+                                .await
+                            {
+                                tracing::error!(target: "server_log", "CHROMIUM: Failed to add new earnings batch to db. Retrying...");
+                                tokio::time::sleep(Duration::from_millis(500)).await;
+                            }
+                            tokio::time::sleep(Duration::from_millis(200)).await;
+                        }
+                        info!(target: "server_log", "CHROMIUM: Successfully added earnings batch");
+                    }
+
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+
+                    if miners_rewards.len() > 0 {
+                        for batch in miners_rewards.chunks(batch_size) {
+                            while let Err(_) = app_database.update_rewards(batch.to_vec()).await {
+                                tracing::error!(target: "server_log", "CHROMIUM: Failed to add new rewards batch to db. Retrying...");
+                                tokio::time::sleep(Duration::from_millis(500)).await;
+                            }
+                            tokio::time::sleep(Duration::from_millis(200)).await;
+                        }
+                        info!(target: "server_log", "CHROMIUM: Successfully added rewards batch");
+                    }
+
+                    while let Err(_) = app_database
+                        .finish_extra_resources_generation(
+                            current_reprocessing.id,
+                            0,
+                            guild_stake_rewards_coal,
+                            0,
+                            0,
+                            0,
+                            0,
+                            ExtraResourcesGenerationType::CoalStakingRewards,
+                        )
+                        .await
+                    {
+                        tracing::error!(target: "server_log", "CHROMIUM: Failed to finish chromium reprocessing to db. Retrying...");
+                        tokio::time::sleep(Duration::from_secs(1)).await;
                     }
                 }
 

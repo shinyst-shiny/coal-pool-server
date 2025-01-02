@@ -931,13 +931,15 @@ impl AppDatabase {
         &self,
         pool_id: i32,
         generation_type: ExtraResourcesGenerationType,
+        linked_challenge_id: Option<i32>,
     ) -> Result<(), AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn
                 .interact(move |conn: &mut MysqlConnection| {
-                    diesel::sql_query("INSERT INTO extra_resources_generation (pool_id, generation_type) VALUES (?, ?)")
+                    diesel::sql_query("INSERT INTO extra_resources_generation (pool_id, generation_type, linked_challenge_id) VALUES (?, ?, ?)")
                         .bind::<Integer, _>(pool_id)
                         .bind::<Integer, _>(generation_type as i32)
+                        .bind::<Nullable<Integer>, _>(linked_challenge_id)
                         .execute(conn)
                 })
                 .await;

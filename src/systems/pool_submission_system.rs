@@ -131,7 +131,7 @@ pub async fn pool_submission_system(
         let old_proof = lock.clone();
         drop(lock);
 
-        let cutoff = get_cutoff(old_proof, 3);
+        let cutoff = get_cutoff(old_proof, 2);
         if cutoff <= 0 {
             // process solutions
             let reader = app_epoch_hashes.read().await;
@@ -930,6 +930,10 @@ pub async fn pool_submission_system(
                                                             if(full_multiplier_coal < 1.0) {
                                                                 full_multiplier_coal = 1.0f64;
                                                             }
+                                                            info!(target: "submission_log", "stake_multiplier_coal {:?}", stake_multiplier_coal);
+                                                            info!(target: "submission_log", "tool_multiplier {:?}", stake_multiplier_coal);
+                                                            info!(target: "submission_log", "guild_multiplier {:?}", guild_multiplier);
+                                                            info!(target: "submission_log", "full_multiplier_coal {:?}", full_multiplier_coal);
                                                             let full_rewards_coal = coal_balance_after_tx - coal_balance_before_tx;
                                                             let commissions_coal = full_rewards_coal.mul(5).saturating_div(100);
                                                             let guild_stake_rewards_coal = ((((full_rewards_coal - commissions_coal) as f64 / full_multiplier_coal).mul(guild_multiplier) as u64).mul(5)).saturating_div(100);

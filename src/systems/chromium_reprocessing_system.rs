@@ -83,6 +83,7 @@ pub async fn chromium_reprocessing_system(
                 .add_extra_resources_generation(
                     config.pool_id,
                     ExtraResourcesGenerationType::ChromiumReprocess,
+                    None,
                 )
                 .await
             {

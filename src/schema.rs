@@ -67,6 +67,7 @@ diesel::table! {
     extra_resources_generation (id) {
         id -> Integer,
         pool_id -> Integer,
+        linked_challenge_id -> Nullable<Integer>,
         amount_sol -> Unsigned<Bigint>,
         amount_coal -> Unsigned<Bigint>,
         amount_ore -> Unsigned<Bigint>,

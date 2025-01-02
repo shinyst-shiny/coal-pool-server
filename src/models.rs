@@ -42,6 +42,8 @@ impl From<usize> for ExtraResourcesGenerationType {
 pub struct ExtraResourcesGeneration {
     pub id: i32,
     pub pool_id: i32,
+    #[diesel(sql_type = Nullable<Integer>)]
+    pub linked_challenge_id: Option<i32>,
     #[diesel(sql_type = Unsigned<BigInt>)]
     pub amount_sol: u64,
     #[diesel(sql_type = Unsigned<BigInt>)]

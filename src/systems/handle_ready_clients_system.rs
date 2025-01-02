@@ -50,7 +50,7 @@ pub async fn handle_ready_clients_system(
                 let latest_proof = lock.clone();
                 drop(lock);
 
-                let cutoff = get_cutoff(latest_proof, 4);
+                let cutoff = get_cutoff(latest_proof, 3);
                 let mut should_mine = true;
 
                 // only distribute challenge if 10 seconds or more is left

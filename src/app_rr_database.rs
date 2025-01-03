@@ -287,14 +287,30 @@ impl AppRRDatabase {
         &self,
         pubkey: String,
         generation_type: ExtraResourcesGenerationType,
-    ) -> Result<Vec<models::EarningExtraResources>, AppDatabaseError> {
+    ) -> Result<models::EarningExtraResources, AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn
                 .interact(move |conn: &mut MysqlConnection| {
-                    diesel::sql_query("SELECT * FROM earnings_extra_resources eer JOIN miners m ON eer.miner_id = m.id WHERE m.pubkey = ? AND eer.generation_type = ? ORDER BY eer.created_at DESC")
+                    diesel::sql_query("SELECT
+                                                m.id as miner_id,
+                                                SUM(eer.amount_sol) as amount_sol,
+                                                SUM(eer.amount_coal) as amount_coal,
+                                                SUM(eer.amount_ore) as amount_ore,
+                                                SUM(eer.amount_chromium) as amount_chromium,
+                                                SUM(eer.amount_wood) as amount_wood,
+                                                SUM(eer.amount_ingot) as amount_ingot,
+                                                eer.generation_type,
+                                                eer.pool_id,
+                                                -1 as extra_resources_generation_id,
+                                                MAX(eer.created_at) as created_at
+                                            FROM earnings_extra_resources eer
+                                            JOIN miners m ON eer.miner_id = m.id
+                                            WHERE m.pubkey = ? AND eer.generation_type = ?
+                                            GROUP BY m.id, m.pubkey, eer.generation_type, eer.pool_id
+                                        ")
                         .bind::<Text, _>(pubkey)
                         .bind::<Integer, _>(generation_type as i32)
-                        .get_results::<models::EarningExtraResources>(conn)
+                        .get_result::<models::EarningExtraResources>(conn)
                 })
                 .await;
 
@@ -322,14 +338,31 @@ impl AppRRDatabase {
         &self,
         pubkey: String,
         generation_type: ExtraResourcesGenerationType,
-    ) -> Result<Vec<models::EarningExtraResources>, AppDatabaseError> {
+    ) -> Result<models::EarningExtraResources, AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn
                 .interact(move |conn: &mut MysqlConnection| {
-                    diesel::sql_query("SELECT * FROM earnings_extra_resources eer JOIN miners m ON eer.miner_id = m.id WHERE m.pubkey = ? AND eer.generation_type = ? AND eer.created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR) ORDER BY eer.created_at DESC")
+                    diesel::sql_query("
+                                            SELECT
+                                                m.id as miner_id,
+                                                SUM(eer.amount_sol) as amount_sol,
+                                                SUM(eer.amount_coal) as amount_coal,
+                                                SUM(eer.amount_ore) as amount_ore,
+                                                SUM(eer.amount_chromium) as amount_chromium,
+                                                SUM(eer.amount_wood) as amount_wood,
+                                                SUM(eer.amount_ingot) as amount_ingot,
+                                                eer.generation_type,
+                                                eer.pool_id,
+                                                -1 as extra_resources_generation_id,
+                                                MAX(eer.created_at) as created_at
+                                            FROM earnings_extra_resources eer
+                                            JOIN miners m ON eer.miner_id = m.id
+                                            WHERE m.pubkey = ? AND eer.generation_type = ? AND eer.created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                                            GROUP BY m.id, m.pubkey, eer.generation_type, eer.pool_id
+                                            ")
                         .bind::<Text, _>(pubkey)
                         .bind::<Integer, _>(generation_type as i32)
-                        .get_results::<models::EarningExtraResources>(conn)
+                        .get_result::<models::EarningExtraResources>(conn)
                 })
                 .await;
 

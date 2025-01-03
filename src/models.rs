@@ -10,7 +10,7 @@ pub enum ExtraResourcesGenerationType {
     ChromiumReprocess = 1,
     CoalStakingRewards = 2,
     OreStakingRewards = 3,
-    ActivityReprocess = 4,
+    DiamondHandsReprocess = 4,
 }
 
 impl From<usize> for ExtraResourcesGenerationType {
@@ -28,8 +28,8 @@ impl From<usize> for ExtraResourcesGenerationType {
             _ if value == ExtraResourcesGenerationType::OreStakingRewards as usize => {
                 ExtraResourcesGenerationType::OreStakingRewards
             }
-            _ if value == ExtraResourcesGenerationType::ActivityReprocess as usize => {
-                ExtraResourcesGenerationType::ActivityReprocess
+            _ if value == ExtraResourcesGenerationType::DiamondHandsReprocess as usize => {
+                ExtraResourcesGenerationType::DiamondHandsReprocess
             }
             _ => ExtraResourcesGenerationType::None,
         }

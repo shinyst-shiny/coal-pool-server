@@ -2663,12 +2663,8 @@ pub async fn get_guild_lp_staking_rewards(
 
         match db_rewards {
             Ok(rewards) => {
-                // sum all the COAL rewards from the array
-                let total_coal_rewards =
-                    rewards.iter().map(|reward| reward.amount_coal).sum::<u64>();
-
                 // convert the total COAL rewards to UI amount
-                let ui_amount = amount_u64_to_string(total_coal_rewards);
+                let ui_amount = amount_u64_to_string(rewards.amount_coal);
 
                 Response::builder()
                     .status(StatusCode::OK)
@@ -2707,12 +2703,8 @@ pub async fn get_guild_lp_staking_rewards_24h(
 
         match db_rewards {
             Ok(rewards) => {
-                // sum all the COAL rewards from the array
-                let total_coal_rewards =
-                    rewards.iter().map(|reward| reward.amount_coal).sum::<u64>();
-
                 // convert the total COAL rewards to UI amount
-                let ui_amount = amount_u64_to_string(total_coal_rewards);
+                let ui_amount = amount_u64_to_string(rewards.amount_coal);
 
                 Response::builder()
                     .status(StatusCode::OK)

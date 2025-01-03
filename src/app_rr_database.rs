@@ -292,18 +292,19 @@ impl AppRRDatabase {
             let res = db_conn
                 .interact(move |conn: &mut MysqlConnection| {
                     diesel::sql_query("SELECT
+                                                0 as id,
                                                 m.id as miner_id,
+                                                eer.pool_id,
+                                                0 as extra_resources_generation_id,
                                                 SUM(eer.amount_sol) as amount_sol,
                                                 SUM(eer.amount_coal) as amount_coal,
                                                 SUM(eer.amount_ore) as amount_ore,
                                                 SUM(eer.amount_chromium) as amount_chromium,
                                                 SUM(eer.amount_wood) as amount_wood,
                                                 SUM(eer.amount_ingot) as amount_ingot,
-                                                eer.generation_type,
-                                                eer.pool_id,
-                                                0 as extra_resources_generation_id,
-                                                0 as id,
                                                 MAX(eer.created_at) as created_at
+                                                MAX(eer.updated_at) as updated_at
+                                                eer.generation_type,
                                             FROM earnings_extra_resources eer
                                             JOIN miners m ON eer.miner_id = m.id
                                             WHERE m.pubkey = ? AND eer.generation_type = ?
@@ -345,18 +346,19 @@ impl AppRRDatabase {
                 .interact(move |conn: &mut MysqlConnection| {
                     diesel::sql_query("
                                             SELECT
+                                                0 as id,
                                                 m.id as miner_id,
+                                                eer.pool_id,
+                                                0 as extra_resources_generation_id,
                                                 SUM(eer.amount_sol) as amount_sol,
                                                 SUM(eer.amount_coal) as amount_coal,
                                                 SUM(eer.amount_ore) as amount_ore,
                                                 SUM(eer.amount_chromium) as amount_chromium,
                                                 SUM(eer.amount_wood) as amount_wood,
                                                 SUM(eer.amount_ingot) as amount_ingot,
-                                                eer.generation_type,
-                                                eer.pool_id,
-                                                0 as extra_resources_generation_id,
-                                                0 as id,
                                                 MAX(eer.created_at) as created_at
+                                                MAX(eer.updated_at) as updated_at
+                                                eer.generation_type,
                                             FROM earnings_extra_resources eer
                                             JOIN miners m ON eer.miner_id = m.id
                                             WHERE m.pubkey = ? AND eer.generation_type = ? AND eer.created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)

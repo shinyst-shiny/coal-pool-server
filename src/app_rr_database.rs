@@ -301,7 +301,8 @@ impl AppRRDatabase {
                                                 SUM(eer.amount_ingot) as amount_ingot,
                                                 eer.generation_type,
                                                 eer.pool_id,
-                                                -1 as extra_resources_generation_id,
+                                                0 as extra_resources_generation_id,
+                                                0 as id
                                                 MAX(eer.created_at) as created_at
                                             FROM earnings_extra_resources eer
                                             JOIN miners m ON eer.miner_id = m.id
@@ -353,7 +354,8 @@ impl AppRRDatabase {
                                                 SUM(eer.amount_ingot) as amount_ingot,
                                                 eer.generation_type,
                                                 eer.pool_id,
-                                                -1 as extra_resources_generation_id,
+                                                0 as extra_resources_generation_id,
+                                                0 as id
                                                 MAX(eer.created_at) as created_at
                                             FROM earnings_extra_resources eer
                                             JOIN miners m ON eer.miner_id = m.id

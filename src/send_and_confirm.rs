@@ -53,6 +53,7 @@ pub async fn send_and_confirm(
     app_fee_payer: &Keypair,
     priority_fee: Option<u64>,
     jito_tip: Option<u64>,
+    skip_preflight: bool,
 ) -> ClientResult<Signature> {
     let mut send_client = rpc_client;
 
@@ -111,7 +112,7 @@ pub async fn send_and_confirm(
 
     // Build tx
     let send_cfg = RpcSendTransactionConfig {
-        skip_preflight: false,
+        skip_preflight,
         preflight_commitment: Some(CommitmentLevel::Confirmed),
         ..RpcSendTransactionConfig::default()
     };

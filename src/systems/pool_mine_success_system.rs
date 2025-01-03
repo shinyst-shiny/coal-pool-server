@@ -171,12 +171,12 @@ pub async fn pool_mine_success_system(
                                 .add_new_earnings_extra_resources_batch(batch.to_vec())
                                 .await
                             {
-                                tracing::error!(target: "server_log", "CHROMIUM: Failed to add new earnings batch to db. Retrying...");
+                                tracing::error!(target: "server_log", "COAL STAKING REWARDS: Failed to add new earnings batch to db. Retrying...");
                                 tokio::time::sleep(Duration::from_millis(500)).await;
                             }
                             tokio::time::sleep(Duration::from_millis(200)).await;
                         }
-                        info!(target: "server_log", "CHROMIUM: Successfully added earnings batch");
+                        info!(target: "server_log", "COAL STAKING REWARDS: Successfully added earnings batch");
                     }
 
                     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -184,12 +184,12 @@ pub async fn pool_mine_success_system(
                     if miners_rewards.len() > 0 {
                         for batch in miners_rewards.chunks(batch_size) {
                             while let Err(_) = app_database.update_rewards(batch.to_vec()).await {
-                                tracing::error!(target: "server_log", "CHROMIUM: Failed to add new rewards batch to db. Retrying...");
+                                tracing::error!(target: "server_log", "COAL STAKING REWARDS: Failed to add new rewards batch to db. Retrying...");
                                 tokio::time::sleep(Duration::from_millis(500)).await;
                             }
                             tokio::time::sleep(Duration::from_millis(200)).await;
                         }
-                        info!(target: "server_log", "CHROMIUM: Successfully added rewards batch");
+                        info!(target: "server_log", "COAL STAKING REWARDS: Successfully added rewards batch");
                     }
 
                     while let Err(_) = app_database
@@ -205,7 +205,7 @@ pub async fn pool_mine_success_system(
                         )
                         .await
                     {
-                        tracing::error!(target: "server_log", "CHROMIUM: Failed to finish chromium reprocessing to db. Retrying...");
+                        tracing::error!(target: "server_log", "COAL STAKING REWARDS: Failed to finish CoalStakingRewards reprocessing to db. Retrying...");
                         tokio::time::sleep(Duration::from_secs(1)).await;
                     }
                 }

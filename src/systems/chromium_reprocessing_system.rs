@@ -150,6 +150,7 @@ pub async fn chromium_reprocessing_system(
                 &fee_payer.clone(),
                 None,
                 None,
+                false,
             )
             .await
             {
@@ -192,6 +193,7 @@ pub async fn chromium_reprocessing_system(
                 &fee_payer.clone(),
                 None,
                 None,
+                false,
             )
             .await
             .ok();
@@ -203,25 +205,6 @@ pub async fn chromium_reprocessing_system(
         let target_slot = reprocessor.unwrap().slot;
 
         info!(target: "server_log", "CHROMIUM: Waiting for slot {}...", target_slot);
-
-        let url = "https://bundles.jito.wtf/api/v1/bundles/tip_floor";
-        let mut tip = 0_u64;
-
-        // fetch the url data using a GET
-        let client = reqwest::Client::new();
-        let response = client
-            .get(url)
-            .header("Content-Type", "application/json")
-            .send()
-            .await;
-
-        let response = match response {
-            Ok(r) => r.text(),
-            Err(e) => {
-                tracing::error!(target: "server_log", "CHROMIUM: Exiting Chromium reprocessing system: Failed to fetch tip floor {}", e);
-                continue;
-            }
-        };
 
         loop {
             match rpc_client.get_slot().await {
@@ -238,6 +221,7 @@ pub async fn chromium_reprocessing_system(
                             &fee_payer.clone(),
                             Some(200_000),
                             None,
+                            true,
                         )
                         .await
                         .ok();

@@ -1953,6 +1953,7 @@ async fn post_coal_stake(
                     &wallet.fee_wallet.clone(),
                     None,
                     None,
+                    false,
                 )
                 .await
                 {

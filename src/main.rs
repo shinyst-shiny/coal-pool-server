@@ -51,7 +51,7 @@ use axum::{
 use axum_extra::{headers::authorization::Basic, TypedHeader};
 use base64::engine::general_purpose;
 use base64::{prelude::BASE64_STANDARD, Engine};
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, Utc};
 use clap::builder::TypedValueParser;
 use clap::Parser;
 use coal_api::consts::COAL_MINT_ADDRESS;
@@ -2695,10 +2695,16 @@ pub async fn get_guild_lp_staking_rewards_24h(
     Extension(app_rr_database): Extension<Arc<AppRRDatabase>>,
 ) -> impl IntoResponse {
     if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
+        let now = Utc::now();
+        let one_day = Duration::from_secs(60 * 60 * 24 * 1);
+        let yesterday = now - one_day;
+
         let db_rewards = app_rr_database
-            .get_extra_resources_rewards_24h_by_pubkey(
+            .get_extra_resources_rewards_in_period_by_pubkey(
                 user_pubkey.to_string(),
                 ExtraResourcesGenerationType::CoalStakingRewards,
+                yesterday.naive_utc(),
+                now.naive_utc(),
             )
             .await;
 

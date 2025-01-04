@@ -1,5 +1,6 @@
+use chrono::{NaiveDate, NaiveDateTime};
 use deadpool_diesel::mysql::{Manager, Pool};
-use diesel::sql_types::Integer;
+use diesel::sql_types::{Date, Datetime, Integer};
 use diesel::{sql_types::Text, MysqlConnection, RunQueryDsl};
 use tracing::error;
 
@@ -336,10 +337,12 @@ impl AppRRDatabase {
         };
     }
 
-    pub async fn get_extra_resources_rewards_24h_by_pubkey(
+    pub async fn get_extra_resources_rewards_in_period_by_pubkey(
         &self,
         pubkey: String,
         generation_type: ExtraResourcesGenerationType,
+        start_date: NaiveDateTime,
+        end_date: NaiveDateTime,
     ) -> Result<models::EarningExtraResources, AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn
@@ -361,12 +364,117 @@ impl AppRRDatabase {
                                                 eer.generation_type
                                             FROM earnings_extra_resources eer
                                             JOIN miners m ON eer.miner_id = m.id
-                                            WHERE m.pubkey = ? AND eer.generation_type = ? AND eer.created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                                            WHERE m.pubkey = ? AND eer.generation_type = ?
+                                                AND eer.created_at >=? AND eer.created_at <= ?
                                             GROUP BY m.id, m.pubkey, eer.generation_type, eer.pool_id
                                             ")
                         .bind::<Text, _>(pubkey)
                         .bind::<Integer, _>(generation_type as i32)
+                        .bind::<Datetime, _>(start_date)
+                        .bind::<Datetime, _>(end_date)
                         .get_result::<models::EarningExtraResources>(conn)
+                })
+                .await;
+
+            match res {
+                Ok(interaction) => match interaction {
+                    Ok(query) => {
+                        return Ok(query);
+                    }
+                    Err(e) => {
+                        error!(target: "server_log", "{:?}", e);
+                        return Err(AppDatabaseError::QueryFailed);
+                    }
+                },
+                Err(e) => {
+                    error!(target: "server_log", "{:?}", e);
+                    return Err(AppDatabaseError::InteractionFailed);
+                }
+            }
+        } else {
+            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
+        };
+    }
+
+    pub async fn get_earnings_by_pubkey(
+        &self,
+        pubkey: String,
+    ) -> Result<models::Earning, AppDatabaseError> {
+        if let Ok(db_conn) = self.connection_pool.get().await {
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    diesel::sql_query(
+                        "SELECT
+                                                0 as id,
+                                                m.id as miner_id,
+                                                e.pool_id,
+                                                0 as challenge_id,
+                                                SUM(e.amount_coal) as amount_coal,
+                                                SUM(e.amount_ore) as amount_ore,
+                                                MAX(e.created_at) as created_at,
+                                                MAX(e.updated_at) as updated_at
+                                            FROM earnings e
+                                            JOIN miners m ON e.miner_id = m.id
+                                            WHERE m.pubkey = ?
+                                            GROUP BY m.id, m.pubkey, e.pool_id
+                                        ",
+                    )
+                    .bind::<Text, _>(pubkey)
+                    .get_result::<models::Earning>(conn)
+                })
+                .await;
+
+            match res {
+                Ok(interaction) => match interaction {
+                    Ok(query) => {
+                        return Ok(query);
+                    }
+                    Err(e) => {
+                        error!(target: "server_log", "{:?}", e);
+                        return Err(AppDatabaseError::QueryFailed);
+                    }
+                },
+                Err(e) => {
+                    error!(target: "server_log", "{:?}", e);
+                    return Err(AppDatabaseError::InteractionFailed);
+                }
+            }
+        } else {
+            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
+        };
+    }
+
+    pub async fn get_earning_in_period_by_pubkey(
+        &self,
+        pubkey: String,
+        start_date: NaiveDateTime,
+        end_date: NaiveDateTime,
+    ) -> Result<models::Earning, AppDatabaseError> {
+        if let Ok(db_conn) = self.connection_pool.get().await {
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    diesel::sql_query(
+                        "
+                                            SELECT
+                                                0 as id,
+                                                m.id as miner_id,
+                                                e.pool_id,
+                                                0 as challenge_id,
+                                                SUM(e.amount_coal) as amount_coal,
+                                                SUM(e.amount_ore) as amount_ore,
+                                                MAX(e.created_at) as created_at,
+                                                MAX(e.updated_at) as updated_at
+                                            FROM earnings e
+                                            JOIN miners m ON e.miner_id = m.id
+                                            WHERE m.pubkey = ?
+                                                AND eer.created_at >=? AND eer.created_at <= ?
+                                            GROUP BY m.id, m.pubkey, e.pool_id
+                                            ",
+                    )
+                    .bind::<Text, _>(pubkey)
+                    .bind::<Datetime, _>(start_date)
+                    .bind::<Datetime, _>(end_date)
+                    .get_result::<models::Earning>(conn)
                 })
                 .await;
 

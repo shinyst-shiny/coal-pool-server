@@ -342,3 +342,19 @@ pub struct InsertEarning {
     pub amount_coal: u64,
     pub amount_ore: u64,
 }
+
+#[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]
+#[diesel(table_name = crate::schema::earnings)]
+#[diesel(check_for_backend(diesel::mysql::Mysql))]
+pub struct Earning {
+    pub id: i32,
+    pub miner_id: i32,
+    pub pool_id: i32,
+    pub challenge_id: i32,
+    pub amount_coal: u64,
+    pub amount_ore: u64,
+    #[diesel(sql_type = Timestamp)]
+    pub created_at: NaiveDateTime,
+    #[diesel(sql_type = Timestamp)]
+    pub updated_at: NaiveDateTime,
+}

@@ -2231,7 +2231,7 @@ async fn ws_handler_v2(
             let ts_msg = msg_timestamp.to_le_bytes();
 
             if signature.verify(&user_pubkey.to_bytes(), &ts_msg) {
-                info!(target: "server_log", "Client: {addr} connected with pubkey {pubkey} on V2.");
+                // info!(target: "server_log", "Client: {addr} connected with pubkey {pubkey} on V2.");
                 return Ok(ws.on_upgrade(move |socket| {
                     handle_socket(
                         socket,
@@ -2317,7 +2317,7 @@ async fn ws_handler_web(
             return Err((StatusCode::UNAUTHORIZED, "pubkey is not authorized to mine"));
         }
 
-        info!(target: "server_log", "Client: {addr} connected with pubkey {user_pubkey} on V2.");
+        // info!(target: "server_log", "Client: {addr} connected with pubkey {user_pubkey} on V2.");
         return Ok(ws.on_upgrade(move |socket| {
             handle_socket(
                 socket,
@@ -2359,10 +2359,10 @@ async fn handle_socket(
     let (sender, mut receiver) = socket.split();
     let mut app_state = rw_app_state.write().await;
     if app_state.sockets.contains_key(&who) {
-        info!(target: "server_log", "Socket addr: {who} already has an active connection");
+        // info!(target: "server_log", "Socket addr: {who} already has an active connection");
         return;
     } else {
-        info!(target: "server_log", "Client: {} connected!", who_pubkey.to_string());
+        // info!(target: "server_log", "Client: {} connected!", who_pubkey.to_string());
         let new_app_client_connection = AppClientConnection {
             pubkey: who_pubkey,
             miner_id: who_miner_id,
@@ -2386,7 +2386,7 @@ async fn handle_socket(
     app_state.sockets.remove(&who);
     drop(app_state);
 
-    info!(target: "server_log", "Client: {} disconnected!", who_pubkey.to_string());
+    // info!(target: "server_log", "Client: {} disconnected!", who_pubkey.to_string());
 }
 
 fn process_message(
@@ -2874,6 +2874,9 @@ pub async fn get_pool_stakes_and_multipliers(
         guild_config_address,
         guild_member_address,
     ];
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
     let accounts_multipliers = rpc_client
         .get_multiple_accounts(&accounts_multipliers)
         .await

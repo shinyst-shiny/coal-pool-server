@@ -183,7 +183,7 @@ pub async fn pool_submission_system(
 
                         info!(target: "server_log", "getting guild info");
 
-                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        tokio::time::sleep(Duration::from_millis(1000)).await;
 
                         if member.is_some()
                             && member.unwrap().guild.ne(&coal_guilds_api::ID)

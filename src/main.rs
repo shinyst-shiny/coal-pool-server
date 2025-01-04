@@ -2875,12 +2875,12 @@ pub async fn get_pool_stakes_and_multipliers(
         guild_member_address,
     ];
 
-    tokio::time::sleep(Duration::from_millis(500)).await;
-
     let accounts_multipliers = rpc_client
         .get_multiple_accounts(&accounts_multipliers)
         .await
         .unwrap();
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
     let mut tool: Option<ToolType> = None;
     let mut member: Option<coal_guilds_api::state::Member> = None;
@@ -2930,6 +2930,8 @@ pub async fn get_pool_stakes_and_multipliers(
     }
 
     let tool_multiplier = calculate_tool_multiplier(&tool);
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
     let guild_stake = guild.unwrap().total_stake as f64;
     let guild_multiplier = calculate_multiplier(

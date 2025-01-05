@@ -342,7 +342,7 @@ pub async fn diamond_hands_system(
                     .floor() as u64,
             };
 
-            println!(
+            info!(target: "reprocess_log",
                 "DIAMOND HANDS Miner {}: earned: {:?}",
                 miner_id, miner_rewards
             );

@@ -467,7 +467,7 @@ impl AppRRDatabase {
                                             FROM earnings e
                                             JOIN miners m ON e.miner_id = m.id
                                             WHERE m.pubkey = ?
-                                                AND eer.created_at >=? AND eer.created_at <= ?
+                                                AND e.created_at >= ? AND e.created_at <= ?
                                             GROUP BY m.id, m.pubkey, e.pool_id
                                             ",
                     )

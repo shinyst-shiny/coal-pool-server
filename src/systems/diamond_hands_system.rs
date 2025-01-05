@@ -35,8 +35,8 @@ struct MinerStats {
 }
 
 pub async fn diamond_hands_system(
-    app_database: Arc<AppDatabase>,
     config: Arc<Config>,
+    app_database: Arc<AppDatabase>,
     app_rr_database: Arc<AppRRDatabase>,
 ) {
     tokio::time::sleep(Duration::from_millis(10000)).await;
@@ -264,33 +264,37 @@ pub async fn diamond_hands_system(
 
             let mut no_withdraw_bonus = 0.0;
 
-            let last_claim = app_database
-                .get_last_claim(miner_id)
-                .await
-                .unwrap_or(LastClaim {
-                    created_at: (Utc::now() - Duration::from_secs(60 * 60 * 24 * 365)).naive_utc(),
-                });
+            let last_claim = app_database.get_last_claim(miner_id).await.ok();
 
-            // loop to check if the last claim is more than 1, 2, 3 or 4 weeks ago
-            for i in 1..=4 {
-                let last_claim_date =
-                    last_claim.created_at + Duration::from_secs(60 * 60 * 24 * (i * 7));
-                if Utc::now().naive_utc() > last_claim_date {
-                    // Check if there is one submission in the last_claim_date week, if so give the bonus
-                    let start_submission_check =
-                        (Utc::now() - Duration::from_secs(60 * 60 * 24 * (i * 7))).naive_utc();
-                    let end_submission_check =
-                        (Utc::now() - Duration::from_secs(60 * 60 * 24 * (i - 1 * 7))).naive_utc();
-                    let submissions_in_range = app_database
-                        .get_submissions_in_range(start_submission_check, end_submission_check)
-                        .await
-                        .unwrap_or(Vec::new());
-                    if (submissions_in_range.len() > 0) {
-                        no_withdraw_bonus += 1.0;
+            if let Some(claim) = last_claim {
+                // loop to check if the last claim is more than 1, 2, 3 or 4 weeks ago
+                for i in 1..=4 {
+                    let last_claim_date =
+                        claim.created_at + Duration::from_secs(60 * 60 * 24 * (i * 7));
+                    info!(target: "server_log", "DIAMOND HANDS: Miner: {}, checking: {} - {}", miner_id, i, last_claim_date);
+                    if Utc::now().naive_utc() > last_claim_date {
+                        // Check if there is one submission in the last_claim_date week, if so give the bonus
+                        let start_submission_check =
+                            (Utc::now() - Duration::from_secs(60 * 60 * 24 * (i * 7))).naive_utc();
+                        let end_submission_check = (Utc::now()
+                            - Duration::from_secs(60 * 60 * 24 * ((i - 1) * 7)))
+                        .naive_utc();
+                        let submissions_in_range = app_database
+                            .get_submissions_in_range(start_submission_check, end_submission_check)
+                            .await
+                            .unwrap_or(Vec::new());
+                        if submissions_in_range.len() > 0 {
+                            no_withdraw_bonus += 1.0;
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
                     }
                 }
+            } else {
+                no_withdraw_bonus = 4.0;
             }
-
             // Calculate miner factor percentage
             // miner_submission_perc * miner_hash_power_perc * no_withdraw_bonus = miner_factor_perc
             let miner_factor_perc = miner_submission_perc

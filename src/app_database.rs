@@ -680,12 +680,12 @@ impl AppDatabase {
                         return Ok(query);
                     }
                     Err(e) => {
-                        error!(target: "server_log", "{:?}", e);
+                        error!(target: "server_log", "get_last_claim {:?}", e);
                         return Err(AppDatabaseError::QueryFailed);
                     }
                 },
                 Err(e) => {
-                    error!(target: "server_log", "{:?}", e);
+                    error!(target: "server_log", "get_last_claim {:?}", e);
                     return Err(AppDatabaseError::InteractionFailed);
                 }
             }
@@ -1039,12 +1039,12 @@ impl AppDatabase {
                         return Ok(query);
                     }
                     Err(e) => {
-                        error!(target: "server_log", "{:?}", e);
+                        error!(target: "server_log", "get_submissions_in_range {:?}", e);
                         return Err(AppDatabaseError::QueryFailed);
                     }
                 },
                 Err(e) => {
-                    error!(target: "server_log", "{:?}", e);
+                    error!(target: "server_log", "get_submissions_in_range {:?}", e);
                     return Err(AppDatabaseError::InteractionFailed);
                 }
             }

@@ -283,6 +283,45 @@ impl AppRRDatabase {
             return Err(AppDatabaseError::FailedToGetConnectionFromPool);
         };
     }
+    pub async fn get_extra_resources_rewards_for_id_by_pubkey(
+        &self,
+        pubkey: String,
+        extra_resources_generation_id: i32,
+    ) -> Result<models::EarningExtraResources, AppDatabaseError> {
+        if let Ok(db_conn) = self.connection_pool.get().await {
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    diesel::sql_query("SELECT
+                                               eer.*
+                                            FROM earnings_extra_resources eer
+                                            JOIN miners m ON eer.miner_id = m.id
+                                            WHERE m.pubkey = ? AND eer.extra_resources_generation_id = ?
+                                        ")
+                        .bind::<Text, _>(pubkey)
+                        .bind::<Integer, _>(extra_resources_generation_id)
+                        .get_result::<models::EarningExtraResources>(conn)
+                })
+                .await;
+
+            match res {
+                Ok(interaction) => match interaction {
+                    Ok(query) => {
+                        return Ok(query);
+                    }
+                    Err(e) => {
+                        error!(target: "server_log", "{:?}", e);
+                        return Err(AppDatabaseError::QueryFailed);
+                    }
+                },
+                Err(e) => {
+                    error!(target: "server_log", "{:?}", e);
+                    return Err(AppDatabaseError::InteractionFailed);
+                }
+            }
+        } else {
+            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
+        };
+    }
 
     pub async fn get_extra_resources_rewards_by_pubkey(
         &self,

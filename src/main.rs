@@ -906,11 +906,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/miner/rewards", get(get_miner_rewards))
         .route("/miner/submissions", get(get_miner_submissions))
         .route("/miner/last-claim", get(get_miner_last_claim))
+        .route(
+            "/miner/reprocess/last-chromium",
+            get(get_miner_last_reprocess_chromium),
+        )
+        .route(
+            "/miner/reprocess/last-diamond-hands",
+            get(get_miner_last_reprocess_diamond_hands),
+        )
         .route("/challenges", get(get_challenges))
         .route("/pool", get(routes::get_pool))
         .route("/pool/staked", get(routes::get_pool_staked))
         .route(
-            "/pool/chromium/reprocess-info",
+            "/pool/reprocess/chromium-info",
+            get(routes::get_chromium_reprocess_info),
+        )
+        .route(
+            "/pool/reprocess/diamond-hands-info",
             get(routes::get_chromium_reprocess_info),
         )
         .route(
@@ -1169,6 +1181,16 @@ struct MinerRewards {
     chromium: f64,
 }
 
+#[derive(Deserialize, Serialize)]
+struct FullMinerRewards {
+    sol: f64,
+    coal: f64,
+    ore: f64,
+    chromium: f64,
+    ingot: f64,
+    wood: f64,
+}
+
 async fn get_miner_rewards(
     query_params: Query<PubkeyParam>,
     Extension(app_rr_database): Extension<Arc<AppRRDatabase>>,
@@ -1192,6 +1214,126 @@ async fn get_miner_rewards(
                     chromium: decimal_bal_chromium,
                 };
                 return Ok(Json(response));
+            }
+            Err(_) => {
+                error!(target: "server_log", "get_miner_rewards: failed to get rewards balance from db for {}", user_pubkey.to_string());
+                return Err("Failed to get balance".to_string());
+            }
+        }
+    } else {
+        return Err("Invalid public key".to_string());
+    }
+}
+
+async fn get_miner_last_reprocess_chromium(
+    query_params: Query<PubkeyParam>,
+    Extension(app_rr_database): Extension<Arc<AppRRDatabase>>,
+    Extension(app_config): Extension<Arc<Config>>,
+) -> impl IntoResponse {
+    if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
+        let res = app_rr_database
+            .get_last_reprocessing(
+                app_config.pool_id,
+                ExtraResourcesGenerationType::ChromiumReprocess,
+            )
+            .await;
+
+        match res {
+            Ok(generation) => {
+                let res = app_rr_database
+                    .get_extra_resources_rewards_for_id_by_pubkey(
+                        user_pubkey.to_string(),
+                        generation.id,
+                    )
+                    .await;
+                match res {
+                    Ok(rewards) => {
+                        let decimal_bal_sol = rewards.amount_chromium as f64
+                            / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
+                        let decimal_bal_coal = rewards.amount_coal as f64
+                            / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
+                        let decimal_bal_ore = rewards.amount_ore as f64
+                            / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
+                        let decimal_bal_chromium = rewards.amount_chromium as f64
+                            / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
+                        let decimal_bal_ingot = rewards.amount_ingot as f64
+                            / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
+                        let decimal_bal_wood = rewards.amount_wood as f64
+                            / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
+                        return Ok(Json(FullMinerRewards {
+                            sol: decimal_bal_sol,
+                            coal: decimal_bal_coal,
+                            ore: decimal_bal_ore,
+                            chromium: decimal_bal_chromium,
+                            ingot: decimal_bal_ingot,
+                            wood: decimal_bal_wood,
+                        }));
+                    }
+                    Err(_) => {
+                        error!(target: "server_log", "get_miner_rewards: failed to get rewards balance from db for {}", user_pubkey.to_string());
+                        return Err("Failed to get balance".to_string());
+                    }
+                }
+            }
+            Err(_) => {
+                error!(target: "server_log", "get_miner_rewards: failed to get rewards balance from db for {}", user_pubkey.to_string());
+                return Err("Failed to get balance".to_string());
+            }
+        }
+    } else {
+        return Err("Invalid public key".to_string());
+    }
+}
+
+async fn get_miner_last_reprocess_diamond_hands(
+    query_params: Query<PubkeyParam>,
+    Extension(app_rr_database): Extension<Arc<AppRRDatabase>>,
+    Extension(app_config): Extension<Arc<Config>>,
+) -> impl IntoResponse {
+    if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
+        let res = app_rr_database
+            .get_last_reprocessing(
+                app_config.pool_id,
+                ExtraResourcesGenerationType::DiamondHandsReprocess,
+            )
+            .await;
+
+        match res {
+            Ok(generation) => {
+                let res = app_rr_database
+                    .get_extra_resources_rewards_for_id_by_pubkey(
+                        user_pubkey.to_string(),
+                        generation.id,
+                    )
+                    .await;
+                match res {
+                    Ok(rewards) => {
+                        let decimal_bal_sol = rewards.amount_chromium as f64
+                            / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
+                        let decimal_bal_coal = rewards.amount_coal as f64
+                            / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
+                        let decimal_bal_ore = rewards.amount_ore as f64
+                            / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
+                        let decimal_bal_chromium = rewards.amount_chromium as f64
+                            / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
+                        let decimal_bal_ingot = rewards.amount_ingot as f64
+                            / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
+                        let decimal_bal_wood = rewards.amount_wood as f64
+                            / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
+                        return Ok(Json(FullMinerRewards {
+                            sol: decimal_bal_sol,
+                            coal: decimal_bal_coal,
+                            ore: decimal_bal_ore,
+                            chromium: decimal_bal_chromium,
+                            ingot: decimal_bal_ingot,
+                            wood: decimal_bal_wood,
+                        }));
+                    }
+                    Err(_) => {
+                        error!(target: "server_log", "get_miner_rewards: failed to get rewards balance from db for {}", user_pubkey.to_string());
+                        return Err("Failed to get balance".to_string());
+                    }
+                }
             }
             Err(_) => {
                 error!(target: "server_log", "get_miner_rewards: failed to get rewards balance from db for {}", user_pubkey.to_string());

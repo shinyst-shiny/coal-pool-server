@@ -923,7 +923,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .route(
             "/pool/reprocess/diamond-hands-info",
-            get(routes::get_chromium_reprocess_info),
+            get(routes::get_diamond_hands_reprocess_info),
         )
         .route(
             "/pool/stakes-multipliers",

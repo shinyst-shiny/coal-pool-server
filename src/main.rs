@@ -288,7 +288,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let reprocess_log_layer = tracing_subscriber::fmt::layer()
         .with_writer(reprocess_logs)
         .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
-            metadata.target() == "reprocess_logs"
+            metadata.target() == "reprocess_log"
         }));
 
     // Uncomment if you need console logging

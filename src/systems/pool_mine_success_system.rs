@@ -122,13 +122,13 @@ pub async fn pool_mine_success_system(
                             .saturating_div(1_000_000)
                             as u64;
 
-                        info!(target: "server_log", "COAL STAKING REWARDS: Total revenue for {}: {} - out of {}", guild_member.member.authority, member_revenue_coal, guild_stake_rewards_coal);
+                        // info!(target: "server_log", "COAL STAKING REWARDS: Total revenue for {}: {} - out of {}", guild_member.member.authority, member_revenue_coal, guild_stake_rewards_coal);
 
                         let db_miner = app_database
                             .get_miner_by_pubkey_str(guild_member.member.authority.to_string())
                             .await;
 
-                        info!(target: "server_log", "COAL STAKING REWARDS: db_miner {:?}",db_miner);
+                        // info!(target: "server_log", "COAL STAKING REWARDS: db_miner {:?}",db_miner);
 
                         match db_miner {
                             Ok(miner) => {
@@ -156,10 +156,10 @@ pub async fn pool_mine_success_system(
                                 });
                             }
                             Err(AppDatabaseError::FailedToGetConnectionFromPool) => {
-                                error!(target: "server_log", "Failed to get database pool connection");
+                                error!(target: "server_log", "COAL STAKING REWARDS: Failed to get database pool connection");
                             }
                             Err(_) => {
-                                info!(target: "server_log", "No miner account still exists. Will retry later.");
+                                info!(target: "server_log", "COAL STAKING REWARDS: No miner account still exists. Will retry later.");
                             }
                         }
                     }

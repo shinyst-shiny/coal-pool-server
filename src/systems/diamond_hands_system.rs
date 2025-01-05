@@ -50,11 +50,11 @@ pub async fn diamond_hands_system(
             .await
         {
             Ok(db_last_reprocess) => {
-                info!(target: "server_log", "DIAMOND HANDS: Last reprocessing was {}", db_last_reprocess.created_at);
+                info!(target: "reprocess_logs", "DIAMOND HANDS: Last reprocessing was {}", db_last_reprocess.created_at);
                 last_reprocess = Some(db_last_reprocess);
             }
             Err(e) => {
-                tracing::error!(target: "server_log", "DIAMOND HANDS: Failed to get last reprocessing {:?}", e);
+                tracing::error!(target: "reprocess_logs", "DIAMOND HANDS: Failed to get last reprocessing {:?}", e);
             }
         }
 
@@ -64,7 +64,7 @@ pub async fn diamond_hands_system(
         // check if the last reprocess was more than 3 days ago, if not wait for 6 hours and retry the reprocess
         if last_reprocess.is_some() && last_reprocess.unwrap().created_at > rewards_date.naive_utc()
         {
-            info!(target: "server_log", "DIAMOND HANDS: Last reprocessing was less than 7 days ago, waiting then retrying");
+            info!(target: "reprocess_logs", "DIAMOND HANDS: Last reprocessing was less than 7 days ago, waiting then retrying");
             tokio::time::sleep(Duration::from_secs(25)).await;
             continue;
         }
@@ -85,7 +85,7 @@ pub async fn diamond_hands_system(
         }
 
         if check_current_reprocessing.is_some() {
-            info!(target: "server_log", "DIAMOND HANDS: Last reprocessing was not finished, waiting then retrying");
+            info!(target: "reprocess_logs", "DIAMOND HANDS: Last reprocessing was not finished, waiting then retrying");
             tokio::time::sleep(Duration::from_secs(20)).await;
             continue;
         } else {
@@ -97,7 +97,7 @@ pub async fn diamond_hands_system(
                 )
                 .await
             {
-                tracing::error!(target: "server_log", "Failed to add chromium reprocessing to db. Retrying...");
+                tracing::error!(target: "reprocess_logs", "Failed to add diamond reprocessing to db. Retrying...");
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
         }
@@ -117,12 +117,12 @@ pub async fn diamond_hands_system(
                     break;
                 }
                 Err(_) => {
-                    tracing::error!(target: "server_log", "DIAMOND HANDS: Failed to get current reprocessing. Retrying...");
+                    tracing::error!(target: "reprocess_logs", "DIAMOND HANDS: Failed to get current reprocessing. Retrying...");
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             }
         }
-        info!(target: "server_log", "DIAMOND HANDS: Starting reprocessing system");
+        info!(target: "reprocess_logs", "DIAMOND HANDS: Starting reprocessing system");
 
         let total_rewards =
             get_diamond_hands_rewards(&app_rr_database, &config, rewards_duration).await;
@@ -150,15 +150,15 @@ pub async fn diamond_hands_system(
             generation_type: ExtraResourcesGenerationType::DiamondHandsReprocess as i32,
         }];
 
-        tracing::info!(target: "server_log", "DIAMOND HANDS: Inserting commissions earning");
+        tracing::info!(target: "reprocess_logs", "DIAMOND HANDS: Inserting commissions earning");
         while let Err(_) = app_database
             .add_new_earnings_extra_resources_batch(commissions_earning.clone())
             .await
         {
-            tracing::error!(target: "server_log", "DIAMOND HANDS: Failed to add commissions earning... retrying...");
+            tracing::error!(target: "reprocess_logs", "DIAMOND HANDS: Failed to add commissions earning... retrying...");
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
-        tracing::info!(target: "server_log", "DIAMOND HANDS: Inserted commissions earning");
+        tracing::info!(target: "reprocess_logs", "DIAMOND HANDS: Inserted commissions earning");
 
         tokio::time::sleep(Duration::from_millis(500)).await;
 
@@ -175,14 +175,14 @@ pub async fn diamond_hands_system(
         if commission_rewards.len() > 0 {
             for batch in commission_rewards.chunks(100) {
                 while let Err(_) = app_database.update_rewards(batch.to_vec()).await {
-                    tracing::error!(target: "server_log", "DIAMOND HANDS: Failed to add new commissions rewards to db. Retrying...");
+                    tracing::error!(target: "reprocess_logs", "DIAMOND HANDS: Failed to add new commissions rewards to db. Retrying...");
                     tokio::time::sleep(Duration::from_millis(500)).await;
                 }
                 tokio::time::sleep(Duration::from_millis(200)).await;
             }
         }
 
-        tracing::info!(target: "server_log", "DIAMOND HANDS: Inserted commissions rewards");
+        tracing::info!(target: "reprocess_logs", "DIAMOND HANDS: Inserted commissions rewards");
 
         let miners_reprocessed_rewards = RewardsData {
             amount_sol: total_rewards.amount_sol - commissions_diamond_hands.amount_sol,
@@ -218,7 +218,7 @@ pub async fn diamond_hands_system(
                     break;
                 }
                 Err(_) => {
-                    tracing::error!(target: "server_log", "DIAMOND HANDS: Failed to get user submissions. Retrying...");
+                    tracing::error!(target: "reprocess_logs", "DIAMOND HANDS: Failed to get user submissions. Retrying...");
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             }
@@ -271,7 +271,7 @@ pub async fn diamond_hands_system(
                 for i in 1..=4 {
                     let last_claim_date =
                         claim.created_at + Duration::from_secs(60 * 60 * 24 * (i * 7));
-                    info!(target: "server_log", "DIAMOND HANDS: Miner: {}, checking: {} - {}", miner_id, i, last_claim_date);
+                    info!(target: "reprocess_logs", "DIAMOND HANDS: Miner: {}, checking: {} - {}", miner_id, i, last_claim_date);
                     if Utc::now().naive_utc() > last_claim_date {
                         // Check if there is one submission in the last_claim_date week, if so give the bonus
                         let start_submission_check =
@@ -305,7 +305,7 @@ pub async fn diamond_hands_system(
             total_miners_perc += miner_factor_perc
         }
 
-        info!(target: "server_log", "DIAMOND HANDS: Total Miners: {}, total miner perc: {}", miner_stats_perc.len(), total_miners_perc);
+        info!(target: "reprocess_logs", "DIAMOND HANDS: Total Miners: {}, total miner perc: {}", miner_stats_perc.len(), total_miners_perc);
 
         let mut miners_earnings: Vec<InsertEarningExtraResources> = Vec::new();
         let mut miners_rewards: Vec<UpdateReward> = Vec::new();
@@ -368,12 +368,12 @@ pub async fn diamond_hands_system(
                     .add_new_earnings_extra_resources_batch(batch.to_vec())
                     .await
                 {
-                    tracing::error!(target: "server_log", "DIAMOND HANDS: Failed to add new earnings batch to db. Retrying...");
+                    tracing::error!(target: "reprocess_logs", "DIAMOND HANDS: Failed to add new earnings batch to db. Retrying...");
                     tokio::time::sleep(Duration::from_millis(500)).await;
                 }
                 tokio::time::sleep(Duration::from_millis(200)).await;
             }
-            info!(target: "server_log", "DIAMOND HANDS: Successfully added earnings batch");
+            info!(target: "reprocess_logs", "DIAMOND HANDS: Successfully added earnings batch");
         }
 
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -381,12 +381,12 @@ pub async fn diamond_hands_system(
         if miners_rewards.len() > 0 {
             for batch in miners_rewards.chunks(batch_size) {
                 while let Err(_) = app_database.update_rewards(batch.to_vec()).await {
-                    tracing::error!(target: "server_log", "DIAMOND HANDS: Failed to add new rewards batch to db. Retrying...");
+                    tracing::error!(target: "reprocess_logs", "DIAMOND HANDS: Failed to add new rewards batch to db. Retrying...");
                     tokio::time::sleep(Duration::from_millis(500)).await;
                 }
                 tokio::time::sleep(Duration::from_millis(200)).await;
             }
-            info!(target: "server_log", "DIAMOND HANDS: Successfully added rewards batch");
+            info!(target: "reprocess_logs", "DIAMOND HANDS: Successfully added rewards batch");
         }
 
         while let Err(_) = app_database
@@ -401,7 +401,7 @@ pub async fn diamond_hands_system(
             })
             .await
         {
-            tracing::error!(target: "server_log", "DIAMOND HANDS: Failed to remove commissions rewards to db. Retrying...");
+            tracing::error!(target: "reprocess_logs", "DIAMOND HANDS: Failed to remove commissions rewards to db. Retrying...");
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
 
@@ -418,7 +418,7 @@ pub async fn diamond_hands_system(
             )
             .await
         {
-            tracing::error!(target: "server_log", "DIAMOND HANDS: Failed to finish chromium reprocessing to db. Retrying...");
+            tracing::error!(target: "reprocess_logs", "DIAMOND HANDS: Failed to finish diamond reprocessing to db. Retrying...");
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
@@ -449,7 +449,7 @@ async fn get_diamond_hands_rewards(
                 break;
             }
             Err(_) => {
-                tracing::error!(target: "server_log", "DIAMOND HANDS: Failed to get commission earnings. Retrying...");
+                tracing::error!(target: "reprocess_logs", "DIAMOND HANDS: Failed to get commission earnings. Retrying...");
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
         }
@@ -459,7 +459,7 @@ async fn get_diamond_hands_rewards(
     // 25 : 500 = x : 100
 
     let pool_commission = 5 * 100;
-    let percentage_to_distribute = (0.25f64 * 100.0f64) as u64;
+    let percentage_to_distribute = (1.0f64 * 100.0f64) as u64;
     let percentage_from_commission = percentage_to_distribute * 100 / pool_commission;
 
     // get how much to distribute in COAL and ORE to diamond hands
@@ -472,6 +472,8 @@ async fn get_diamond_hands_rewards(
         .amount_ore
         .saturating_mul(percentage_from_commission)
         .saturating_div(10000);
+
+    info!(target: "reprocess_logs", "DIAMOND HANDS: COAL: {} ORE: {}", coal_to_distribute, ore_to_distribute);
 
     return RewardsData {
         amount_sol: 0,

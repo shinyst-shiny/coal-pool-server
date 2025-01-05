@@ -283,16 +283,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             metadata.target() == "submission_log"
         }));
 
+    let reprocess_logs = tracing_appender::rolling::daily("./logs", "coal-pool-reprocess.log");
+    let (reprocess_logs, _guard) = tracing_appender::non_blocking(reprocess_logs);
+    let reprocess_log_layer = tracing_subscriber::fmt::layer()
+        .with_writer(reprocess_logs)
+        .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+            metadata.target() == "reprocess_logs"
+        }));
+
     // Uncomment if you need console logging
     let console_log_layer = tracing_subscriber::fmt::layer()
         .with_ansi(false) // disable ANSI color codes
         .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
-            metadata.target() == "server_log" || metadata.target() == "submission_log"
+            metadata.target() == "server_log"
+                || metadata.target() == "submission_log"
+                || metadata.target() == "reprocess_log"
         }));
 
     tracing_subscriber::registry()
         .with(server_log_layer)
         .with(submission_log_layer)
+        .with(reprocess_log_layer)
         .with(console_log_layer)
         .init();
 

@@ -43,11 +43,11 @@ pub async fn chromium_reprocessing_system(
             .await
         {
             Ok(db_last_reprocess) => {
-                info!(target: "server_log", "CHROMIUM: Last reprocessing was {}", db_last_reprocess.created_at);
+                info!(target: "reprocess_logs", "CHROMIUM: Last reprocessing was {}", db_last_reprocess.created_at);
                 last_reprocess = Some(db_last_reprocess);
             }
             Err(e) => {
-                tracing::error!(target: "server_log", "CHROMIUM: Failed to get last reprocessing {:?}", e);
+                tracing::error!(target: "reprocess_logs", "CHROMIUM: Failed to get last reprocessing {:?}", e);
             }
         }
 
@@ -57,7 +57,7 @@ pub async fn chromium_reprocessing_system(
         if last_reprocess.is_some()
             && last_reprocess.unwrap().created_at > three_days_ago.naive_utc()
         {
-            info!(target: "server_log", "CHROMIUM: Last reprocessing was less than 3 days ago, waiting then retrying");
+            info!(target: "reprocess_logs", "CHROMIUM: Last reprocessing was less than 3 days ago, waiting then retrying");
             tokio::time::sleep(Duration::from_secs(25)).await;
             continue;
         }
@@ -78,7 +78,7 @@ pub async fn chromium_reprocessing_system(
         }
 
         if check_current_reprocessing.is_some() {
-            info!(target: "server_log", "CHROMIUM: Last reprocessing was not finished, waiting then retrying");
+            info!(target: "reprocess_logs", "CHROMIUM: Last reprocessing was not finished, waiting then retrying");
             tokio::time::sleep(Duration::from_secs(20)).await;
             continue;
         } else {
@@ -90,7 +90,7 @@ pub async fn chromium_reprocessing_system(
                 )
                 .await
             {
-                tracing::error!(target: "server_log", "Failed to add chromium reprocessing to db. Retrying...");
+                tracing::error!(target: "reprocess_logs", "Failed to add chromium reprocessing to db. Retrying...");
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
         }
@@ -110,7 +110,7 @@ pub async fn chromium_reprocessing_system(
                     break;
                 }
                 Err(_) => {
-                    tracing::error!(target: "server_log", "CHROMIUM: Failed to get current reprocessing. Retrying...");
+                    tracing::error!(target: "reprocess_logs", "CHROMIUM: Failed to get current reprocessing. Retrying...");
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             }
@@ -118,7 +118,7 @@ pub async fn chromium_reprocessing_system(
 
         let signer = app_wallet.clone().miner_wallet.clone();
         let fee_payer = app_wallet.clone().fee_wallet.clone();
-        info!(target: "server_log", "CHROMIUM: Starting reprocessing system");
+        info!(target: "reprocess_logs", "CHROMIUM: Starting reprocessing system");
         // Init ata
 
         let mint_address = get_resource_mint(&Resource::Chromium);
@@ -131,9 +131,9 @@ pub async fn chromium_reprocessing_system(
 
         // Check if ata already exists
         if let Ok(Some(_ata)) = rpc_client.get_token_account(&token_account_pubkey).await {
-            info!(target: "server_log", "CHROMIUM: Chromium ATA already exists");
+            info!(target: "reprocess_logs", "CHROMIUM: Chromium ATA already exists");
         } else {
-            info!(target: "server_log", "CHROMIUM: Generating Chromium ATA");
+            info!(target: "reprocess_logs", "CHROMIUM: Generating Chromium ATA");
             // Sign and send transaction.
             let ix = spl_associated_token_account::instruction::create_associated_token_account(
                 &signer.pubkey(),
@@ -155,10 +155,10 @@ pub async fn chromium_reprocessing_system(
             .await
             {
                 Ok(_) => {
-                    info!(target: "server_log", "CHROMIUM: Chromium ATA created");
+                    info!(target: "reprocess_logs", "CHROMIUM: Chromium ATA created");
                 }
                 Err(e) => {
-                    tracing::error!(target: "server_log", "CHROMIUM: Exiting Chromium reprocessing system: Failed to create Chromium ATA {}", e);
+                    tracing::error!(target: "reprocess_logs", "CHROMIUM: Exiting Chromium reprocessing system: Failed to create Chromium ATA {}", e);
                     continue;
                 }
             }
@@ -182,7 +182,7 @@ pub async fn chromium_reprocessing_system(
         let mut reprocessor = get_reprocessor(&rpc_client, &signer.pubkey()).await;
 
         while reprocessor.is_none() {
-            info!(target: "server_log", "CHROMIUM: Reprocessor not found. Creating it...");
+            info!(target: "reprocess_logs", "CHROMIUM: Reprocessor not found. Creating it...");
             let reprocessor_creation_ix = coal_api::instruction::init_reprocess(signer.pubkey());
             send_and_confirm(
                 &[reprocessor_creation_ix],
@@ -200,17 +200,17 @@ pub async fn chromium_reprocessing_system(
             tokio::time::sleep(Duration::from_millis(5000)).await;
             reprocessor = get_reprocessor(&rpc_client, &signer.pubkey()).await;
         }
-        info!(target: "server_log", "CHROMIUM: Reprocessor found, moving with next steps");
+        info!(target: "reprocess_logs", "CHROMIUM: Reprocessor found, moving with next steps");
 
         let target_slot = reprocessor.unwrap().slot;
 
-        info!(target: "server_log", "CHROMIUM: Waiting for slot {}...", target_slot);
+        info!(target: "reprocess_logs", "CHROMIUM: Waiting for slot {}...", target_slot);
 
         loop {
             match rpc_client.get_slot().await {
                 Ok(current_slot) => {
                     if current_slot >= target_slot - 1 {
-                        info!(target: "server_log", "CHROMIUM: Target slot {} reached", target_slot);
+                        info!(target: "reprocess_logs", "CHROMIUM: Target slot {} reached", target_slot);
                         let ix = coal_api::instruction::reprocess(signer.pubkey());
                         send_and_confirm(
                             &[ix],
@@ -230,18 +230,18 @@ pub async fn chromium_reprocessing_system(
                     tokio::time::sleep(Duration::from_millis(400)).await;
                 }
                 Err(e) => {
-                    tracing::error!(target: "server_log", "CHROMIUM: Failed to get current slot {}...", e);
+                    tracing::error!(target: "reprocess_logs", "CHROMIUM: Failed to get current slot {}...", e);
                     tokio::time::sleep(Duration::from_secs(400)).await;
                 }
             }
         }
-        info!(target: "server_log", "CHROMIUM: Waiting a bit more for good measure 1");
+        info!(target: "reprocess_logs", "CHROMIUM: Waiting a bit more for good measure 1");
         tokio::time::sleep(Duration::from_millis(25000)).await;
-        info!(target: "server_log", "CHROMIUM: Waiting a bit more for good measure 2");
+        info!(target: "reprocess_logs", "CHROMIUM: Waiting a bit more for good measure 2");
         tokio::time::sleep(Duration::from_millis(25000)).await;
-        info!(target: "server_log", "CHROMIUM: Waiting a bit more for good measure 3");
+        info!(target: "reprocess_logs", "CHROMIUM: Waiting a bit more for good measure 3");
         tokio::time::sleep(Duration::from_millis(25000)).await;
-        info!(target: "server_log", "CHROMIUM: Waiting a bit more for good measure 4");
+        info!(target: "reprocess_logs", "CHROMIUM: Waiting a bit more for good measure 4");
         tokio::time::sleep(Duration::from_millis(25000)).await;
         let token_account = rpc_client
             .get_token_account(&token_account_pubkey)
@@ -249,13 +249,13 @@ pub async fn chromium_reprocessing_system(
             .unwrap();
         let final_balance = (token_account.unwrap().token_amount.ui_amount.unwrap()
             * 10f64.powf(COAL_TOKEN_DECIMALS as f64)) as u64;
-        info!(target: "server_log", "CHROMIUM: initial_balance {} final_balance {}",initial_balance, final_balance);
+        info!(target: "reprocess_logs", "CHROMIUM: initial_balance {} final_balance {}",initial_balance, final_balance);
         let mut full_reprocessed_amount = final_balance - initial_balance;
         if full_reprocessed_amount <= 0 {
-            tracing::error!(target: "server_log", "CHROMIUM: Chromium reprocessing system: Got 0 reprocessed amount");
+            tracing::error!(target: "reprocess_logs", "CHROMIUM: Chromium reprocessing system: Got 0 reprocessed amount");
             full_reprocessed_amount = 0;
         }
-        info!(target: "server_log", "CHROMIUM: Reprocessed {} Chromium", full_reprocessed_amount);
+        info!(target: "reprocess_logs", "CHROMIUM: Reprocessed {} Chromium", full_reprocessed_amount);
 
         let commissions_chromium = full_reprocessed_amount.mul(5).saturating_div(100);
 
@@ -272,15 +272,15 @@ pub async fn chromium_reprocessing_system(
             amount_wood: 0,
             generation_type: ExtraResourcesGenerationType::ChromiumReprocess as i32,
         }];
-        tracing::info!(target: "server_log", "CHROMIUM: Inserting commissions earning");
+        tracing::info!(target: "reprocess_logs", "CHROMIUM: Inserting commissions earning");
         while let Err(_) = app_database
             .add_new_earnings_extra_resources_batch(commissions_earning.clone())
             .await
         {
-            tracing::error!(target: "server_log", "CHROMIUM: Failed to add commissions earning... retrying...");
+            tracing::error!(target: "reprocess_logs", "CHROMIUM: Failed to add commissions earning... retrying...");
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
-        tracing::info!(target: "server_log", "CHROMIUM: Inserted commissions earning");
+        tracing::info!(target: "reprocess_logs", "CHROMIUM: Inserted commissions earning");
 
         tokio::time::sleep(Duration::from_millis(500)).await;
 
@@ -297,14 +297,14 @@ pub async fn chromium_reprocessing_system(
         if commission_rewards.len() > 0 {
             for batch in commission_rewards.chunks(100) {
                 while let Err(_) = app_database.update_rewards(batch.to_vec()).await {
-                    tracing::error!(target: "server_log", "CHROMIUM: Failed to add new commissions rewards to db. Retrying...");
+                    tracing::error!(target: "reprocess_logs", "CHROMIUM: Failed to add new commissions rewards to db. Retrying...");
                     tokio::time::sleep(Duration::from_millis(500)).await;
                 }
                 tokio::time::sleep(Duration::from_millis(200)).await;
             }
         }
 
-        tracing::info!(target: "server_log", "CHROMIUM: Inserted commissions rewards");
+        tracing::info!(target: "reprocess_logs", "CHROMIUM: Inserted commissions rewards");
 
         let reprocessed_amount = full_reprocessed_amount - commissions_chromium;
 
@@ -332,7 +332,7 @@ pub async fn chromium_reprocessing_system(
                     break;
                 }
                 Err(_) => {
-                    tracing::error!(target: "server_log", "CHROMIUM: Failed to get user submissions. Retrying...");
+                    tracing::error!(target: "reprocess_logs", "CHROMIUM: Failed to get user submissions. Retrying...");
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             }
@@ -382,7 +382,7 @@ pub async fn chromium_reprocessing_system(
             total_miners_perc += miner_factor_perc
         }
 
-        info!(target: "server_log", "CHROMIUM: Total Miners: {}, total miner perc: {}", miner_stats_perc.len(), total_miners_perc);
+        info!(target: "reprocess_logs", "CHROMIUM: Total Miners: {}, total miner perc: {}", miner_stats_perc.len(), total_miners_perc);
 
         let mut miners_earnings: Vec<InsertEarningExtraResources> = Vec::new();
         let mut miners_rewards: Vec<UpdateReward> = Vec::new();
@@ -390,7 +390,7 @@ pub async fn chromium_reprocessing_system(
         for (miner_id, miner_factor_perc) in miner_stats_perc {
             let chromium_earned =
                 miner_factor_perc.mul(reprocessed_amount as f64) / total_miners_perc;
-            println!("CHROMIUM Miner {}: earned: {}", miner_id, chromium_earned);
+            // println!("CHROMIUM Miner {}: earned: {}", miner_id, chromium_earned);
             miners_earnings.push(InsertEarningExtraResources {
                 miner_id,
                 pool_id: config.pool_id,
@@ -421,12 +421,12 @@ pub async fn chromium_reprocessing_system(
                     .add_new_earnings_extra_resources_batch(batch.to_vec())
                     .await
                 {
-                    tracing::error!(target: "server_log", "CHROMIUM: Failed to add new earnings batch to db. Retrying...");
+                    tracing::error!(target: "reprocess_logs", "CHROMIUM: Failed to add new earnings batch to db. Retrying...");
                     tokio::time::sleep(Duration::from_millis(500)).await;
                 }
                 tokio::time::sleep(Duration::from_millis(200)).await;
             }
-            info!(target: "server_log", "CHROMIUM: Successfully added earnings batch");
+            info!(target: "reprocess_logs", "CHROMIUM: Successfully added earnings batch");
         }
 
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -434,12 +434,12 @@ pub async fn chromium_reprocessing_system(
         if miners_rewards.len() > 0 {
             for batch in miners_rewards.chunks(batch_size) {
                 while let Err(_) = app_database.update_rewards(batch.to_vec()).await {
-                    tracing::error!(target: "server_log", "CHROMIUM: Failed to add new rewards batch to db. Retrying...");
+                    tracing::error!(target: "reprocess_logs", "CHROMIUM: Failed to add new rewards batch to db. Retrying...");
                     tokio::time::sleep(Duration::from_millis(500)).await;
                 }
                 tokio::time::sleep(Duration::from_millis(200)).await;
             }
-            info!(target: "server_log", "CHROMIUM: Successfully added rewards batch");
+            info!(target: "reprocess_logs", "CHROMIUM: Successfully added rewards batch");
         }
 
         while let Err(_) = app_database
@@ -454,11 +454,11 @@ pub async fn chromium_reprocessing_system(
             )
             .await
         {
-            tracing::error!(target: "server_log",
+            tracing::error!(target: "reprocess_logs",
                 "Failed to update pool rewards! Retrying..."
             );
         }
-        info!(target: "server_log", "Updated pool rewards");
+        info!(target: "reprocess_logs", "Updated pool rewards");
 
         while let Err(_) = app_database
             .finish_extra_resources_generation(
@@ -473,7 +473,7 @@ pub async fn chromium_reprocessing_system(
             )
             .await
         {
-            tracing::error!(target: "server_log", "CHROMIUM: Failed to finish chromium reprocessing to db. Retrying...");
+            tracing::error!(target: "reprocess_logs", "CHROMIUM: Failed to finish chromium reprocessing to db. Retrying...");
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }

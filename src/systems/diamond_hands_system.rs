@@ -390,6 +390,22 @@ pub async fn diamond_hands_system(
         }
 
         while let Err(_) = app_database
+            .decrease_miner_reward(UpdateReward {
+                miner_id: config.commissions_miner_id,
+                balance_sol: total_rewards.amount_sol,
+                balance_coal: total_rewards.amount_coal,
+                balance_ore: total_rewards.amount_ore,
+                balance_chromium: total_rewards.amount_chromium,
+                balance_wood: total_rewards.amount_wood,
+                balance_ingot: total_rewards.amount_ingot,
+            })
+            .await
+        {
+            tracing::error!(target: "server_log", "DIAMOND HANDS: Failed to remove commissions rewards to db. Retrying...");
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+
+        while let Err(_) = app_database
             .finish_extra_resources_generation(
                 current_reprocessing.id,
                 total_rewards.amount_sol,

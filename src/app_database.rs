@@ -626,7 +626,7 @@ impl AppDatabase {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn
                 .interact(move |conn: &mut MysqlConnection| {
-                    diesel::sql_query("SELECT * FROM miners WHERE miners.miner_id = ?")
+                    diesel::sql_query("SELECT * FROM miners WHERE miners.id = ?")
                         .bind::<Integer, _>(miner_id)
                         .get_result::<Miner>(conn)
                 })

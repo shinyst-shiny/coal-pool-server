@@ -17,6 +17,7 @@ use futures::SinkExt;
 use solana_sdk::pubkey::Pubkey;
 use tokio::sync::{Mutex, RwLock};
 use tracing::info;
+use uuid::Uuid;
 
 const NONCE_RANGE_SIZE: u64 = 40_000_000;
 
@@ -26,7 +27,7 @@ pub async fn handle_ready_clients_system(
     app_epoch_hashes: Arc<RwLock<EpochHashes>>,
     ready_clients: Arc<Mutex<HashSet<SocketAddr>>>,
     app_nonce: Arc<Mutex<u64>>,
-    app_client_nonce_ranges: Arc<RwLock<HashMap<Pubkey, Vec<Range<u64>>>>>,
+    app_client_nonce_ranges: Arc<RwLock<HashMap<Uuid, Vec<Range<u64>>>>>,
     app_submission_window: Arc<RwLock<SubmissionWindow>>,
 ) {
     tracing::info!(target: "server_log", "handle ready clients system started!");
@@ -114,7 +115,7 @@ pub async fn handle_ready_clients_system(
                                     .await;
                                 let reader = app_client_nonce_ranges.read().await;
                                 let current_nonce_ranges =
-                                    if let Some(val) = reader.get(&sender.pubkey) {
+                                    if let Some(val) = reader.get(&sender.uuid) {
                                         Some(val.clone())
                                     } else {
                                         None
@@ -128,13 +129,13 @@ pub async fn handle_ready_clients_system(
                                     app_client_nonce_ranges
                                         .write()
                                         .await
-                                        .insert(sender.pubkey, new_nonce_ranges);
+                                        .insert(sender.uuid, new_nonce_ranges);
                                 } else {
                                     let new_nonce_ranges = vec![nonce_range];
                                     app_client_nonce_ranges
                                         .write()
                                         .await
-                                        .insert(sender.pubkey, new_nonce_ranges);
+                                        .insert(sender.uuid, new_nonce_ranges);
                                 }
                             });
                         }

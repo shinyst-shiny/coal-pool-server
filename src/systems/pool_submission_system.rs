@@ -7,6 +7,26 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use crate::coal_utils::{
+    amount_u64_to_string, calculate_multiplier, calculate_tool_multiplier, deserialize_config,
+    deserialize_guild, deserialize_guild_config, deserialize_guild_member, deserialize_tool,
+    get_coal_balance, get_config_pubkey, get_tool_pubkey, Resource, ToolType,
+};
+use crate::ore_utils::{
+    get_ore_auth_ix, get_ore_balance, get_ore_mine_ix,
+    get_proof_and_config_with_busses as get_proof_and_config_with_busses_ore,
+    get_reset_ix as get_reset_ix_ore, ORE_TOKEN_DECIMALS,
+};
+use crate::{
+    app_database::AppDatabase,
+    coal_utils::{
+        get_auth_ix, get_cutoff, get_guild_member, get_guild_proof, get_mine_ix, get_proof,
+        get_proof_and_config_with_busses as get_proof_and_config_with_busses_coal,
+        get_reset_ix as get_reset_ix_coal, MineEventWithBoosts, COAL_TOKEN_DECIMALS,
+    },
+    Config, EpochHashes, InsertChallenge, InsertEarning, InsertTxn, MessageInternalAllClients,
+    MessageInternalMineSuccess, PoolGuildMember, SubmissionWindow, UpdateReward, WalletExtension,
+};
 use base64::{prelude::BASE64_STANDARD, Engine};
 use coal_api::{consts::BUS_COUNT, event::MineEvent, state::Proof};
 use coal_guilds_api::state::config_pda;
@@ -31,27 +51,7 @@ use tokio::{
     time::Instant,
 };
 use tracing::info;
-
-use crate::coal_utils::{
-    amount_u64_to_string, calculate_multiplier, calculate_tool_multiplier, deserialize_config,
-    deserialize_guild, deserialize_guild_config, deserialize_guild_member, deserialize_tool,
-    get_coal_balance, get_config_pubkey, get_tool_pubkey, Resource, ToolType,
-};
-use crate::ore_utils::{
-    get_ore_auth_ix, get_ore_balance, get_ore_mine_ix,
-    get_proof_and_config_with_busses as get_proof_and_config_with_busses_ore,
-    get_reset_ix as get_reset_ix_ore, ORE_TOKEN_DECIMALS,
-};
-use crate::{
-    app_database::AppDatabase,
-    coal_utils::{
-        get_auth_ix, get_cutoff, get_guild_member, get_guild_proof, get_mine_ix, get_proof,
-        get_proof_and_config_with_busses as get_proof_and_config_with_busses_coal,
-        get_reset_ix as get_reset_ix_coal, MineEventWithBoosts, COAL_TOKEN_DECIMALS,
-    },
-    Config, EpochHashes, InsertChallenge, InsertEarning, InsertTxn, MessageInternalAllClients,
-    MessageInternalMineSuccess, PoolGuildMember, SubmissionWindow, UpdateReward, WalletExtension,
-};
+use uuid::Uuid;
 
 pub async fn pool_submission_system(
     app_proof: Arc<Mutex<Proof>>,
@@ -67,7 +67,7 @@ pub async fn pool_submission_system(
     app_all_clients_sender: UnboundedSender<MessageInternalAllClients>,
     mine_success_sender: UnboundedSender<MessageInternalMineSuccess>,
     app_submission_window: Arc<RwLock<SubmissionWindow>>,
-    app_client_nonce_ranges: Arc<RwLock<HashMap<Pubkey, Vec<Range<u64>>>>>,
+    app_client_nonce_ranges: Arc<RwLock<HashMap<Uuid, Vec<Range<u64>>>>>,
     app_last_challenge: Arc<Mutex<[u8; 32]>>,
 ) {
     loop {

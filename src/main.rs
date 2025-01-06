@@ -92,6 +92,7 @@ use tower_http::{
     trace::{DefaultMakeSpan, TraceLayer},
 };
 use tracing::{error, info};
+use uuid::Uuid;
 
 mod app_database;
 mod app_rr_database;
@@ -113,6 +114,7 @@ enum ClientVersion {
 
 #[derive(Clone)]
 struct AppClientConnection {
+    uuid: Uuid,
     pubkey: Pubkey,
     miner_id: i32,
     client_version: ClientVersion,
@@ -179,7 +181,7 @@ pub struct MessageInternalMineSuccess {
     total_real_hashpower: u64,
     coal_config: Option<coal_api::state::Config>,
     multiplier: f64,
-    submissions: HashMap<Pubkey, InternalMessageSubmission>,
+    submissions: HashMap<Uuid, InternalMessageSubmission>,
     guild_total_stake: f64,
     guild_multiplier: f64,
     tool_multiplier: f64,
@@ -196,13 +198,13 @@ pub enum ClientMessage {
     Ready(SocketAddr),
     Mining(SocketAddr),
     Pong(SocketAddr),
-    BestSolution(SocketAddr, Solution, Pubkey),
+    BestSolution(SocketAddr, Solution, Uuid),
 }
 
 pub struct EpochHashes {
     challenge: [u8; 32],
     best_hash: BestHash,
-    submissions: HashMap<Pubkey, InternalMessageSubmission>,
+    submissions: HashMap<Uuid, InternalMessageSubmission>,
 }
 
 pub struct BestHash {
@@ -879,7 +881,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_shared_state = shared_state.clone();
     let app = Router::new()
         .route("/v2/ws", get(ws_handler_v2))
-        .route("/v2/ws-web", get(ws_handler_web))
+        .route("/v2/ws-pubkey", get(ws_handler_pubkey))
         //.route("/pause", post(post_pause))
         .route("/latest-blockhash", get(get_latest_blockhash))
         .route("/pool/authority/pubkey", get(get_pool_authority_pubkey))
@@ -2416,19 +2418,19 @@ async fn ws_handler_v2(
 }
 
 #[derive(Deserialize)]
-struct WsWebQueryParams {
+struct WsPubkeyQueryParams {
     timestamp: u64,
     pubkey: String,
 }
-async fn ws_handler_web(
+async fn ws_handler_pubkey(
     ws: WebSocketUpgrade,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(app_state): State<Arc<RwLock<AppState>>>,
     Extension(client_channel): Extension<UnboundedSender<ClientMessage>>,
     Extension(app_database): Extension<Arc<AppDatabase>>,
-    query_params: Query<WsWebQueryParams>,
+    Extension(app_wallet): Extension<Arc<WalletExtension>>,
+    query_params: Query<WsPubkeyQueryParams>,
 ) -> impl IntoResponse {
-    let msg_timestamp = query_params.timestamp;
     info!(target:"server_log", "New WebSocket connection from: {:?}", addr);
 
     let now = SystemTime::now()
@@ -2442,7 +2444,7 @@ async fn ws_handler_web(
     }
 
     // verify client
-    if let Ok(user_pubkey) = Pubkey::from_str(query_params.pubkey.as_str()) {
+    if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
         let db_miner = app_database
             .get_miner_by_pubkey_str(user_pubkey.to_string())
             .await;
@@ -2452,21 +2454,29 @@ async fn ws_handler_web(
             Ok(db_miner) => {
                 miner = db_miner;
             }
-            Err(AppDatabaseError::QueryFailed) => {
-                return Err((
-                    StatusCode::UNAUTHORIZED,
-                    "pubkey is not authorized to mine. please sign up.",
-                ));
+            Err(_) => {
+                error!(target: "server_log", "ws_handler_pubkey DB Error: Catch all.");
+                while let Err(_) = app_database
+                    .signup_user_transaction(
+                        user_pubkey.to_string(),
+                        app_wallet.miner_wallet.pubkey().to_string(),
+                    )
+                    .await
+                {
+                    tracing::error!(target: "server_log", "ws_handler_pubkey: Failed to signup user. Retrying...");
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+                tokio::time::sleep(Duration::from_millis(200)).await;
             }
-            Err(AppDatabaseError::InteractionFailed) => {
-                return Err((
-                    StatusCode::UNAUTHORIZED,
-                    "pubkey is not authorized to mine. please sign up.",
-                ));
-            }
-            Err(AppDatabaseError::FailedToGetConnectionFromPool) => {
-                error!(target: "server_log", "Failed to get database pool connection.");
-                return Err((StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error"));
+        }
+        let db_miner = app_database
+            .get_miner_by_pubkey_str(user_pubkey.to_string())
+            .await;
+
+        let miner;
+        match db_miner {
+            Ok(db_miner) => {
+                miner = db_miner;
             }
             Err(_) => {
                 error!(target: "server_log", "DB Error: Catch all.");
@@ -2504,6 +2514,7 @@ async fn handle_socket(
     rw_app_state: Arc<RwLock<AppState>>,
     client_channel: UnboundedSender<ClientMessage>,
 ) {
+    let socket_uuid = Uuid::new_v4();
     if socket
         .send(axum::extract::ws::Message::Ping(vec![1, 2, 3]))
         .await
@@ -2523,8 +2534,9 @@ async fn handle_socket(
         // info!(target: "server_log", "Socket addr: {who} already has an active connection");
         return;
     } else {
-        // info!(target: "server_log", "Client: {} connected!", who_pubkey.to_string());
+        info!(target: "server_log", "Client: {} - {} connected!",who, who_pubkey.to_string());
         let new_app_client_connection = AppClientConnection {
+            uuid: socket_uuid,
             pubkey: who_pubkey,
             miner_id: who_miner_id,
             client_version,
@@ -2536,7 +2548,7 @@ async fn handle_socket(
 
     let _ = tokio::spawn(async move {
         while let Some(Ok(msg)) = receiver.next().await {
-            if process_message(msg, who, client_channel.clone()).is_break() {
+            if process_message(msg, socket_uuid, who, client_channel.clone()).is_break() {
                 break;
             }
         }
@@ -2552,6 +2564,7 @@ async fn handle_socket(
 
 fn process_message(
     msg: Message,
+    socket_uuid: Uuid,
     who: SocketAddr,
     client_channel: UnboundedSender<ClientMessage>,
 ) -> ControlFlow<(), ()> {
@@ -2609,7 +2622,7 @@ fn process_message(
                     //if sig.verify(&pubkey.to_bytes(), &hash_nonce_message) {
                     let solution = Solution::new(solution_bytes, nonce);
 
-                    let msg = ClientMessage::BestSolution(who, solution, pubkey);
+                    let msg = ClientMessage::BestSolution(who, solution, socket_uuid);
                     let _ = client_channel.send(msg);
                     //} else {
                     //    error!(target: "server_log", "Client submission sig verification failed.");

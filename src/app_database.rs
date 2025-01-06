@@ -67,6 +67,39 @@ impl AppDatabase {
         };
     }
 
+    pub async fn get_miner_rewards_by_id(
+        &self,
+        miner_id: i32,
+    ) -> Result<models::Reward, AppDatabaseError> {
+        if let Ok(db_conn) = self.connection_pool.get().await {
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    diesel::sql_query("SELECT * FROM rewards r WHERE r.miner_id = ?")
+                        .bind::<Integer, _>(miner_id)
+                        .get_result::<models::Reward>(conn)
+                })
+                .await;
+
+            match res {
+                Ok(interaction) => match interaction {
+                    Ok(query) => {
+                        return Ok(query);
+                    }
+                    Err(e) => {
+                        error!(target: "server_log", "{:?}", e);
+                        return Err(AppDatabaseError::QueryFailed);
+                    }
+                },
+                Err(e) => {
+                    error!(target: "server_log", "{:?}", e);
+                    return Err(AppDatabaseError::InteractionFailed);
+                }
+            }
+        } else {
+            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
+        };
+    }
+
     pub async fn get_miner_rewards(
         &self,
         miner_pubkey: String,
@@ -573,6 +606,35 @@ impl AppDatabase {
                             return Err(AppDatabaseError::FailedToUpdateRow);
                         }
                         return Ok(());
+                    }
+                    Err(e) => {
+                        error!(target: "server_log", "{:?}", e);
+                        return Err(AppDatabaseError::QueryFailed);
+                    }
+                },
+                Err(e) => {
+                    error!(target: "server_log", "{:?}", e);
+                    return Err(AppDatabaseError::InteractionFailed);
+                }
+            }
+        } else {
+            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
+        };
+    }
+
+    pub async fn get_miner_by_id(&self, miner_id: i32) -> Result<Miner, AppDatabaseError> {
+        if let Ok(db_conn) = self.connection_pool.get().await {
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    diesel::sql_query("SELECT * FROM miners WHERE miners.miner_id = ?")
+                        .bind::<Integer, _>(miner_id)
+                        .get_result::<Miner>(conn)
+                })
+                .await;
+            match res {
+                Ok(interaction) => match interaction {
+                    Ok(query) => {
+                        return Ok(query);
                     }
                     Err(e) => {
                         error!(target: "server_log", "{:?}", e);

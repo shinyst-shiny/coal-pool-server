@@ -26,7 +26,7 @@ pub async fn client_message_handler_system(
     ready_clients: Arc<Mutex<HashSet<SocketAddr>>>,
     proof: Arc<Mutex<Proof>>,
     epoch_hashes: Arc<RwLock<EpochHashes>>,
-    client_nonce_ranges: Arc<RwLock<HashMap<Pubkey, Vec<Range<u64>>>>>,
+    client_nonce_ranges: Arc<RwLock<HashMap<Uuid, Vec<Range<u64>>>>>,
     app_state: Arc<RwLock<AppState>>,
     app_pongs: Arc<RwLock<LastPong>>,
     app_submission_window: Arc<RwLock<SubmissionWindow>>,
@@ -48,7 +48,7 @@ pub async fn client_message_handler_system(
             ClientMessage::Mining(addr) => {
                 tracing::info!(target: "server_log", "Client {} has started mining!", addr.to_string());
             }
-            ClientMessage::BestSolution(addr, solution, pubkey) => {
+            ClientMessage::BestSolution(addr, solution, uuid) => {
                 let app_epoch_hashes = epoch_hashes.clone();
                 let app_proof = proof.clone();
                 let app_client_nonce_ranges = client_nonce_ranges.clone();
@@ -64,7 +64,7 @@ pub async fn client_message_handler_system(
                     drop(reader);
 
                     if submission_windows_closed {
-                        tracing::error!(target: "server_log", "{} submitted after submission window was closed!", pubkey);
+                        tracing::error!(target: "server_log", "{} submitted after submission window was closed!", uuid);
 
                         let reader = app_state.read().await;
                         if let Some(app_client_socket) = reader.sockets.get(&addr) {
@@ -83,11 +83,9 @@ pub async fn client_message_handler_system(
                         return;
                     }
 
-                    let pubkey_str = pubkey.to_string();
-
                     let reader = client_nonce_ranges.read().await;
                     let nonce_ranges: Vec<Range<u64>> = {
-                        if let Some(nr) = reader.get(&pubkey) {
+                        if let Some(nr) = reader.get(&uuid) {
                             nr.clone()
                         } else {
                             tracing::error!(target: "server_log", "Client nonce range not set!");
@@ -141,11 +139,11 @@ pub async fn client_message_handler_system(
                                 let subs = reader.submissions.clone();
                                 drop(reader);
 
-                                if let Some(old_sub) = subs.get(&pubkey) {
+                                if let Some(old_sub) = subs.get(&uuid) {
                                     if diff > old_sub.supplied_diff {
                                         let mut epoch_hashes = epoch_hashes.write().await;
                                         epoch_hashes.submissions.insert(
-                                            pubkey,
+                                            uuid,
                                             InternalMessageSubmission {
                                                 miner_id,
                                                 supplied_nonce: nonce,
@@ -163,10 +161,10 @@ pub async fn client_message_handler_system(
                                         drop(epoch_hashes);
                                     }
                                 } else {
-                                    tracing::info!(target: "submission_log", "{} - Adding {} submission diff: {} to epoch_hashes submissions.", submission_uuid, pubkey_str, diff);
+                                    tracing::info!(target: "submission_log", "{} - Adding {} submission diff: {} to epoch_hashes submissions.", submission_uuid, uuid, diff);
                                     let mut epoch_hashes = epoch_hashes.write().await;
                                     epoch_hashes.submissions.insert(
-                                        pubkey,
+                                        uuid,
                                         InternalMessageSubmission {
                                             miner_id,
                                             supplied_nonce: nonce,
@@ -182,15 +180,15 @@ pub async fn client_message_handler_system(
                                         epoch_hashes.best_hash.solution = Some(solution);
                                     }
                                     drop(epoch_hashes);
-                                    tracing::info!(target: "submission_log", "{} - Added {} submission diff: {} to epoch_hashes submissions.", submission_uuid, pubkey_str, diff);
+                                    tracing::info!(target: "submission_log", "{} - Added {} submission diff: {} to epoch_hashes submissions.", submission_uuid, uuid, diff);
                                 }
                             }
                         } else {
-                            tracing::error!(target: "submission_log", "Diff to low, skipping submission from {}",pubkey_str);
+                            tracing::error!(target: "submission_log", "Diff to low, skipping submission from {}",uuid);
                             // tracing::error!(target: "server_log", "{} - {} found diff: {}", submission_uuid, pubkey_str, diff);
                         }
                     } else {
-                        tracing::error!(target: "server_log", "{} returned an invalid solution!", pubkey);
+                        tracing::error!(target: "server_log", "{} returned an invalid solution!", uuid);
 
                         let reader = app_state.read().await;
                         if let Some(app_client_socket) = reader.sockets.get(&addr) {

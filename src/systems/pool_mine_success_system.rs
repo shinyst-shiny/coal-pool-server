@@ -210,9 +210,16 @@ pub async fn pool_mine_success_system(
                     }
                 }
 
-                for (miner_pubkey, msg_submission) in msg.submissions.iter() {
+                for (miner_uuid, msg_submission) in msg.submissions.iter() {
+                    let miner_details = app_database
+                        .get_miner_by_id(msg_submission.miner_id)
+                        .await
+                        .unwrap();
+
+                    let miner_pubkey = Pubkey::from_str(&miner_details.pubkey).unwrap();
+
                     let miner_rewards = app_database
-                        .get_miner_rewards(miner_pubkey.to_string())
+                        .get_miner_rewards_by_id(msg_submission.miner_id)
                         .await
                         .unwrap();
 
@@ -291,7 +298,7 @@ pub async fn pool_mine_success_system(
                     };
 
                     for (_addr, client_connection) in socks.iter() {
-                        if client_connection.pubkey.eq(&miner_pubkey) {
+                        if client_connection.uuid.eq(&miner_uuid) {
                             let socket_sender = client_connection.socket.clone();
 
                             match client_connection.client_version {

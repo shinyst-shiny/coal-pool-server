@@ -164,7 +164,7 @@ pub async fn claim_system(
                 } else if claim_amount_ore >= 2_000_000_000 {
                     claim_amount_ore = claim_amount_ore - 2_000_000_000
                 } else {
-                    error!(target: "server_log", "miner has not enough COAL or ORE to claim.");
+                    error!(target: "server_log", "miner {} has not enough COAL or ORE to claim.", miner_pubkey);
                     let mut writer = claims_queue.queue.write().await;
                     writer.remove(&miner_pubkey);
                     drop(writer);
@@ -179,7 +179,7 @@ pub async fn claim_system(
                 } else if claim_amount_coal >= 400_000_000_000 {
                     claim_amount_coal = claim_amount_coal - 400_000_000_000
                 } else {
-                    error!(target: "server_log", "miner has not enough COAL or ORE to claim.");
+                    error!(target: "server_log", "miner {} has not enough COAL or ORE to claim.", miner_pubkey);
                     let mut writer = claims_queue.queue.write().await;
                     writer.remove(&miner_pubkey);
                     drop(writer);
@@ -194,7 +194,7 @@ pub async fn claim_system(
                 } else if claim_amount_ore >= 2_000_000_000 {
                     claim_amount_ore = claim_amount_ore - 2_000_000_000
                 } else {
-                    error!(target: "server_log", "miner has not enough COAL or ORE to claim.");
+                    error!(target: "server_log", "miner {} has not enough COAL or ORE to claim.", miner_pubkey);
                     let mut writer = claims_queue.queue.write().await;
                     writer.remove(&miner_pubkey);
                     drop(writer);

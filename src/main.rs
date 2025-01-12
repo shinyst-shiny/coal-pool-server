@@ -1524,6 +1524,7 @@ async fn post_claim_v2(
     TypedHeader(auth_header): TypedHeader<axum_extra::headers::Authorization<Basic>>,
     Extension(app_database): Extension<Arc<AppDatabase>>,
     Extension(claims_queue): Extension<Arc<ClaimsQueue>>,
+    Extension(rpc_client): Extension<Arc<RpcClient>>,
     query_params: Query<ClaimParamsV2>,
 ) -> impl IntoResponse {
     let msg_timestamp = query_params.timestamp;
@@ -1611,6 +1612,113 @@ async fn post_claim_v2(
                             return Err((
                                 StatusCode::TOO_MANY_REQUESTS,
                                 time_difference.to_string(),
+                            ));
+                        }
+                    }
+
+                    let coal_mint = get_coal_mint();
+                    let ore_mint = get_ore_mint();
+                    let chromium_mint = get_chromium_mint();
+
+                    let receiver_token_account_coal =
+                        get_associated_token_address(&receiver_pubkey, &coal_mint);
+                    let receiver_token_account_ore =
+                        get_associated_token_address(&receiver_pubkey, &ore_mint);
+                    let receiver_token_account_chromium =
+                        get_associated_token_address(&receiver_pubkey, &chromium_mint);
+
+                    let mut is_creating_ata_coal = false;
+                    let mut is_creating_ata_ore = false;
+                    let mut is_creating_ata_chromium = false;
+
+                    if let Ok(response) = rpc_client
+                        .get_token_account_balance(&receiver_token_account_coal)
+                        .await
+                    {
+                        if let Some(_amount) = response.ui_amount {
+                            info!(target: "server_log", "miner has valid token account COAL.");
+                        } else {
+                            info!(target: "server_log", "will create token account for miner COAL");
+                            is_creating_ata_coal = true;
+                        }
+                    } else {
+                        info!(target: "server_log", "Adding create ata ix for miner claim COAL");
+                        is_creating_ata_coal = true;
+                    }
+
+                    if let Ok(response) = rpc_client
+                        .get_token_account_balance(&receiver_token_account_ore)
+                        .await
+                    {
+                        if let Some(_amount) = response.ui_amount {
+                            info!(target: "server_log", "miner has valid token account ORE.");
+                        } else {
+                            info!(target: "server_log", "will create token account for miner ORE");
+                            is_creating_ata_ore = true;
+                        }
+                    } else {
+                        info!(target: "server_log", "Adding create ata ix for miner claim ORE");
+                        is_creating_ata_ore = true;
+                    }
+
+                    if let Ok(response) = rpc_client
+                        .get_token_account_balance(&receiver_token_account_chromium)
+                        .await
+                    {
+                        if let Some(_amount) = response.ui_amount {
+                            info!(target: "server_log", "miner has valid token account CHROMIUM.");
+                        } else {
+                            info!(target: "server_log", "will create token account for miner CHROMIUM");
+                            is_creating_ata_chromium = true;
+                        }
+                    } else {
+                        info!(target: "server_log", "Adding create ata ix for miner claim CHROMIUM");
+                        is_creating_ata_chromium = true;
+                    }
+
+                    let mut claim_amount_coal = amount_coal;
+                    let mut claim_amount_ore = amount_ore;
+                    let claim_amount_chromium = amount_chromium;
+
+                    // 4 COAL or 0.02 ORE
+                    if is_creating_ata_coal {
+                        if claim_amount_coal >= 400_000_000_000 {
+                            claim_amount_coal = claim_amount_coal - 400_000_000_000
+                        } else if claim_amount_ore >= 2_000_000_000 {
+                            claim_amount_ore = claim_amount_ore - 2_000_000_000
+                        } else {
+                            error!(target: "server_log", "miner {} has not enough COAL or ORE to claim.", miner_pubkey);
+                            return Err((
+                                StatusCode::BAD_REQUEST,
+                                "Not enough COAL or ORE to cover for token account generation. Each new token account requires 4 COAL or 0.02 ORE".to_string(),
+                            ));
+                        }
+                    }
+                    // 4 COAL or 0.02 ORE
+                    if is_creating_ata_ore {
+                        if claim_amount_coal >= 400_000_000_000 {
+                            claim_amount_coal = claim_amount_coal - 400_000_000_000
+                        } else if claim_amount_ore >= 2_000_000_000 {
+                            claim_amount_ore = claim_amount_ore - 2_000_000_000
+                        } else {
+                            error!(target: "server_log", "miner {} has not enough COAL or ORE to claim.", miner_pubkey);
+                            return Err((
+                                StatusCode::BAD_REQUEST,
+                                "Not enough COAL or ORE to cover for token account generation. Each new token account requires 4 COAL or 0.02 ORE".to_string(),
+                            ));
+                        }
+                    }
+                    // 4 COAL or 0.02 ORE
+                    if is_creating_ata_chromium {
+                        if claim_amount_coal >= 400_000_000_000 {
+                            claim_amount_coal = claim_amount_coal - 400_000_000_000
+                        } else if claim_amount_ore >= 2_000_000_000 {
+                            claim_amount_ore = claim_amount_ore - 2_000_000_000
+                        } else {
+                            error!(target: "server_log", "miner {} has not enough COAL or ORE to claim.", miner_pubkey);
+                            return Err((
+                                StatusCode::BAD_REQUEST,
+                                "Not enough COAL or ORE to cover for token account generation. Each new token account requires 4 COAL or 0.02 ORE".to_string(),
                             ));
                         }
                     }

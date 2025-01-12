@@ -67,6 +67,7 @@ pub async fn claim_system(
                     info!(target: "server_log", "miner has valid token account COAL.");
                 } else {
                     info!(target: "server_log", "will create token account for miner COAL");
+                    is_creating_ata_coal = true;
                     ixs.push(
                         spl_associated_token_account::instruction::create_associated_token_account(
                             &wallet.pubkey(),
@@ -97,6 +98,7 @@ pub async fn claim_system(
                     info!(target: "server_log", "miner has valid token account ORE.");
                 } else {
                     info!(target: "server_log", "will create token account for miner ORE");
+                    is_creating_ata_ore = true;
                     ixs.push(
                         spl_associated_token_account::instruction::create_associated_token_account(
                             &wallet.pubkey(),
@@ -127,6 +129,7 @@ pub async fn claim_system(
                     info!(target: "server_log", "miner has valid token account CHROMIUM.");
                 } else {
                     info!(target: "server_log", "will create token account for miner CHROMIUM");
+                    is_creating_ata_chromium = true;
                     ixs.push(
                         spl_associated_token_account::instruction::create_associated_token_account(
                             &wallet.pubkey(),

@@ -6,7 +6,9 @@ use crate::models::{
     LastClaim, Submission, UpdateReward,
 };
 use crate::send_and_confirm::{send_and_confirm, ComputeBudget};
-use crate::{models, Config, WalletExtension, MIN_DIFF, MIN_HASHPOWER};
+use crate::{
+    models, Config, RewardsData, WalletExtension, DIAMOND_HANDS_DAYS, MIN_DIFF, MIN_HASHPOWER,
+};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use solana_client::client_error::reqwest;
 use solana_client::nonblocking::rpc_client::RpcClient;
@@ -19,16 +21,6 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::info;
 
-#[derive(Debug)]
-struct RewardsData {
-    amount_sol: u64,
-    amount_coal: u64,
-    amount_ore: u64,
-    amount_chromium: u64,
-    amount_wood: u64,
-    amount_ingot: u64,
-}
-
 struct MinerStats {
     submission_count: u64,
     total_hash_power: u64,
@@ -38,12 +30,34 @@ pub async fn diamond_hands_system(
     config: Arc<Config>,
     app_database: Arc<AppDatabase>,
     app_rr_database: Arc<AppRRDatabase>,
+    app_diamond_hands_extra_rewards_daily: RewardsData,
 ) {
-    let rewards_duration = Duration::from_secs(60 * 60 * 24 * 7);
+    let extra_rewards: RewardsData = RewardsData {
+        amount_sol: app_diamond_hands_extra_rewards_daily.amount_sol * DIAMOND_HANDS_DAYS,
+        amount_coal: app_diamond_hands_extra_rewards_daily.amount_coal * DIAMOND_HANDS_DAYS,
+        amount_ore: app_diamond_hands_extra_rewards_daily.amount_ore * DIAMOND_HANDS_DAYS,
+        amount_chromium: app_diamond_hands_extra_rewards_daily.amount_chromium * DIAMOND_HANDS_DAYS,
+        amount_wood: app_diamond_hands_extra_rewards_daily.amount_wood * DIAMOND_HANDS_DAYS,
+        amount_ingot: app_diamond_hands_extra_rewards_daily.amount_ingot * DIAMOND_HANDS_DAYS,
+    };
+    let rewards_duration = Duration::from_secs(60 * 60 * 24 * DIAMOND_HANDS_DAYS);
     let current_time = Utc::now().naive_utc();
     let start_time = current_time - rewards_duration;
 
-    let test_rewards = get_diamond_hands_rewards(&app_rr_database, &config, rewards_duration).await;
+    let test_rewards = get_diamond_hands_rewards(
+        &app_rr_database,
+        &config,
+        rewards_duration,
+        RewardsData {
+            amount_sol: extra_rewards.amount_sol,
+            amount_coal: extra_rewards.amount_coal,
+            amount_ore: extra_rewards.amount_ore,
+            amount_chromium: extra_rewards.amount_chromium,
+            amount_wood: extra_rewards.amount_wood,
+            amount_ingot: extra_rewards.amount_ingot,
+        },
+    )
+    .await;
 
     info!(target: "reprocess_log", "DIAMOND HANDS: Starting reprocessing {} - {} from {} value {:?}", start_time, current_time, config.commissions_pubkey,test_rewards );
 
@@ -132,8 +146,20 @@ pub async fn diamond_hands_system(
         }
         info!(target: "reprocess_log", "DIAMOND HANDS: Starting reprocessing system");
 
-        let total_rewards =
-            get_diamond_hands_rewards(&app_rr_database, &config, rewards_duration).await;
+        let total_rewards = get_diamond_hands_rewards(
+            &app_rr_database,
+            &config,
+            rewards_duration,
+            RewardsData {
+                amount_sol: extra_rewards.amount_sol,
+                amount_coal: extra_rewards.amount_coal,
+                amount_ore: extra_rewards.amount_ore,
+                amount_chromium: extra_rewards.amount_chromium,
+                amount_wood: extra_rewards.amount_wood,
+                amount_ingot: extra_rewards.amount_ingot,
+            },
+        )
+        .await;
 
         let commissions_diamond_hands = RewardsData {
             amount_sol: total_rewards.amount_sol.mul(5).saturating_div(100),
@@ -210,7 +236,9 @@ pub async fn diamond_hands_system(
             .await
         {
             Ok(db_last_reprocess) => db_last_reprocess.created_at,
-            Err(_) => (Utc::now() - Duration::from_secs(60 * 60 * 24 * 7)).naive_utc(), // default to last week
+            Err(_) => {
+                (Utc::now() - Duration::from_secs(60 * 60 * 24 * DIAMOND_HANDS_DAYS)).naive_utc()
+            } // default to last week
         };
         let current_time = Utc::now().naive_utc();
 
@@ -277,15 +305,16 @@ pub async fn diamond_hands_system(
             if let Some(claim) = last_claim {
                 // loop to check if the last claim is more than 1, 2, 3 or 4 weeks ago
                 for i in 1..=4 {
-                    let last_claim_date =
-                        claim.created_at + Duration::from_secs(60 * 60 * 24 * (i * 7));
+                    let last_claim_date = claim.created_at
+                        + Duration::from_secs(60 * 60 * 24 * (i * DIAMOND_HANDS_DAYS));
                     info!(target: "reprocess_log", "DIAMOND HANDS: Miner: {}, checking: {} - {}", miner_id, i, last_claim_date);
                     if Utc::now().naive_utc() > last_claim_date {
                         // Check if there is one submission in the last_claim_date week, if so give the bonus
-                        let start_submission_check =
-                            (Utc::now() - Duration::from_secs(60 * 60 * 24 * (i * 7))).naive_utc();
+                        let start_submission_check = (Utc::now()
+                            - Duration::from_secs(60 * 60 * 24 * (i * DIAMOND_HANDS_DAYS)))
+                        .naive_utc();
                         let end_submission_check = (Utc::now()
-                            - Duration::from_secs(60 * 60 * 24 * ((i - 1) * 7)))
+                            - Duration::from_secs(60 * 60 * 24 * ((i - 1) * DIAMOND_HANDS_DAYS)))
                         .naive_utc();
                         let submissions_in_range = app_database
                             .get_submissions_in_range(start_submission_check, end_submission_check)
@@ -436,6 +465,7 @@ async fn get_diamond_hands_rewards(
     app_rr_database: &Arc<AppRRDatabase>,
     config: &Arc<Config>,
     rewards_duration: Duration,
+    extra_rewards: RewardsData,
 ) -> RewardsData {
     // get the earnings from the commission wallet from now to now - rewards_duration
     let commission_wallet_pubkey = config.commissions_pubkey.clone();
@@ -488,11 +518,11 @@ async fn get_diamond_hands_rewards(
     info!(target: "reprocess_log", "DIAMOND HANDS: COAL: {} ORE: {}", coal_to_distribute, ore_to_distribute);
 
     return RewardsData {
-        amount_sol: 0,
-        amount_coal: coal_to_distribute,
-        amount_ore: ore_to_distribute,
-        amount_chromium: 0,
-        amount_wood: 0,
-        amount_ingot: 0,
+        amount_sol: extra_rewards.amount_sol,
+        amount_coal: coal_to_distribute + extra_rewards.amount_coal,
+        amount_ore: ore_to_distribute + extra_rewards.amount_ore,
+        amount_chromium: extra_rewards.amount_chromium,
+        amount_wood: extra_rewards.amount_wood,
+        amount_ingot: extra_rewards.amount_ingot,
     };
 }

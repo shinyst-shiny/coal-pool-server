@@ -37,6 +37,7 @@ use crate::routes::get_guild_addresses;
 use crate::send_and_confirm::{send_and_confirm, ComputeBudget};
 use crate::systems::chromium_reprocessing_system::chromium_reprocessing_system;
 use crate::systems::diamond_hands_system::diamond_hands_system;
+use crate::systems::nft_distribution_system::nft_distribution_system;
 use app_database::{AppDatabase, AppDatabaseError};
 use app_rr_database::AppRRDatabase;
 use axum::{
@@ -106,6 +107,8 @@ mod systems;
 const MIN_DIFF: u32 = 12;
 const MIN_HASHPOWER: u64 = 80; // difficulty 12
 const MAX_CALCULATED_HASHPOWER: u64 = 327_680; // difficulty 24
+const DIAMOND_HANDS_DAYS: u64 = 7;
+const NFT_DISTRIBUTION_DAYS: u64 = 7;
 
 #[derive(Clone)]
 enum ClientVersion {
@@ -222,6 +225,16 @@ pub struct Config {
     guild_address: String,
 }
 
+#[derive(Debug, Deserialize, Serialize, Parser, Clone, Copy)]
+struct RewardsData {
+    amount_sol: u64,
+    amount_coal: u64,
+    amount_ore: u64,
+    amount_chromium: u64,
+    amount_wood: u64,
+    amount_ingot: u64,
+}
+
 mod coal_utils;
 mod ore_utils;
 mod send_and_confirm;
@@ -334,6 +347,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::var("DISABLE_REPROCESS").expect("DISABLE_REPROCESS must be set.");
     let disable_reprocess = disable_reprocess_string == "true";
 
+    let diamond_hands_extra_rewards_string = std::env::var("DIAMOND_HANDS_EXTRA_REWARDS")
+        .expect("DIAMOND_HANDS_EXTRA_REWARDS must be set.");
+    let diamond_hands_extra_rewards_daily: RewardsData = match serde_json::from_str(
+        &diamond_hands_extra_rewards_string,
+    ) {
+        Ok(rewards) => rewards,
+        Err(e) => {
+            tracing::error!(target: "server_log", "Failed to parse DIAMOND_HANDS_EXTRA_REWARDS: {}", e);
+            return Err("Failed to parse DIAMOND_HANDS_EXTRA_REWARDS".into());
+        }
+    };
+
+    tracing::info!(target: "server_log", "Parsed DIAMOND_HANDS_EXTRA_REWARDS: {:?}", diamond_hands_extra_rewards_daily);
+
+    let omc_rewards_string = std::env::var("OMC_REWARDS").expect("OMC_REWARDS must be set.");
+    let omc_rewards_daily: RewardsData = match serde_json::from_str(&omc_rewards_string) {
+        Ok(rewards) => rewards,
+        Err(e) => {
+            tracing::error!(target: "server_log", "Failed to parse OMC_REWARDS: {}", e);
+            return Err("Failed to parse OMC_REWARDS".into());
+        }
+    };
+
+    tracing::info!(target: "server_log", "Parsed OMC_REWARDS: {:?}", omc_rewards_daily);
+
+    let omc_nft_env = std::env::var("OMC_NFT_PUBKEY").expect("OMC_NFT_PUBKEY must be set.");
+    let omc_nft_pubkey = match Pubkey::from_str(&omc_nft_env) {
+        Ok(pk) => pk,
+        Err(_) => {
+            println!("Invalid OMC_NFT_PUBKEY");
+            return Ok(());
+        }
+    };
+
     let app_database = Arc::new(AppDatabase::new(database_url));
     let app_rr_database = Arc::new(AppRRDatabase::new(database_rr_url));
 
@@ -424,142 +471,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         proof
     };
-
-    /*info!(target: "server_log", "Validating miners delegate stake account is created");
-    match get_delegated_stake_account(&rpc_client, wallet.pubkey(), wallet.pubkey()).await {
-        Ok(data) => {
-            info!(target: "server_log", "Miner Delegated Stake Account: {:?}", data);
-            info!(target: "server_log", "Miner delegate stake account already created.");
-        }
-        Err(_) => {
-            info!(target: "server_log", "Creating miner delegate stake account");
-            let ix = coal_miner_delegation::instruction::init_delegate_stake(
-                wallet.pubkey(),
-                wallet.pubkey(),
-                wallet.pubkey(),
-            );
-
-            let mut tx = Transaction::new_with_payer(&[ix], Some(&wallet.pubkey()));
-
-            let blockhash = rpc_client
-                .get_latest_blockhash()
-                .await
-                .expect("should get latest blockhash");
-
-            tx.sign(&[&wallet], blockhash);
-
-            match rpc_client
-                .send_and_confirm_transaction_with_spinner_and_commitment(
-                    &tx,
-                    CommitmentConfig {
-                        commitment: CommitmentLevel::Confirmed,
-                    },
-                )
-                .await
-            {
-                Ok(_) => {
-                    info!(target: "server_log", "Successfully created miner delegate stake account");
-                }
-                Err(_) => {
-                    error!(target: "server_log", "Failed to send and confirm tx.");
-                    panic!("Failed to create miner delegate stake account");
-                }
-            }
-        }
-    }
-
-    info!(target: "server_log", "Validating managed proof token account is created");
-    let managed_proof = Pubkey::find_program_address(
-        &[b"managed-proof-account", wallet.pubkey().as_ref()],
-        &coal_miner_delegation::id(),
-    );
-
-    let managed_proof_token_account_addr = get_managed_proof_token_ata(wallet.pubkey());
-    match rpc_client
-        .get_token_account_balance(&managed_proof_token_account_addr)
-        .await
-    {
-        Ok(_) => {
-            info!(target: "server_log", "Managed proof token account already created.");
-        }
-        Err(_) => {
-            info!(target: "server_log", "Creating managed proof token account");
-            let ix = create_associated_token_account(
-                &wallet.pubkey(),
-                &managed_proof.0,
-                &coal_api::consts::MINT_ADDRESS,
-                &spl_token::id(),
-            );
-
-            let mut tx = Transaction::new_with_payer(&[ix], Some(&wallet.pubkey()));
-
-            let blockhash = rpc_client
-                .get_latest_blockhash()
-                .await
-                .expect("should get latest blockhash");
-
-            tx.sign(&[&wallet], blockhash);
-
-            match rpc_client
-                .send_and_confirm_transaction_with_spinner_and_commitment(
-                    &tx,
-                    CommitmentConfig {
-                        commitment: CommitmentLevel::Confirmed,
-                    },
-                )
-                .await
-            {
-                Ok(_) => {
-                    info!(target: "server_log", "Successfully created managed proof token account");
-                }
-                Err(e) => {
-                    error!(target: "server_log", "Failed to send and confirm tx.\nE: {:?}", e);
-                    panic!("Failed to create managed proof token account");
-                }
-            }
-        }
-    }
-
-    let miner_coal_token_account_addr =
-        get_associated_token_address(&wallet.pubkey(), &coal_api::consts::MINT_ADDRESS);
-    let token_balance = if let Ok(token_balance) = rpc_client
-        .get_token_account_balance(&miner_coal_token_account_addr)
-        .await
-    {
-        let bal = token_balance.ui_amount.unwrap() * 10f64.powf(token_balance.decimals as f64);
-        bal as u64
-    } else {
-        error!(target: "server_log", "Failed to get miner coal token account balance");
-        panic!("Failed to get coal token account balance.");
-    };
-
-    if args.migrate {
-        info!(target: "server_log", "Checking original proof, and token account balances for migration.");
-        let original_proof =
-            if let Ok(loaded_proof) = get_original_proof(&rpc_client, wallet.pubkey()).await {
-                loaded_proof
-            } else {
-                panic!("Failed to get original proof!");
-            };
-        if original_proof.balance > 0 || token_balance > 0 {
-            info!(target: "server_log", "Proof balance has {} tokens. Miner coal token account has {} tokens.\nMigrating...", original_proof.balance, token_balance);
-            if let Err(e) = proof_migration::migrate(
-                &rpc_client,
-                &wallet,
-                original_proof.balance,
-                token_balance,
-            )
-            .await
-            {
-                info!(target: "server_log", "Failed to migrate proof balance.\nError: {}", e);
-                panic!("Failed to migrate proof balance.");
-            } else {
-                info!(target: "server_log", "Successfully migrated proof balance");
-            }
-        } else {
-            info!(target: "server_log", "Balances are 0, nothing to migrate.");
-        }
-    }*/
 
     info!(target: "server_log", "Validating pool exists in db");
     let db_pool = app_database
@@ -830,7 +741,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let app_wallet = wallet_extension.clone();
         let app_app_database = app_database.clone();
         let app_app_rr_database = app_rr_database.clone();
-        let app_rpc_client = rpc_client.clone();
+        let app_rpc_client = rpc_client_miner.clone();
         let app_jito_client = jito_client.clone();
         tokio::spawn(async move {
             chromium_reprocessing_system(
@@ -848,8 +759,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_config = config.clone();
     let app_app_database = app_database.clone();
     let app_app_rr_database = app_rr_database.clone();
+    let app_diamond_hands_extra_rewards = diamond_hands_extra_rewards_daily;
     tokio::spawn(async move {
-        diamond_hands_system(app_config, app_app_database, app_app_rr_database).await;
+        diamond_hands_system(
+            app_config,
+            app_app_database,
+            app_app_rr_database,
+            app_diamond_hands_extra_rewards,
+        )
+        .await;
+    });
+
+    let app_wallet = wallet_extension.clone();
+    let app_config = config.clone();
+    let app_app_database = app_database.clone();
+    let app_app_rr_database = app_rr_database.clone();
+    let app_omc_rewards_daily = omc_rewards_daily;
+    let app_rpc_client = rpc_client.clone();
+    let app_omc_nft_pubkey = omc_nft_pubkey.clone();
+    tokio::spawn(async move {
+        nft_distribution_system(
+            app_wallet,
+            app_config,
+            app_app_database,
+            app_app_rr_database,
+            app_rpc_client,
+            app_omc_rewards_daily,
+            app_omc_nft_pubkey,
+        )
+        .await;
     });
 
     let app_shared_state = shared_state.clone();

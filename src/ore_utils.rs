@@ -26,7 +26,7 @@ pub fn get_ore_auth_ix(signer: Pubkey) -> Instruction {
 }
 
 pub fn get_ore_mine_ix(signer: Pubkey, solution: Solution, bus: usize) -> Instruction {
-    ore_api::sdk::mine(signer, signer, BUS_ADDRESSES[bus], solution, Vec::from([]))
+    ore_api::sdk::mine(signer, signer, BUS_ADDRESSES[bus], solution, None)
 }
 
 pub fn get_ore_register_ix(signer: Pubkey) -> Instruction {

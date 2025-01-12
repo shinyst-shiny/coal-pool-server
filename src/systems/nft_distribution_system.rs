@@ -72,7 +72,10 @@ pub async fn nft_distribution_system(
     loop {
         let mut last_reprocess: Option<ExtraResourcesGeneration> = None;
         match app_rr_database
-            .get_last_reprocessing(config.pool_id, ExtraResourcesGenerationType::NftReprocess)
+            .get_last_reprocessing(
+                config.pool_id,
+                ExtraResourcesGenerationType::NftReprocessOMC,
+            )
             .await
         {
             Ok(db_last_reprocess) => {
@@ -100,7 +103,7 @@ pub async fn nft_distribution_system(
         match app_database
             .get_pending_extra_resources_generation(
                 config.pool_id,
-                ExtraResourcesGenerationType::NftReprocess,
+                ExtraResourcesGenerationType::NftReprocessOMC,
             )
             .await
         {
@@ -118,7 +121,7 @@ pub async fn nft_distribution_system(
             while let Err(_) = app_database
                 .add_extra_resources_generation(
                     config.pool_id,
-                    ExtraResourcesGenerationType::NftReprocess,
+                    ExtraResourcesGenerationType::NftReprocessOMC,
                     None,
                 )
                 .await
@@ -134,7 +137,7 @@ pub async fn nft_distribution_system(
             match app_database
                 .get_pending_extra_resources_generation(
                     config.pool_id,
-                    ExtraResourcesGenerationType::NftReprocess,
+                    ExtraResourcesGenerationType::NftReprocessOMC,
                 )
                 .await
             {
@@ -199,7 +202,7 @@ pub async fn nft_distribution_system(
             amount_chromium: commissions_nft_rewards.amount_chromium,
             amount_ingot: commissions_nft_rewards.amount_ingot,
             amount_wood: commissions_nft_rewards.amount_wood,
-            generation_type: ExtraResourcesGenerationType::NftReprocess as i32,
+            generation_type: ExtraResourcesGenerationType::NftReprocessOMC as i32,
         }];
 
         tracing::info!(target: "reprocess_log", "NFT REPROCESSING: Inserting commissions earning");
@@ -247,7 +250,10 @@ pub async fn nft_distribution_system(
         };
 
         let last_reprocess_time = match app_rr_database
-            .get_last_reprocessing(config.pool_id, ExtraResourcesGenerationType::NftReprocess)
+            .get_last_reprocessing(
+                config.pool_id,
+                ExtraResourcesGenerationType::NftReprocessOMC,
+            )
             .await
         {
             Ok(db_last_reprocess) => db_last_reprocess.created_at,
@@ -373,7 +379,7 @@ pub async fn nft_distribution_system(
                 amount_chromium: miner_rewards.amount_chromium,
                 amount_ingot: miner_rewards.amount_ingot,
                 amount_wood: miner_rewards.amount_wood,
-                generation_type: ExtraResourcesGenerationType::NftReprocess as i32,
+                generation_type: ExtraResourcesGenerationType::NftReprocessOMC as i32,
             });
             miners_rewards.push(UpdateReward {
                 miner_id,
@@ -441,7 +447,7 @@ pub async fn nft_distribution_system(
                 total_rewards.amount_chromium,
                 total_rewards.amount_wood,
                 total_rewards.amount_ingot,
-                ExtraResourcesGenerationType::NftReprocess,
+                ExtraResourcesGenerationType::NftReprocessOMC,
             )
             .await
         {

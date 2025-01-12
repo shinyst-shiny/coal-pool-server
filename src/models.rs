@@ -11,7 +11,7 @@ pub enum ExtraResourcesGenerationType {
     CoalStakingRewards = 2,
     OreStakingRewards = 3,
     DiamondHandsReprocess = 4,
-    NftReprocess = 5,
+    NftReprocessOMC = 5,
 }
 
 impl From<usize> for ExtraResourcesGenerationType {

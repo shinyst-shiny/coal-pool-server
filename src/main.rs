@@ -53,7 +53,7 @@ use axum::{
 use axum_extra::{headers::authorization::Basic, TypedHeader};
 use base64::engine::general_purpose;
 use base64::{prelude::BASE64_STANDARD, Engine};
-use chrono::{NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use clap::builder::TypedValueParser;
 use clap::Parser;
 use coal_api::consts::COAL_MINT_ADDRESS;
@@ -833,6 +833,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         //.route("/unstake", post(post_unstake))
         .route("/active-miners", get(get_connected_miners))
         .route("/timestamp", get(get_timestamp))
+        .route("/miner/earnings", get(get_miner_earnings))
+        .route(
+            "/miner/earnings-submissions",
+            get(get_miner_earnings_for_submissions),
+        )
         .route("/miner/balance", get(get_miner_balance))
         .route("/v2/miner/balance", get(get_miner_balance_v2))
         .route("/miner/guild-stake", get(get_miner_guild_stake))
@@ -1112,6 +1117,15 @@ async fn get_sol_balance(
 #[derive(Deserialize)]
 struct PubkeyParam {
     pubkey: String,
+}
+
+#[derive(Deserialize)]
+struct PubkeyAndPeriodParam {
+    pubkey: String,
+    #[serde(with = "chrono::serde::ts_seconds")]
+    start_time: DateTime<Utc>,
+    #[serde(with = "chrono::serde::ts_seconds")]
+    end_time: DateTime<Utc>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -1402,6 +1416,62 @@ async fn get_miner_balance(
         }
 
         return Ok(Json(resp));
+    } else {
+        return Err("Invalid public key".to_string());
+    }
+}
+
+async fn get_miner_earnings(
+    query_params: Query<PubkeyAndPeriodParam>,
+    Extension(app_rr_database): Extension<Arc<AppRRDatabase>>,
+) -> impl IntoResponse {
+    let one_day = Duration::from_secs(60 * 60 * 24 * 1);
+    let check_end_time = query_params.end_time - one_day;
+
+    if check_end_time < query_params.start_time {
+        return Err("Maximum time period is one day".to_string());
+    }
+    if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
+        let res = app_rr_database
+            .get_earning_in_period_by_pubkey(
+                user_pubkey.to_string(),
+                query_params.start_time.naive_utc(),
+                query_params.end_time.naive_utc(),
+            )
+            .await;
+
+        match res {
+            Ok(earnings) => Ok(Json(earnings)),
+            Err(_) => Err("Failed to get earnings for miner".to_string()),
+        }
+    } else {
+        return Err("Invalid public key".to_string());
+    }
+}
+
+async fn get_miner_earnings_for_submissions(
+    query_params: Query<PubkeyAndPeriodParam>,
+    Extension(app_rr_database): Extension<Arc<AppRRDatabase>>,
+) -> impl IntoResponse {
+    let one_day = Duration::from_secs(60 * 60 * 24 * 1);
+    let check_end_time = query_params.end_time - one_day;
+
+    if check_end_time < query_params.start_time {
+        return Err("Maximum time period is one day".to_string());
+    }
+    if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
+        let res = app_rr_database
+            .get_earnings_with_challenge_and_submission(
+                user_pubkey.to_string(),
+                query_params.start_time.naive_utc(),
+                query_params.end_time.naive_utc(),
+            )
+            .await;
+
+        match res {
+            Ok(earnings) => Ok(Json(earnings)),
+            Err(_) => Err("Failed to get earnings for miner".to_string()),
+        }
     } else {
         return Err("Invalid public key".to_string());
     }
@@ -2202,6 +2272,7 @@ async fn post_coal_stake(
                     challenge_id: -1,
                     amount_coal: query_params.amount,
                     amount_ore: 0,
+                    difficulty: 0,
                 }];
                 tracing::info!(target: "server_log", "Coal stake: Inserting earning");
                 while let Err(_) = app_database

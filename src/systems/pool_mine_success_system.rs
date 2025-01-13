@@ -249,6 +249,7 @@ pub async fn pool_mine_success_system(
                         challenge_id: msg.challenge_id,
                         amount_coal: earned_rewards_coal,
                         amount_ore: earned_rewards_ore,
+                        difficulty: msg_submission.supplied_diff as i8,
                     };
 
                     let new_submission = InsertSubmission {

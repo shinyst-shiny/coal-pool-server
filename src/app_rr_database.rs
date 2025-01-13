@@ -4,7 +4,6 @@ use diesel::sql_types::{Date, Datetime, Integer};
 use diesel::{sql_types::Text, MysqlConnection, RunQueryDsl};
 use tracing::error;
 
-use crate::models::ExtraResourcesGenerationType;
 use crate::{
     app_database::AppDatabaseError, models, ChallengeWithDifficulty, Submission,
     SubmissionWithPubkey, Txn,
@@ -250,7 +249,7 @@ impl AppRRDatabase {
     pub async fn get_last_reprocessing(
         &self,
         pool_id: i32,
-        generation_type: ExtraResourcesGenerationType,
+        generation_type: models::ExtraResourcesGenerationType,
     ) -> Result<models::ExtraResourcesGeneration, AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn
@@ -326,7 +325,7 @@ impl AppRRDatabase {
     pub async fn get_extra_resources_rewards_by_pubkey(
         &self,
         pubkey: String,
-        generation_type: ExtraResourcesGenerationType,
+        generation_type: models::ExtraResourcesGenerationType,
     ) -> Result<models::EarningExtraResources, AppDatabaseError> {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn
@@ -379,7 +378,7 @@ impl AppRRDatabase {
     pub async fn get_extra_resources_rewards_in_period_by_pubkey(
         &self,
         pubkey: String,
-        generation_type: ExtraResourcesGenerationType,
+        generation_type: models::ExtraResourcesGenerationType,
         start_date: NaiveDateTime,
         end_date: NaiveDateTime,
     ) -> Result<models::EarningExtraResources, AppDatabaseError> {
@@ -450,6 +449,7 @@ impl AppRRDatabase {
                                                 0 as challenge_id,
                                                 SUM(e.amount_coal) as amount_coal,
                                                 SUM(e.amount_ore) as amount_ore,
+                                                0 as difficulty,
                                                 MAX(e.created_at) as created_at,
                                                 MAX(e.updated_at) as updated_at
                                             FROM earnings e
@@ -501,6 +501,7 @@ impl AppRRDatabase {
                                                 0 as challenge_id,
                                                 SUM(e.amount_coal) as amount_coal,
                                                 SUM(e.amount_ore) as amount_ore,
+                                                0 as difficulty,
                                                 MAX(e.created_at) as created_at,
                                                 MAX(e.updated_at) as updated_at
                                             FROM earnings e
@@ -536,5 +537,79 @@ impl AppRRDatabase {
         } else {
             return Err(AppDatabaseError::FailedToGetConnectionFromPool);
         };
+    }
+
+    pub async fn get_earnings_with_challenge_and_submission(
+        &self,
+        pubkey: String,
+        start_time: NaiveDateTime,
+        end_time: NaiveDateTime,
+    ) -> Result<Vec<models::EarningWithChallengeWithSubmission>, AppDatabaseError> {
+        if let Ok(db_conn) = self.connection_pool.get().await {
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    diesel::sql_query(
+                        "
+                    WITH challenge_best_difficulty AS (
+                        SELECT challenge_id, MAX(difficulty) as best_difficulty
+                        FROM earnings
+                        WHERE created_at BETWEEN ? AND ?
+                            AND challenge_id != -1
+                        GROUP BY challenge_id
+                    )
+                    SELECT
+                        e.miner_id,
+                        e.challenge_id,
+                        m.pubkey,
+                        e.amount_coal as miner_amount_coal,
+                        e.amount_ore as miner_amount_ore,
+                        cbd.best_difficulty,
+                        e.difficulty as miner_difficulty,
+                        e.created_at,
+                        c.rewards_earned_coal as total_rewards_earned_coal,
+                        c.rewards_earned_ore as total_rewards_earned_ore
+                    FROM
+                        earnings e
+                    JOIN
+                        miners m ON e.miner_id = m.id
+                    JOIN
+                        challenges c ON e.challenge_id = c.id
+                    JOIN
+                        challenge_best_difficulty cbd ON e.challenge_id = cbd.challenge_id
+                    WHERE
+                        m.pubkey = ?
+                        AND e.created_at BETWEEN ? AND ?
+                        AND e.challenge_id != -1
+                    ORDER BY
+                        e.created_at DESC
+                    ",
+                    )
+                    .bind::<Datetime, _>(start_time)
+                    .bind::<Datetime, _>(end_time)
+                    .bind::<Text, _>(pubkey)
+                    .bind::<Datetime, _>(start_time)
+                    .bind::<Datetime, _>(end_time)
+                    .get_results::<models::EarningWithChallengeWithSubmission>(conn)
+                })
+                .await;
+
+            match res {
+                Ok(interaction) => match interaction {
+                    Ok(query) => {
+                        return Ok(query);
+                    }
+                    Err(e) => {
+                        error!("get_earnings_with_challenge_and_submission: {:?}", e);
+                        return Err(AppDatabaseError::QueryFailed);
+                    }
+                },
+                Err(e) => {
+                    error!("{:?}", e);
+                    return Err(AppDatabaseError::InteractionFailed);
+                }
+            }
+        } else {
+            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
+        }
     }
 }

@@ -240,8 +240,6 @@ pub struct SubmissionWithPubkey {
     #[diesel(sql_type = BigInt)]
     pub id: i64,
     #[diesel(sql_type = Integer)]
-    pub miner_id: i32,
-    #[diesel(sql_type = Integer)]
     pub challenge_id: i32,
     #[diesel(sql_type = Unsigned<BigInt>)]
     pub nonce: u64,
@@ -342,6 +340,7 @@ pub struct InsertEarning {
     pub challenge_id: i32,
     pub amount_coal: u64,
     pub amount_ore: u64,
+    pub difficulty: i8,
 }
 
 #[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]
@@ -354,8 +353,33 @@ pub struct Earning {
     pub challenge_id: i32,
     pub amount_coal: u64,
     pub amount_ore: u64,
+    pub difficulty: i8,
     #[diesel(sql_type = Timestamp)]
     pub created_at: NaiveDateTime,
     #[diesel(sql_type = Timestamp)]
     pub updated_at: NaiveDateTime,
+}
+
+#[derive(Debug, Deserialize, Serialize, QueryableByName)]
+pub struct EarningWithChallengeWithSubmission {
+    #[diesel(sql_type = Integer)]
+    pub miner_id: i32,
+    #[diesel(sql_type = Integer)]
+    pub challenge_id: i32,
+    #[diesel(sql_type = Text)]
+    pub pubkey: String,
+    #[diesel(sql_type = Unsigned<BigInt>)]
+    pub miner_amount_coal: u64,
+    #[diesel(sql_type = Unsigned<BigInt>)]
+    pub miner_amount_ore: u64,
+    #[diesel(sql_type = TinyInt)]
+    pub best_difficulty: i8,
+    #[diesel(sql_type = TinyInt)]
+    pub miner_difficulty: i8,
+    #[diesel(sql_type = Timestamp)]
+    pub created_at: NaiveDateTime,
+    #[diesel(sql_type = Nullable<Unsigned<BigInt>>)]
+    pub total_rewards_earned_coal: Option<u64>,
+    #[diesel(sql_type = Nullable<Unsigned<BigInt>>)]
+    pub total_rewards_earned_ore: Option<u64>,
 }

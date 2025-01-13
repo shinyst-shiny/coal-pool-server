@@ -964,7 +964,8 @@ pub async fn pool_submission_system(
                                                                     pool_id: app_config.pool_id,
                                                                     challenge_id: challenge.id,
                                                                     amount_coal: commissions_coal,
-                                                                    amount_ore: commissions_ore
+                                                                    amount_ore: commissions_ore,
+                                                                    difficulty: 0,
                                                                 }
                                                             ];
                                                             tracing::info!(target: "server_log", "Inserting commissions earning");

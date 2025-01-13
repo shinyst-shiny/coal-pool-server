@@ -219,9 +219,9 @@ pub async fn chromium_reprocessing_system(
                             &jito_client.clone(),
                             &signer.clone(),
                             &fee_payer.clone(),
-                            Some(200_000),
+                            Some(2_000_000),
                             None,
-                            true,
+                            false,
                         )
                         .await
                         .ok();

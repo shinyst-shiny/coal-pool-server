@@ -148,7 +148,7 @@ pub async fn send_and_confirm(
 
             // Handle submit errors
             Err(err) => {
-                tracing::error!(target: "server_log", "Transaction send error: {}", &err.kind().to_string());
+                tracing::error!(target: "server_log", "Transaction send error: {:?}", &err);
             }
         }
 

@@ -770,7 +770,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await;
     });
 
-    let app_wallet = wallet_extension.clone();
+    /*let app_wallet = wallet_extension.clone();
     let app_config = config.clone();
     let app_app_database = app_database.clone();
     let app_app_rr_database = app_rr_database.clone();
@@ -788,7 +788,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_omc_nft_pubkey,
         )
         .await;
-    });
+    });*/
 
     let app_shared_state = shared_state.clone();
     let app_app_database = app_database.clone();

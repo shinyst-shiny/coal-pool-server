@@ -14,8 +14,7 @@ use crate::coal_utils::{
 };
 use crate::ore_utils::{
     get_ore_auth_ix, get_ore_balance, get_ore_mine_ix,
-    get_proof_and_config_with_busses as get_proof_and_config_with_busses_ore,
-    get_reset_ix as get_reset_ix_ore, ORE_TOKEN_DECIMALS,
+    get_proof_and_config_with_busses as get_proof_and_config_with_busses_ore, ORE_TOKEN_DECIMALS,
 };
 use crate::{
     app_database::AppDatabase,
@@ -305,27 +304,12 @@ pub async fn pool_submission_system(
                             text: String::from("Server is sending mine transaction..."),
                         });
 
-                        let mut cu_limit = 980_000;
+                        let mut cu_limit = 950_000;
                         let should_add_reset_ix_coal = if let Some(config) = loaded_config_coal {
                             let time_until_reset = (config.last_reset_at + 300) - now as i64;
                             if time_until_reset <= 5 {
                                 cu_limit += 50_000;
-                                prio_fee += 5_000;
                                 info!(target: "server_log", "Including reset tx ORE.");
-                                true
-                            } else {
-                                false
-                            }
-                        } else {
-                            false
-                        };
-
-                        let should_add_reset_ix_ore = if let Some(config) = loaded_config_ore {
-                            let time_until_reset = (config.last_reset_at + 300) - now as i64;
-                            if time_until_reset <= 5 {
-                                cu_limit += 50_000;
-                                prio_fee += 5_000;
-                                info!(target: "server_log", "Including reset tx COAL.");
                                 true
                             } else {
                                 false
@@ -382,10 +366,6 @@ pub async fn pool_submission_system(
 
                         if should_add_reset_ix_coal {
                             let reset_ix = get_reset_ix_coal(signer.pubkey());
-                            ixs.push(reset_ix);
-                        }
-                        if should_add_reset_ix_ore {
-                            let reset_ix = get_reset_ix_ore(signer.pubkey());
                             ixs.push(reset_ix);
                         }
 

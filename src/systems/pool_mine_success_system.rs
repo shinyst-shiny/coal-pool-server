@@ -65,7 +65,7 @@ pub async fn pool_mine_success_system(
                     while let Err(_) = app_database
                         .add_extra_resources_generation(
                             app_config.pool_id,
-                            ExtraResourcesGenerationType::CoalStakingRewards,
+                            ExtraResourcesGenerationType::CoalGuildStakingRewards,
                             Some(msg.challenge_id),
                         )
                         .await
@@ -80,7 +80,7 @@ pub async fn pool_mine_success_system(
                         match app_database
                             .get_pending_extra_resources_generation(
                                 app_config.pool_id,
-                                ExtraResourcesGenerationType::CoalStakingRewards,
+                                ExtraResourcesGenerationType::CoalGuildStakingRewards,
                             )
                             .await
                         {
@@ -143,7 +143,7 @@ pub async fn pool_mine_success_system(
                                     amount_ore: 0,
                                     amount_wood: 0,
                                     generation_type:
-                                        ExtraResourcesGenerationType::CoalStakingRewards as i32,
+                                        ExtraResourcesGenerationType::CoalGuildStakingRewards as i32,
                                 });
                                 miners_rewards.push(UpdateReward {
                                     miner_id: miner.id,
@@ -201,7 +201,7 @@ pub async fn pool_mine_success_system(
                             0,
                             0,
                             0,
-                            ExtraResourcesGenerationType::CoalStakingRewards,
+                            ExtraResourcesGenerationType::CoalGuildStakingRewards,
                         )
                         .await
                     {

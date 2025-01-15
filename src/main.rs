@@ -2949,7 +2949,7 @@ pub async fn get_guild_lp_staking_rewards(
         let db_rewards = app_rr_database
             .get_extra_resources_rewards_by_pubkey(
                 user_pubkey.to_string(),
-                ExtraResourcesGenerationType::CoalStakingRewards,
+                ExtraResourcesGenerationType::CoalGuildStakingRewards,
             )
             .await;
 
@@ -2993,7 +2993,7 @@ pub async fn get_guild_lp_staking_rewards_24h(
         let db_rewards = app_rr_database
             .get_extra_resources_rewards_in_period_by_pubkey(
                 user_pubkey.to_string(),
-                ExtraResourcesGenerationType::CoalStakingRewards,
+                ExtraResourcesGenerationType::CoalGuildStakingRewards,
                 yesterday.naive_utc(),
                 now.naive_utc(),
             )

@@ -876,7 +876,8 @@ pub async fn pool_submission_system(
                                                             info!(target: "submission_log", "full_multiplier_coal {:?}", full_multiplier_coal);
                                                             let full_rewards_coal = coal_balance_after_tx - coal_balance_before_tx;
                                                             let commissions_coal = full_rewards_coal.mul(5).saturating_div(100);
-                                                            let guild_stake_rewards_coal = ((((full_rewards_coal - commissions_coal) as f64 / full_multiplier_coal).mul(guild_multiplier) as u64).mul(5)).saturating_div(100);
+                                                            let guild_stake_rewards_coal = ((((full_rewards_coal - commissions_coal) as f64 / full_multiplier_coal).mul(guild_multiplier) as u64).mul(50)).saturating_div(100);
+                                                            // let stakers_rewards_coal = ((((full_rewards_coal - commissions_coal) as f64 / full_multiplier_coal).mul(stake_multiplier_coal) as u64).mul(10)).saturating_div(100);
                                                             let rewards_coal = full_rewards_coal - commissions_coal - guild_stake_rewards_coal;
                                                             let full_rewards_ore = ore_balance_after_tx - ore_balance_before_tx;
                                                             let commissions_ore = full_rewards_ore.mul(5).saturating_div(100);

@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 pub enum ExtraResourcesGenerationType {
     None = 0,
     ChromiumReprocess = 1,
-    CoalStakingRewards = 2,
-    OreStakingRewards = 3,
+    CoalGuildStakingRewards = 2,
+    CoalPoolStakingRewards = 3,
     DiamondHandsReprocess = 4,
     NftReprocessOMC = 5,
 }
@@ -23,11 +23,11 @@ impl From<usize> for ExtraResourcesGenerationType {
             _ if value == ExtraResourcesGenerationType::ChromiumReprocess as usize => {
                 ExtraResourcesGenerationType::ChromiumReprocess
             }
-            _ if value == ExtraResourcesGenerationType::CoalStakingRewards as usize => {
-                ExtraResourcesGenerationType::CoalStakingRewards
+            _ if value == ExtraResourcesGenerationType::CoalGuildStakingRewards as usize => {
+                ExtraResourcesGenerationType::CoalGuildStakingRewards
             }
-            _ if value == ExtraResourcesGenerationType::OreStakingRewards as usize => {
-                ExtraResourcesGenerationType::OreStakingRewards
+            _ if value == ExtraResourcesGenerationType::CoalPoolStakingRewards as usize => {
+                ExtraResourcesGenerationType::CoalPoolStakingRewards
             }
             _ if value == ExtraResourcesGenerationType::DiamondHandsReprocess as usize => {
                 ExtraResourcesGenerationType::DiamondHandsReprocess

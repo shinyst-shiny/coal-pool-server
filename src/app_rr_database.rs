@@ -1,12 +1,12 @@
 use chrono::{NaiveDate, NaiveDateTime};
 use deadpool_diesel::mysql::{Manager, Pool};
-use diesel::sql_types::{Date, Datetime, Integer};
+use diesel::sql_types::{BigInt, Date, Datetime, Integer};
 use diesel::{sql_types::Text, MysqlConnection, RunQueryDsl};
-use tracing::error;
+use tracing::{error, info};
 
 use crate::{
     app_database::AppDatabaseError, models, ChallengeWithDifficulty, Submission,
-    SubmissionWithPubkey, Txn,
+    SubmissionWithPubkey, Txn, MIN_DIFF, MIN_HASHPOWER,
 };
 
 pub struct AppRRDatabase {
@@ -550,42 +550,48 @@ impl AppRRDatabase {
                 .interact(move |conn: &mut MysqlConnection| {
                     diesel::sql_query(
                         "
-                    WITH challenge_best_difficulty AS (
-                        SELECT challenge_id, MAX(difficulty) as best_difficulty
-                        FROM earnings
-                        WHERE created_at BETWEEN ? AND ?
-                            AND challenge_id != -1
-                        GROUP BY challenge_id
-                    )
-                    SELECT
-                        e.miner_id,
-                        e.challenge_id,
-                        m.pubkey,
-                        e.amount_coal as miner_amount_coal,
-                        e.amount_ore as miner_amount_ore,
-                        cbd.best_difficulty,
-                        e.difficulty as miner_difficulty,
-                        e.created_at,
-                        c.rewards_earned_coal as total_rewards_earned_coal,
-                        c.rewards_earned_ore as total_rewards_earned_ore
-                    FROM
-                        earnings e
-                    JOIN
-                        miners m ON e.miner_id = m.id
-                    JOIN
-                        challenges c ON e.challenge_id = c.id
-                    JOIN
-                        challenge_best_difficulty cbd ON e.challenge_id = cbd.challenge_id
-                    WHERE
-                        m.pubkey = ?
-                        AND e.created_at BETWEEN ? AND ?
-                        AND e.challenge_id != -1
-                    ORDER BY
-                        e.created_at DESC
-                    ",
+                WITH challenge_best_difficulty AS (
+                    SELECT challenge_id, MAX(difficulty) as best_difficulty
+                    FROM earnings
+                    WHERE created_at BETWEEN ? AND ?
+                        AND challenge_id != -1
+                    GROUP BY challenge_id
+                )
+                SELECT
+                    e.miner_id,
+                    e.challenge_id,
+                    m.pubkey,
+                    e.amount_coal as miner_amount_coal,
+                    e.amount_ore as miner_amount_ore,
+                    cbd.best_difficulty,
+                    e.difficulty as miner_difficulty,
+                    ? * POW(2, e.difficulty - ?) as miner_hashpower,
+                    ? * POW(2, cbd.best_difficulty - ?) as best_challenge_hashpower,
+                    e.created_at,
+                    c.rewards_earned_coal as total_rewards_earned_coal,
+                    c.rewards_earned_ore as total_rewards_earned_ore
+                FROM
+                    earnings e
+                JOIN
+                    miners m ON e.miner_id = m.id
+                JOIN
+                    challenges c ON e.challenge_id = c.id
+                JOIN
+                    challenge_best_difficulty cbd ON e.challenge_id = cbd.challenge_id
+                WHERE
+                    m.pubkey = ?
+                    AND e.created_at BETWEEN ? AND ?
+                    AND e.challenge_id != -1
+                ORDER BY
+                    e.created_at DESC
+                ",
                     )
                     .bind::<Datetime, _>(start_time)
                     .bind::<Datetime, _>(end_time)
+                    .bind::<BigInt, _>(MIN_HASHPOWER as i64)
+                    .bind::<Integer, _>(MIN_DIFF as i32)
+                    .bind::<BigInt, _>(MIN_HASHPOWER as i64)
+                    .bind::<Integer, _>(MIN_DIFF as i32)
                     .bind::<Text, _>(pubkey)
                     .bind::<Datetime, _>(start_time)
                     .bind::<Datetime, _>(end_time)
@@ -604,7 +610,7 @@ impl AppRRDatabase {
                     }
                 },
                 Err(e) => {
-                    error!("{:?}", e);
+                    error!("get_earnings_with_challenge_and_submission {:?}", e);
                     return Err(AppDatabaseError::InteractionFailed);
                 }
             }

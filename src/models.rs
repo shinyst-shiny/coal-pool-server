@@ -376,6 +376,10 @@ pub struct EarningWithChallengeWithSubmission {
     pub best_difficulty: i8,
     #[diesel(sql_type = TinyInt)]
     pub miner_difficulty: i8,
+    #[diesel(sql_type = Unsigned<BigInt>)]
+    pub best_challenge_hashpower: u64,
+    #[diesel(sql_type = Unsigned<BigInt>)]
+    pub miner_hashpower: u64,
     #[diesel(sql_type = Timestamp)]
     pub created_at: NaiveDateTime,
     #[diesel(sql_type = Nullable<Unsigned<BigInt>>)]

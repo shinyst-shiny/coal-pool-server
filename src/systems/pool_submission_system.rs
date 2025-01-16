@@ -809,7 +809,7 @@ pub async fn pool_submission_system(
                                                             let mut ore_balance_after_tx = 0;
                                                             let mut coal_balance_after_tx = 0;
 
-                                                            tokio::time::sleep(Duration::from_millis(2000)).await;
+                                                            tokio::time::sleep(Duration::from_millis(3000)).await;
 
                                                             if let Ok(ore_balance) = get_ore_balance(
                                                                 app_wallet.clone().miner_wallet.pubkey(),

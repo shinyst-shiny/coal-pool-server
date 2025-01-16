@@ -1428,7 +1428,7 @@ async fn get_miner_earnings(
     let one_day = Duration::from_secs(60 * 60 * 24 * 1);
     let check_end_time = query_params.end_time - one_day;
 
-    if check_end_time < query_params.start_time {
+    if check_end_time > query_params.start_time {
         return Err("Maximum time period is one day".to_string());
     }
     if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
@@ -1456,7 +1456,7 @@ async fn get_miner_earnings_for_submissions(
     let one_day = Duration::from_secs(60 * 60 * 24 * 1);
     let check_end_time = query_params.end_time - one_day;
 
-    if check_end_time < query_params.start_time {
+    if check_end_time > query_params.start_time {
         return Err("Maximum time period is one day".to_string());
     }
     if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {

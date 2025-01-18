@@ -140,173 +140,60 @@ impl AppDatabase {
         tracing::info!(target: "server_log", "{} - Getting db pool connection.", id);
         if let Ok(db_conn) = self.connection_pool.get().await {
             tracing::info!(target: "server_log", "{} - Got db pool connection in {}ms.", id, instant.elapsed().as_millis());
-            let rewards_1 = rewards.clone();
-            let query_1 = db_conn
-                .interact(move |conn: &mut MysqlConnection| {
-                    let rewards = rewards_1.clone();
-                    let query = diesel::sql_query(
-                        "UPDATE rewards SET balance_coal = balance_coal + CASE miner_id "
-                            .to_string()
-                            + &rewards
-                                .iter()
-                                .map(|r| format!("WHEN {} THEN {}", r.miner_id, r.balance_coal))
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                            + " END WHERE miner_id IN ("
-                            + &rewards
-                                .iter()
-                                .map(|r| r.miner_id.to_string())
-                                .collect::<Vec<_>>()
-                                .join(",")
-                            + ");\n",
-                    );
-                    query.execute(conn)
-                })
-                .await;
 
-            let rewards_2 = rewards.clone();
-            let query_2 = db_conn
-                .interact(move |conn: &mut MysqlConnection| {
-                    let rewards = rewards_2.clone();
-                    let query = diesel::sql_query(
-                        "UPDATE rewards SET balance_ore = balance_ore + CASE miner_id ".to_string()
-                            + &rewards
-                                .iter()
-                                .map(|r| format!("WHEN {} THEN {}", r.miner_id, r.balance_ore))
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                            + " END WHERE miner_id IN ("
-                            + &rewards
-                                .iter()
-                                .map(|r| r.miner_id.to_string())
-                                .collect::<Vec<_>>()
-                                .join(",")
-                            + ");\n",
-                    );
-                    query.execute(conn)
-                })
-                .await;
+            let reward_types = vec!["coal", "ore", "chromium", "sol", "wood", "ingot"];
 
-            let rewards_3 = rewards.clone();
-            let query_3 = db_conn
-                .interact(move |conn: &mut MysqlConnection| {
-                    let rewards = rewards_3.clone();
-                    let query = diesel::sql_query(
-                        "UPDATE rewards SET balance_chromium = balance_chromium + CASE miner_id "
-                            .to_string()
-                            + &rewards
-                                .iter()
-                                .map(|r| format!("WHEN {} THEN {}", r.miner_id, r.balance_chromium))
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                            + " END WHERE miner_id IN ("
-                            + &rewards
-                                .iter()
-                                .map(|r| r.miner_id.to_string())
-                                .collect::<Vec<_>>()
-                                .join(",")
-                            + ");\n",
-                    );
-                    query.execute(conn)
-                })
-                .await;
+            let queries: Vec<_> = reward_types
+                .into_iter()
+                .map(|reward_type| {
+                    let rewards_clone = rewards.clone();
+                    db_conn.interact(move |conn: &mut MysqlConnection| {
+                        let subquery = rewards_clone
+                            .iter()
+                            .map(|r| {
+                                let balance = match reward_type {
+                                    "coal" => r.balance_coal,
+                                    "ore" => r.balance_ore,
+                                    "chromium" => r.balance_chromium,
+                                    "sol" => r.balance_sol,
+                                    "wood" => r.balance_wood,
+                                    "ingot" => r.balance_ingot,
+                                    _ => unreachable!(),
+                                };
+                                format!("SELECT {} as miner_id, {} as balance", r.miner_id, balance)
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" UNION ALL ");
 
-            let rewards_4 = rewards.clone();
-            let query_4 = db_conn
-                .interact(move |conn: &mut MysqlConnection| {
-                    let rewards = rewards_4.clone();
-                    let query = diesel::sql_query(
-                        "UPDATE rewards SET balance_sol = balance_sol + CASE miner_id ".to_string()
-                            + &rewards
-                                .iter()
-                                .map(|r| format!("WHEN {} THEN {}", r.miner_id, r.balance_sol))
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                            + " END WHERE miner_id IN ("
-                            + &rewards
-                                .iter()
-                                .map(|r| r.miner_id.to_string())
-                                .collect::<Vec<_>>()
-                                .join(",")
-                            + ");\n",
-                    );
-                    query.execute(conn)
-                })
-                .await;
+                        let query = format!(
+                            "UPDATE rewards r
+                         JOIN (
+                             SELECT miner_id, SUM(balance) as total_balance
+                             FROM ({}) as temp
+                             GROUP BY miner_id
+                         ) as grouped
+                         ON r.miner_id = grouped.miner_id
+                         SET r.balance_{} = r.balance_{} + grouped.total_balance",
+                            subquery, reward_type, reward_type
+                        );
 
-            let rewards_5 = rewards.clone();
-            let query_5 = db_conn
-                .interact(move |conn: &mut MysqlConnection| {
-                    let rewards = rewards_5.clone();
-                    let query = diesel::sql_query(
-                        "UPDATE rewards SET balance_wood = balance_wood + CASE miner_id "
-                            .to_string()
-                            + &rewards
-                                .iter()
-                                .map(|r| format!("WHEN {} THEN {}", r.miner_id, r.balance_wood))
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                            + " END WHERE miner_id IN ("
-                            + &rewards
-                                .iter()
-                                .map(|r| r.miner_id.to_string())
-                                .collect::<Vec<_>>()
-                                .join(",")
-                            + ");\n",
-                    );
-                    query.execute(conn)
+                        diesel::sql_query(query).execute(conn)
+                    })
                 })
-                .await;
+                .collect();
 
-            let rewards_6 = rewards.clone();
-            let query_6 = db_conn
-                .interact(move |conn: &mut MysqlConnection| {
-                    let rewards = rewards_6.clone();
-                    let query = diesel::sql_query(
-                        "UPDATE rewards SET balance_ingot = balance_ingot + CASE miner_id "
-                            .to_string()
-                            + &rewards
-                                .iter()
-                                .map(|r| format!("WHEN {} THEN {}", r.miner_id, r.balance_ingot))
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                            + " END WHERE miner_id IN ("
-                            + &rewards
-                                .iter()
-                                .map(|r| r.miner_id.to_string())
-                                .collect::<Vec<_>>()
-                                .join(",")
-                            + ");\n",
-                    );
-                    query.execute(conn)
-                })
-                .await;
-
-            let res = query_1
-                .and(query_2)
-                .and(query_3)
-                .and(query_4)
-                .and(query_5)
-                .and(query_6);
+            let res = futures::future::try_join_all(queries).await;
 
             match res {
-                Ok(interaction) => match interaction {
-                    Ok(_query) => {
-                        return Ok(());
-                    }
-                    Err(e) => {
-                        error!(target: "server_log", "update rewards query error: {:?}", e);
-                        return Err(AppDatabaseError::QueryFailed);
-                    }
-                },
+                Ok(_) => Ok(()),
                 Err(e) => {
-                    error!(target: "server_log", "update rewards interaction error: {:?}", e);
-                    return Err(AppDatabaseError::InteractionFailed);
+                    error!(target: "server_log", "update rewards error: {:?}", e);
+                    Err(AppDatabaseError::QueryFailed)
                 }
             }
         } else {
-            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
-        };
+            Err(AppDatabaseError::FailedToGetConnectionFromPool)
+        }
     }
 
     pub async fn decrease_miner_reward(

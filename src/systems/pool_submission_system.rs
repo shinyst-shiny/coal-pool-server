@@ -460,7 +460,7 @@ pub async fn pool_submission_system(
                                 min_context_slot: None,
                             };
 
-                            let rpc_sim_config = RpcSimulateTransactionConfig {
+                            /*let rpc_sim_config = RpcSimulateTransactionConfig {
                                 sig_verify: false,
                                 ..RpcSimulateTransactionConfig::default()
                             };
@@ -487,7 +487,7 @@ pub async fn pool_submission_system(
                                         break;
                                     }
                                 }
-                            }
+                            }*/
 
                             let mut rpc_send_attempts = 1;
                             let signature = loop {

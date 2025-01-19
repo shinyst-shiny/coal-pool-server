@@ -246,7 +246,7 @@ struct Args {
         long,
         value_name = "priority fee",
         help = "Number of microlamports to pay as priority fee per transaction",
-        default_value = "10000",
+        default_value = "0",
         global = true
     )]
     priority_fee: u64,
@@ -254,7 +254,7 @@ struct Args {
         long,
         value_name = "jito tip",
         help = "Number of lamports to pay as jito tip per transaction",
-        default_value = "0",
+        default_value = "1000",
         global = true
     )]
     jito_tip: u64,
@@ -329,6 +329,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rpc_url = std::env::var("RPC_URL").expect("RPC_URL must be set.");
     let rpc_ws_url = std::env::var("RPC_WS_URL").expect("RPC_WS_URL must be set.");
     let rpc_url_miner = std::env::var("RPC_URL_MINER").expect("RPC_URL must be set.");
+    let jito_url = std::env::var("JITO_URL").expect("JITO_URL must be set.");
     let password = std::env::var("PASSWORD").expect("PASSWORD must be set.");
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set.");
     let database_rr_url = std::env::var("DATABASE_RR_URL").expect("DATABASE_RR_URL must be set.");
@@ -414,7 +415,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rpc_client = RpcClient::new_with_commitment(rpc_url, CommitmentConfig::confirmed());
     let rpc_client_miner =
         RpcClient::new_with_commitment(rpc_url_miner, CommitmentConfig::confirmed());
-    let jito_url = "https://mainnet.block-engine.jito.wtf/api/v1/transactions".to_string();
     let jito_client = RpcClient::new(jito_url);
 
     info!(target: "server_log", "loading sol balance...");

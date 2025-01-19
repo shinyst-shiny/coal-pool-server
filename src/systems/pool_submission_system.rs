@@ -14,7 +14,8 @@ use crate::coal_utils::{
 };
 use crate::ore_utils::{
     get_ore_auth_ix, get_ore_balance, get_ore_mine_ix,
-    get_proof_and_config_with_busses as get_proof_and_config_with_busses_ore, ORE_TOKEN_DECIMALS,
+    get_proof_and_config_with_busses as get_proof_and_config_with_busses_ore,
+    get_reset_ix as get_reset_ix_ore, ORE_TOKEN_DECIMALS,
 };
 use crate::{
     app_database::AppDatabase,
@@ -34,6 +35,7 @@ use solana_client::{
     nonblocking::rpc_client::RpcClient,
     rpc_config::{RpcSendTransactionConfig, RpcSimulateTransactionConfig, RpcTransactionConfig},
 };
+use solana_sdk::commitment_config::CommitmentLevel;
 use solana_sdk::{
     compute_budget::ComputeBudgetInstruction,
     instruction::InstructionError,
@@ -318,18 +320,35 @@ pub async fn pool_submission_system(
                             false
                         };
 
+                        let should_add_reset_ix_ore = if let Some(config) = loaded_config_ore {
+                            let time_until_reset = (config.last_reset_at + 300) - now as i64;
+                            if time_until_reset <= 5 {
+                                cu_limit += 50_000;
+                                prio_fee += 5_000;
+                                info!(target: "server_log", "Including reset tx COAL.");
+                                true
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
                         info!(target: "server_log", "using priority fee of {}", prio_fee);
 
                         let cu_limit_ix =
                             ComputeBudgetInstruction::set_compute_unit_limit(cu_limit);
                         ixs.push(cu_limit_ix);
 
-                        let prio_fee_ix =
-                            ComputeBudgetInstruction::set_compute_unit_price(prio_fee);
-                        ixs.push(prio_fee_ix);
+                        if (prio_fee > 0) {
+                            let prio_fee_ix =
+                                ComputeBudgetInstruction::set_compute_unit_price(prio_fee);
+                            ixs.push(prio_fee_ix);
+                        }
 
                         let jito_tip = *app_jito_tip;
                         if jito_tip > 0 {
+                            info!(target: "server_log", "adding tip {}", jito_tip);
                             let tip_accounts = [
                                 "96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5",
                                 "HFqU5x63VTqvQss8hp11i4wVV8bD44PvwucfZ2bU7gRe",
@@ -366,6 +385,11 @@ pub async fn pool_submission_system(
 
                         if should_add_reset_ix_coal {
                             let reset_ix = get_reset_ix_coal(signer.pubkey());
+                            ixs.push(reset_ix);
+                        }
+
+                        if should_add_reset_ix_ore {
+                            let reset_ix = get_reset_ix_ore(signer.pubkey());
                             ixs.push(reset_ix);
                         }
 
@@ -429,9 +453,11 @@ pub async fn pool_submission_system(
                             };
 
                             let rpc_config = RpcSendTransactionConfig {
-                                skip_preflight: false,
-                                preflight_commitment: Some(rpc_client.commitment().commitment),
-                                ..RpcSendTransactionConfig::default()
+                                skip_preflight: true,
+                                preflight_commitment: Some(CommitmentLevel::Confirmed),
+                                encoding: Some(UiTransactionEncoding::Base64),
+                                max_retries: Some(0),
+                                min_context_slot: None,
                             };
 
                             let rpc_sim_config = RpcSimulateTransactionConfig {

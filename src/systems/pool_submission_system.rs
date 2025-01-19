@@ -307,7 +307,7 @@ pub async fn pool_submission_system(
                         });
 
                         let mut cu_limit = 960_000;
-                        /*let should_add_reset_ix_coal = if let Some(config) = loaded_config_coal {
+                        let should_add_reset_ix_coal = if let Some(config) = loaded_config_coal {
                             let time_until_reset = (config.last_reset_at + 300) - now as i64;
                             if time_until_reset <= 5 {
                                 cu_limit += 50_000;
@@ -318,9 +318,9 @@ pub async fn pool_submission_system(
                             }
                         } else {
                             false
-                        };*/
+                        };
 
-                        /*let should_add_reset_ix_ore = if let Some(config) = loaded_config_ore {
+                        let should_add_reset_ix_ore = if let Some(config) = loaded_config_ore {
                             let time_until_reset = (config.last_reset_at + 300) - now as i64;
                             if time_until_reset <= 5 {
                                 cu_limit += 50_000;
@@ -332,7 +332,7 @@ pub async fn pool_submission_system(
                             }
                         } else {
                             false
-                        };*/
+                        };
 
                         info!(target: "server_log", "using priority fee of {}", prio_fee);
 
@@ -383,7 +383,7 @@ pub async fn pool_submission_system(
 
                         info!(target: "server_log", "Adding reset ix COAL");
 
-                        /*if should_add_reset_ix_coal {
+                        if should_add_reset_ix_coal {
                             let reset_ix = get_reset_ix_coal(signer.pubkey());
                             ixs.push(reset_ix);
                         }
@@ -391,7 +391,7 @@ pub async fn pool_submission_system(
                         if should_add_reset_ix_ore {
                             let reset_ix = get_reset_ix_ore(signer.pubkey());
                             ixs.push(reset_ix);
-                        }*/
+                        }
 
                         info!(target: "server_log","Using for the transaction Signer: {:?} tool: {:?}, member: {:?}, guild_address: {:?}", signer.pubkey(), tool_address, guild_member_address, guild_address);
 

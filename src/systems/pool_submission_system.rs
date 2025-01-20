@@ -857,6 +857,7 @@ pub async fn pool_submission_system(
                                                                 app_wallet.clone().miner_wallet.pubkey(),
                                                                 &rpc_client.clone(),
                                                             ).await {
+                                                                info!(target: "server_log", "Coal balance before: {:?} Coal balance after: {:?}", coal_balance_before_tx, coal_balance_after_tx);
                                                                 coal_balance_after_tx = coal_balance.clone();
                                                                 if(coal_balance_before_tx == std::u64::MAX) {
                                                                     coal_balance_before_tx = coal_balance.clone();

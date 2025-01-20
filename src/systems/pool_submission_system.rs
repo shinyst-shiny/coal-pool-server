@@ -936,6 +936,7 @@ pub async fn pool_submission_system(
                                                             info!(target: "submission_log", "full_multiplier_coal {:?}", full_multiplier_coal);
                                                             let mut full_rewards_coal = coal_balance_after_tx - coal_balance_before_tx;
                                                             if(full_rewards_coal > 780_000_000_000) {
+                                                                info!(target: "server_log", "HIT MAX COAL: {}", full_rewards_coal);
                                                                 full_rewards_coal = 780_000_000_000;
                                                             }
                                                             let commissions_coal = full_rewards_coal.mul(5).saturating_div(100);
@@ -944,6 +945,7 @@ pub async fn pool_submission_system(
                                                             let rewards_coal = full_rewards_coal - commissions_coal - guild_stake_rewards_coal;
                                                             let mut full_rewards_ore = ore_balance_after_tx - ore_balance_before_tx;
                                                             if(full_rewards_ore > 100_000_000_000) {
+                                                                info!(target: "server_log", "HIT MAX ORE: {}", full_rewards_ore);
                                                                 full_rewards_ore = 100_000_000_000;
                                                             }
                                                             let commissions_ore = full_rewards_ore.mul(5).saturating_div(100);

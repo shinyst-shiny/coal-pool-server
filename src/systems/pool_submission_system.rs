@@ -198,7 +198,11 @@ pub async fn pool_submission_system(
                             guild_address = Some(member.unwrap().guild);
                         }
 
-                        let tool_multiplier = calculate_tool_multiplier(&tool);
+                        let mut tool_multiplier = calculate_tool_multiplier(&tool);
+
+                        if (tool_multiplier <= 0) {
+                            tool_multiplier = 1.0f;
+                        }
 
                         let coal_guild_accounts = match rpc_client
                             .get_program_accounts(&coal_guilds_api::id())

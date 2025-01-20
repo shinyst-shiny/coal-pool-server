@@ -823,7 +823,7 @@ pub async fn pool_submission_system(
 
                                                 let guild_total_stake =
                                                     guild.unwrap().total_stake as f64;
-                                                let guild_multiplier = calculate_multiplier(
+                                                let mut guild_multiplier = calculate_multiplier(
                                                     guild_config.unwrap().total_stake,
                                                     guild_config.unwrap().total_multiplier,
                                                     guild.unwrap().total_stake,
@@ -851,11 +851,12 @@ pub async fn pool_submission_system(
                                                                     ore_balance_before_tx = 0;
                                                                 }
                                                                 info!(target: "server_log", "ORE balance before: {:?} ORE balance after: {:?}", ore_balance_before_tx, ore_balance_after_tx);
-                                                                if(ore_balance_before_tx == std::u64::MAX) {
-                                                                    ore_balance_before_tx = ore_balance.clone();
-                                                                }
                                                             } else {
                                                                 ore_balance_before_tx = 0;
+                                                            }
+
+                                                            if(ore_balance_before_tx == std::u64::MAX) {
+                                                                ore_balance_before_tx = ore_balance.clone();
                                                             }
 
                                                             if(ore_balance_before_tx <= 0 || ore_balance_after_tx <= 0) {
@@ -878,11 +879,12 @@ pub async fn pool_submission_system(
                                                                     coal_balance_after_tx = 0;
                                                                     coal_balance_before_tx = 0;
                                                                 }
-                                                                if(coal_balance_before_tx == std::u64::MAX) {
-                                                                    coal_balance_before_tx = coal_balance.clone();
-                                                                }
                                                             } else {
                                                                 coal_balance_before_tx = 0;
+                                                            }
+
+                                                            if(coal_balance_before_tx == std::u64::MAX) {
+                                                                coal_balance_before_tx = coal_balance.clone();
                                                             }
 
                                                             if(coal_balance_before_tx <= 0 || coal_balance_after_tx <= 0) {
@@ -901,7 +903,7 @@ pub async fn pool_submission_system(
                                                             let balance_ore = (ore_balance_after_tx) as f64
                                                                 / 10f64.powf(ORE_TOKEN_DECIMALS as f64);
 
-                                                            let stake_multiplier_coal = if let Some(config) = loaded_config_coal {
+                                                            let mut stake_multiplier_coal = if let Some(config) = loaded_config_coal {
                                                                 if config.top_balance > 0 {
                                                                     1.0 + (coal_balance_after_tx as f64 / config.top_balance as f64).min(1.0f64)
                                                                 } else {
@@ -911,6 +913,14 @@ pub async fn pool_submission_system(
                                                                 1.0f64
                                                             };
 
+
+                                                            if(stake_multiplier_coal < 1.0) {
+                                                                stake_multiplier_coal = 1.0f64;
+                                                            }if(tool_multiplier < 1.0) {
+                                                                tool_multiplier = 1.0f64;
+                                                            }if(guild_multiplier < 1.0) {
+                                                                guild_multiplier = 1.0f64;
+                                                            }
 
                                                             info!(target: "server_log", "MineEvent: {:?}", mine_event);
                                                             info!(target: "submission_log", "MineEvent: {:?}", mine_event);

@@ -200,8 +200,8 @@ pub async fn pool_submission_system(
 
                         let mut tool_multiplier = calculate_tool_multiplier(&tool);
 
-                        if (tool_multiplier <= 0) {
-                            tool_multiplier = 1.0f;
+                        if (tool_multiplier <= 0.0) {
+                            tool_multiplier = 1.0;
                         }
 
                         let coal_guild_accounts = match rpc_client

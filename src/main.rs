@@ -1847,6 +1847,10 @@ async fn post_claim_all_v2(
     Extension(claims_queue): Extension<Arc<ClaimsQueue>>,
     query_params: Query<ClaimAllParamsV2>,
 ) -> impl IntoResponse {
+    return Err((
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "failed to get miner account from database".to_string(),
+    ));
     let msg_timestamp = query_params.timestamp;
 
     let miner_pubkey_str = query_params.username.to_string();

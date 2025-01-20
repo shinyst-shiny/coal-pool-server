@@ -846,12 +846,21 @@ pub async fn pool_submission_system(
                                                                 &rpc_client.clone(),
                                                             ).await {
                                                                 ore_balance_after_tx = ore_balance.clone();
+                                                                if(ore_balance_after_tx == std::u64::MAX || ore_balance_after_tx <= 0) {
+                                                                    ore_balance_after_tx = 0;
+                                                                    ore_balance_before_tx = 0;
+                                                                }
                                                                 info!(target: "server_log", "ORE balance before: {:?} ORE balance after: {:?}", ore_balance_before_tx, ore_balance_after_tx);
                                                                 if(ore_balance_before_tx == std::u64::MAX) {
                                                                     ore_balance_before_tx = ore_balance.clone();
                                                                 }
                                                             } else {
                                                                 ore_balance_before_tx = 0;
+                                                            }
+
+                                                            if(ore_balance_before_tx <= 0 || ore_balance_after_tx <= 0) {
+                                                                coal_balance_after_tx = 0;
+                                                                coal_balance_before_tx = 0;
                                                             }
 
                                                             if ore_balance_before_tx > ore_balance_after_tx {
@@ -865,6 +874,10 @@ pub async fn pool_submission_system(
                                                             ).await {
                                                                 coal_balance_after_tx = coal_balance.clone();
                                                                 info!(target: "server_log", "1 Coal balance before: {:?} Coal balance after: {:?}", coal_balance_before_tx, coal_balance_after_tx);
+                                                                if(coal_balance_after_tx == std::u64::MAX || coal_balance_after_tx <= 0) {
+                                                                    coal_balance_after_tx = 0;
+                                                                    coal_balance_before_tx = 0;
+                                                                }
                                                                 if(coal_balance_before_tx == std::u64::MAX) {
                                                                     coal_balance_before_tx = coal_balance.clone();
                                                                 }
@@ -872,6 +885,10 @@ pub async fn pool_submission_system(
                                                                 coal_balance_before_tx = 0;
                                                             }
 
+                                                            if(coal_balance_before_tx <= 0 || coal_balance_after_tx <= 0) {
+                                                                coal_balance_after_tx = 0;
+                                                                coal_balance_before_tx = 0;
+                                                            }
                                                             if coal_balance_before_tx > coal_balance_after_tx {
                                                                 coal_balance_before_tx = coal_balance_after_tx.clone();
                                                             }

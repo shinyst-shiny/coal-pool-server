@@ -1041,3 +1041,138 @@ impl AppDatabase {
         };
     }
 }
+
+/*
+WITH earnings_totals AS (
+    SELECT
+        miner_id,
+        COALESCE(SUM(amount_coal), 0) AS total_coal,
+        COALESCE(SUM(amount_ore), 0) AS total_ore
+    FROM earnings
+    WHERE miner_id = 2
+    GROUP BY miner_id
+),
+extra_totals AS (
+    SELECT
+        miner_id,
+        COALESCE(SUM(amount_sol), 0) AS total_sol,
+        COALESCE(SUM(amount_coal), 0) AS total_coal,
+        COALESCE(SUM(amount_ore), 0) AS total_ore,
+        COALESCE(SUM(amount_chromium), 0) AS total_chromium,
+        COALESCE(SUM(amount_wood), 0) AS total_wood,
+        COALESCE(SUM(amount_ingot), 0) AS total_ingot
+    FROM earnings_extra_resources
+    WHERE miner_id = 2
+    GROUP BY miner_id
+),
+claims_totals AS (
+    SELECT
+        miner_id,
+        COALESCE(SUM(amount_sol), 0) AS total_sol,
+        COALESCE(SUM(amount_coal), 0) AS total_coal,
+        COALESCE(SUM(amount_ore), 0) AS total_ore,
+        COALESCE(SUM(amount_chromium), 0) AS total_chromium,
+        COALESCE(SUM(amount_wood), 0) AS total_wood,
+        COALESCE(SUM(amount_ingot), 0) AS total_ingot
+    FROM claims
+    WHERE miner_id = 2
+    GROUP BY miner_id
+)
+SELECT
+    m.id AS miner_id,
+    COALESCE(et.total_coal, 0) + COALESCE(er.total_coal, 0) - COALESCE(ct.total_coal, 0) AS total_coal,
+    COALESCE(et.total_ore, 0) + COALESCE(er.total_ore, 0) - COALESCE(ct.total_ore, 0) AS total_ore,
+    COALESCE(er.total_sol, 0) - COALESCE(ct.total_sol, 0) AS total_sol,
+    COALESCE(er.total_chromium, 0) - COALESCE(ct.total_chromium, 0) AS total_chromium,
+    COALESCE(er.total_wood, 0) - COALESCE(ct.total_wood, 0) AS total_wood,
+    COALESCE(er.total_ingot, 0) - COALESCE(ct.total_ingot, 0) AS total_ingot
+FROM miners m
+LEFT JOIN earnings_totals et ON m.id = et.miner_id
+LEFT JOIN extra_totals er ON m.id = er.miner_id
+LEFT JOIN claims_totals ct ON m.id = ct.miner_id
+WHERE m.id = 2;
+
+
+select SUM(ern.amount_coal) from earnings ern where ern.miner_id = 2; #302691018911074
+select SUM(eer.amount_coal) from earnings_extra_resources eer where eer.miner_id = 2; #181121810792
+select SUM(c.amount_coal) from claims c where c.miner_id = 2; #3029700633725
+
+select * from earnings ern where ern.miner_id = 2 AND ern.challenge_id = 99910; #9603311909238
+select * from earnings_extra_resources eer where eer.miner_id = 2; #1715506919
+select * from claims c where c.miner_id = 2; #5512848693641
+
+SELECT * from rewards rew where rew.miner_id = 2; #299842440088141
+
+
+SELECT SUM(r.balance_coal) from rewards r;
+
+SELECT SUM(c.rewards_earned_coal) from challenges c;
+
+#------
+
+
+WITH earnings_totals AS (
+    SELECT
+        miner_id,
+        COALESCE(SUM(amount_coal), 0) AS total_coal,
+        COALESCE(SUM(amount_ore), 0) AS total_ore
+    FROM earnings
+    GROUP BY miner_id
+),
+extra_totals AS (
+    SELECT
+        miner_id,
+        COALESCE(SUM(amount_sol), 0) AS total_sol,
+        COALESCE(SUM(amount_coal), 0) AS total_coal,
+        COALESCE(SUM(amount_ore), 0) AS total_ore,
+        COALESCE(SUM(amount_chromium), 0) AS total_chromium,
+        COALESCE(SUM(amount_wood), 0) AS total_wood,
+        COALESCE(SUM(amount_ingot), 0) AS total_ingot
+    FROM earnings_extra_resources
+    GROUP BY miner_id
+),
+claims_totals AS (
+    SELECT
+        miner_id,
+        COALESCE(SUM(amount_sol), 0) AS total_sol,
+        COALESCE(SUM(amount_coal), 0) AS total_coal,
+        COALESCE(SUM(amount_ore), 0) AS total_ore,
+        COALESCE(SUM(amount_chromium), 0) AS total_chromium,
+        COALESCE(SUM(amount_wood), 0) AS total_wood,
+        COALESCE(SUM(amount_ingot), 0) AS total_ingot
+    FROM claims
+    GROUP BY miner_id
+),
+miner_rewards AS (
+    SELECT
+        m.id AS miner_id,
+        COALESCE(et.total_coal, 0) + COALESCE(er.total_coal, 0) - COALESCE(ct.total_coal, 0) AS total_coal,
+        COALESCE(et.total_ore, 0) + COALESCE(er.total_ore, 0) - COALESCE(ct.total_ore, 0) AS total_ore,
+        COALESCE(er.total_sol, 0) - COALESCE(ct.total_sol, 0) AS total_sol,
+        COALESCE(er.total_chromium, 0) - COALESCE(ct.total_chromium, 0) AS total_chromium,
+        COALESCE(er.total_wood, 0) - COALESCE(ct.total_wood, 0) AS total_wood,
+        COALESCE(er.total_ingot, 0) - COALESCE(ct.total_ingot, 0) AS total_ingot
+    FROM miners m
+    LEFT JOIN earnings_totals et ON m.id = et.miner_id
+    LEFT JOIN extra_totals er ON m.id = er.miner_id
+    LEFT JOIN claims_totals ct ON m.id = ct.miner_id
+)
+UPDATE rewards r
+JOIN miner_rewards mr ON r.miner_id = mr.miner_id
+SET
+    r.balance_coal = mr.total_coal,
+    r.balance_ore = mr.total_ore,
+    r.balance_sol = mr.total_sol,
+    r.balance_chromium = mr.total_chromium,
+    r.balance_wood = mr.total_wood,
+    r.balance_ingot = mr.total_ingot;
+
+
+select * from earnings e where e.created_at >= '2025-01-20 02:37:00';
+
+UPDATE earnings SET amount_coal = 0 where created_at >= '2025-01-20 02:30:00';
+UPDATE earnings_extra_resources SET amount_coal = 0 where created_at >= '2025-01-20 02:30:00';
+
+
+select SUM(r.balance_coal) from rewards r;
+ */

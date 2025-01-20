@@ -942,7 +942,7 @@ pub async fn pool_submission_system(
                                                             let guild_stake_rewards_coal = ((((full_rewards_coal - commissions_coal) as f64 / full_multiplier_coal).mul(guild_multiplier) as u64).mul(50)).saturating_div(100);
                                                             // let stakers_rewards_coal = ((((full_rewards_coal - commissions_coal) as f64 / full_multiplier_coal).mul(stake_multiplier_coal) as u64).mul(10)).saturating_div(100);
                                                             let rewards_coal = full_rewards_coal - commissions_coal - guild_stake_rewards_coal;
-                                                            let full_rewards_ore = ore_balance_after_tx - ore_balance_before_tx;
+                                                            let mut full_rewards_ore = ore_balance_after_tx - ore_balance_before_tx;
                                                             if(full_rewards_ore > 100_000_000_000) {
                                                                 full_rewards_ore = 100_000_000_000;
                                                             }

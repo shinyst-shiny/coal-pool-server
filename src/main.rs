@@ -616,7 +616,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_wallet = wallet_extension.clone();
     let app_claims_queue = claims_queue.clone();
     let app_app_database = app_database.clone();
-    tokio::spawn(async move {
+    /*tokio::spawn(async move {
         claim_system(
             app_claims_queue,
             app_rpc_client,
@@ -624,7 +624,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             app_app_database,
         )
         .await;
-    });
+    });*/
 
     // Track client pong timings
     let app_pongs = pongs.clone();
@@ -1597,6 +1597,10 @@ async fn post_claim_v2(
     Extension(rpc_client): Extension<Arc<RpcClient>>,
     query_params: Query<ClaimParamsV2>,
 ) -> impl IntoResponse {
+    return Err((
+        StatusCode::BAD_REQUEST,
+        "Invalid receiver_pubkey provided.".to_string(),
+    ));
     let msg_timestamp = query_params.timestamp;
 
     let miner_pubkey_str = auth_header.username();

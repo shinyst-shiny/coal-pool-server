@@ -32,6 +32,7 @@ use crate::coal_utils::{
 };
 use crate::ore_utils::{
     get_ore_mint, get_proof_and_config_with_busses as get_proof_and_config_with_busses_ore,
+    register_reservation_ore,
 };
 use crate::routes::get_guild_addresses;
 use crate::send_and_confirm::{send_and_confirm, ComputeBudget};
@@ -246,7 +247,7 @@ struct Args {
         long,
         value_name = "priority fee",
         help = "Number of microlamports to pay as priority fee per transaction",
-        default_value = "1000",
+        default_value = "100000",
         global = true
     )]
     priority_fee: u64,
@@ -611,6 +612,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let jito_client = Arc::new(jito_client);
 
     let last_challenge = Arc::new(Mutex::new([0u8; 32]));
+
+    let app_rpc_client = rpc_client.clone();
+    let app_wallet = wallet_extension.clone();
+
+    register_reservation_ore(app_rpc_client, app_wallet).await;
 
     let app_rpc_client = rpc_client.clone();
     let app_wallet = wallet_extension.clone();

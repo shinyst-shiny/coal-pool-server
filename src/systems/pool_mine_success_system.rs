@@ -299,7 +299,7 @@ pub async fn pool_mine_success_system(
                     };
 
                     for (_addr, client_connection) in socks.iter() {
-                        if client_connection.uuid.eq(&miner_uuid) {
+                        if client_connection.uuid.eq(miner_uuid) {
                             let socket_sender = client_connection.socket.clone();
 
                             match client_connection.client_version {

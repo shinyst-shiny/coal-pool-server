@@ -1,3 +1,5 @@
+use crate::send_and_confirm::{send_and_confirm, ComputeBudget};
+use crate::WalletExtension;
 use drillx::Solution;
 use ore_api::consts::CONFIG_ADDRESS;
 use ore_api::state::Proof;
@@ -5,9 +7,12 @@ use ore_api::{
     consts::{BUS_ADDRESSES, MINT_ADDRESS, PROOF},
     ID as ORE_ID,
 };
+use ore_boost_api::state::{reservation_pda, Reservation};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::account::ReadableAccount;
+use solana_sdk::signature::Signer;
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
+use std::sync::Arc;
 use steel::AccountDeserialize;
 
 pub const ORE_TOKEN_DECIMALS: u8 = ore_api::consts::TOKEN_DECIMALS;
@@ -25,8 +30,13 @@ pub fn get_ore_auth_ix(signer: Pubkey) -> Instruction {
     ore_api::prelude::auth(proof)
 }
 
-pub fn get_ore_mine_ix(signer: Pubkey, solution: Solution, bus: usize) -> Instruction {
-    ore_api::sdk::mine(signer, signer, BUS_ADDRESSES[bus], solution, None)
+pub fn get_ore_mine_ix(
+    signer: Pubkey,
+    solution: Solution,
+    bus: usize,
+    boost: Option<(Pubkey, Pubkey)>,
+) -> Instruction {
+    ore_api::sdk::mine(signer, signer, BUS_ADDRESSES[bus], solution, boost)
 }
 
 pub fn get_ore_register_ix(signer: Pubkey) -> Instruction {
@@ -190,4 +200,49 @@ pub fn amount_u64_to_f64(amount: u64) -> f64 {
 
 pub fn amount_f64_to_u64(amount: f64) -> u64 {
     (amount * 10f64.powf(ORE_TOKEN_DECIMALS as f64)) as u64
+}
+
+pub async fn get_reservation(client: &RpcClient, address: Pubkey) -> Result<Reservation, ()> {
+    if let Ok(data) = client.get_account_data(&address).await {
+        if let Ok(reservation) = bytemuck::try_from_bytes::<Reservation>(&data[8..]) {
+            Ok(*reservation)
+        } else {
+            Err(())
+        }
+    } else {
+        Err(())
+    }
+}
+
+pub async fn register_reservation_ore(client: Arc<RpcClient>, wallet: Arc<WalletExtension>) {
+    let mut ixs = Vec::new();
+    let proof_address = proof_pubkey(wallet.miner_wallet.pubkey());
+    // Register reservation
+    let reservation_address = reservation_pda(proof_address).0;
+    if client.get_account(&reservation_address).await.is_err() {
+        let ix = ore_boost_api::sdk::register(
+            wallet.miner_wallet.pubkey(),
+            wallet.miner_wallet.pubkey(),
+            proof_address,
+        );
+        ixs.push(ix);
+    }
+
+    // Submit transaction
+    if ixs.len() > 0 {
+        send_and_confirm(
+            &ixs,
+            ComputeBudget::Fixed(200_000),
+            &client,
+            &client,
+            &*wallet.miner_wallet,
+            &*wallet.miner_wallet,
+            None,
+            None,
+            false,
+        )
+        .await
+        .expect("ERROR: register_reservation_ore");
+        return;
+    }
 }

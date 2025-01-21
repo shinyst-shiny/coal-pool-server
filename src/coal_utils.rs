@@ -20,6 +20,7 @@ use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{account::ReadableAccount, instruction::Instruction, pubkey::Pubkey};
 use steel::AccountDeserialize;
 use steel::{sysvar, Clock};
+use tracing::info;
 
 pub const COAL_TOKEN_DECIMALS: u8 = TOKEN_DECIMALS;
 
@@ -85,7 +86,7 @@ pub fn get_mine_ix(
     guild_member: Option<Pubkey>,
     guild: Option<Pubkey>,
 ) -> Instruction {
-    // info!(target: "server_log", "get_mine_ix coal: {:?} - {:?} - {:?} - {:?} - {:?} - {:?}",signer, solution, bus, tool, guild_member, guild);
+    info!(target: "server_log", "get_mine_ix coal: {:?} - {:?} - {:?} - {:?} - {:?} - {:?}",signer, solution, bus, tool, guild_member, guild);
     /*coal_instruction::mine_coal(
         signer,
         signer,

@@ -247,7 +247,7 @@ struct Args {
         long,
         value_name = "priority fee",
         help = "Number of microlamports to pay as priority fee per transaction",
-        default_value = "100000",
+        default_value = "200000",
         global = true
     )]
     priority_fee: u64,
@@ -2469,7 +2469,7 @@ async fn ws_handler_v2(
     query_params: Query<WsQueryParams>,
 ) -> impl IntoResponse {
     let msg_timestamp = query_params.timestamp;
-    info!(target:"server_log", "New WebSocket connection from: {:?}", addr);
+    // info!(target:"server_log", "New WebSocket connection from: {:?}", addr);
 
     let pubkey = auth_header.username();
     let signed_msg = auth_header.password();
@@ -2562,7 +2562,7 @@ async fn ws_handler_pubkey(
     Extension(app_wallet): Extension<Arc<WalletExtension>>,
     query_params: Query<WsPubkeyQueryParams>,
 ) -> impl IntoResponse {
-    info!(target:"server_log", "New WebSocket connection from: {:?}", addr);
+    // info!(target:"server_log", "New WebSocket connection from: {:?}", addr);
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -2665,7 +2665,7 @@ async fn handle_socket(
         // info!(target: "server_log", "Socket addr: {who} already has an active connection");
         return;
     } else {
-        info!(target: "server_log", "Client: {} - {} connected!",who, who_pubkey.to_string());
+        // info!(target: "server_log", "Client: {} - {} connected!",who, who_pubkey.to_string());
         let new_app_client_connection = AppClientConnection {
             uuid: socket_uuid,
             pubkey: who_pubkey,

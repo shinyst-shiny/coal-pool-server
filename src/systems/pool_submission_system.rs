@@ -310,6 +310,8 @@ pub async fn pool_submission_system(
                         let reservation_address = reservation_pda(ore_proof_address).0;
                         let reservation = get_reservation(&rpc_client, reservation_address).await;
 
+                        info!(target: "server_log", "reservation: {:?}", reservation);
+
                         let boost_address = reservation
                             .map(|r| {
                                 if r.boost == Pubkey::default() {

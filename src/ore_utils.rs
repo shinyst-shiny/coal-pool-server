@@ -14,6 +14,7 @@ use solana_sdk::signature::Signer;
 use solana_sdk::{instruction::Instruction, pubkey::Pubkey};
 use std::sync::Arc;
 use steel::AccountDeserialize;
+use tracing::info;
 
 pub const ORE_TOKEN_DECIMALS: u8 = ore_api::consts::TOKEN_DECIMALS;
 
@@ -36,6 +37,7 @@ pub fn get_ore_mine_ix(
     bus: usize,
     boost: Option<(Pubkey, Pubkey)>,
 ) -> Instruction {
+    info!(target: "server_log", "get_ore_mine_ix ORE: {:?} - {:?} - {:?} - {:?}", signer, solution, bus, boost);
     ore_api::sdk::mine(signer, signer, BUS_ADDRESSES[bus], solution, boost)
 }
 

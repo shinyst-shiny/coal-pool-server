@@ -447,17 +447,17 @@ pub async fn pool_submission_system(
                         }*/
 
                         info!(target: "server_log","Using for the transaction Signer: {:?} tool: {:?}, member: {:?}, guild_address: {:?}", signer.pubkey(), tool_address, guild_member_address, guild_address);
-                        /*let coal_mine_ix = get_mine_ix(
+                        let coal_mine_ix = get_mine_ix(
                             signer.pubkey(),
                             best_solution,
                             bus,
                             Option::from(tool_address),
                             Option::from(guild_member_address),
                             Option::from(guild_address),
-                        );*/
+                        );
 
-                        let coal_mine_ix =
-                            get_mine_ix(signer.pubkey(), best_solution, bus, None, None, None);
+                        /*let coal_mine_ix =
+                        get_mine_ix(signer.pubkey(), best_solution, bus, None, None, None);*/
 
                         ixs_coal.push(coal_mine_ix);
 

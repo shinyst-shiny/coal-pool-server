@@ -91,7 +91,7 @@ pub async fn pool_submission_system(
         let old_proof = lock.clone();
         drop(lock);
 
-        let cutoff = get_cutoff(old_proof, 1);
+        let cutoff = get_cutoff(old_proof, 0);
         if cutoff <= 0 {
             // process solutions
             let reader = app_epoch_hashes.read().await;
@@ -534,6 +534,200 @@ pub async fn pool_submission_system(
 
                             let mut bundle_send_attempt = 1;
 
+                            let (tx_message_sender, tx_message_receiver) =
+                                tokio::sync::oneshot::channel::<u8>();
+                            let app_app_nonce = app_nonce.clone();
+                            let app_app_database = app_database.clone();
+                            let app_app_config = config.clone();
+                            let app_app_rpc_client = rpc_client.clone();
+                            let app_app_proof = app_proof.clone();
+                            let app_app_wallet = app_wallet.clone();
+                            let app_app_epoch_hashes = app_epoch_hashes.clone();
+                            let app_app_submission_window = app_submission_window.clone();
+                            let app_app_client_nonce_ranges = app_client_nonce_ranges.clone();
+                            let app_app_last_challenge = app_last_challenge.clone();
+                            tokio::spawn(async move {
+                                let mut stop_reciever = tx_message_receiver;
+                                let app_nonce = app_app_nonce;
+                                let app_database = app_app_database;
+                                let app_config = app_app_config;
+                                let app_rpc_client = app_app_rpc_client;
+                                let app_proof = app_app_proof;
+                                let app_wallet = app_app_wallet;
+                                let app_epoch_hashes = app_app_epoch_hashes;
+                                let app_submission_window = app_app_submission_window;
+                                let app_client_nonce_ranges = app_app_client_nonce_ranges;
+                                let app_last_challenge = app_app_last_challenge;
+                                tokio::time::sleep(Duration::from_millis(500)).await;
+                                loop {
+                                    if let Ok(_) = stop_reciever.try_recv() {
+                                        // Transaction has succeeded or expired
+                                        break;
+                                    } else {
+                                        // Wait 100ms then check for updated proof
+                                        tokio::time::sleep(Duration::from_millis(100)).await;
+
+                                        info!(target: "server_log", "Checking for proof hash update.");
+                                        let lock = app_proof.lock().await;
+                                        let latest_proof = lock.clone();
+                                        drop(lock);
+
+                                        if old_proof.challenge.eq(&latest_proof.challenge) {
+                                            info!(target: "server_log", "Proof challenge not updated yet..");
+                                            if let Ok(p) = get_proof(
+                                                &app_rpc_client,
+                                                app_wallet.clone().miner_wallet.pubkey(),
+                                            )
+                                            .await
+                                            {
+                                                info!(target: "server_log", "OLD PROOF CHALLENGE: {}", BASE64_STANDARD.encode(old_proof.challenge));
+                                                info!(target: "server_log", "RPC PROOF CHALLENGE: {}", BASE64_STANDARD.encode(p.challenge));
+                                                if old_proof.challenge.ne(&p.challenge) {
+                                                    info!(target: "server_log", "Found new proof from rpc call, not websocket...");
+                                                    let mut lock = app_proof.lock().await;
+                                                    *lock = p;
+                                                    drop(lock);
+
+                                                    let mut lock = app_last_challenge.lock().await;
+                                                    *lock = old_proof.challenge;
+                                                    drop(lock);
+
+                                                    // Add new db challenge, reset epoch_hashes,
+                                                    // and open the submission window
+
+                                                    // reset nonce
+                                                    {
+                                                        let mut nonce = app_nonce.lock().await;
+                                                        *nonce = 0;
+                                                    }
+                                                    // reset client nonce ranges
+                                                    {
+                                                        let mut writer =
+                                                            app_client_nonce_ranges.write().await;
+                                                        *writer = HashMap::new();
+                                                        drop(writer);
+                                                    }
+                                                    // reset epoch hashes
+                                                    {
+                                                        info!(target: "server_log", "reset epoch hashes");
+                                                        let mut mut_epoch_hashes =
+                                                            app_epoch_hashes.write().await;
+                                                        mut_epoch_hashes.challenge = p.challenge;
+                                                        mut_epoch_hashes.best_hash.solution = None;
+                                                        mut_epoch_hashes.best_hash.difficulty = 0;
+                                                        mut_epoch_hashes.submissions =
+                                                            HashMap::new();
+                                                    }
+                                                    // Open submission window
+                                                    info!(target: "server_log", "openning submission window.");
+                                                    let mut writer =
+                                                        app_submission_window.write().await;
+                                                    writer.closed = false;
+                                                    drop(writer);
+
+                                                    info!(target: "server_log", "Adding new challenge to db");
+                                                    let new_challenge = InsertChallenge {
+                                                        pool_id: app_config.pool_id,
+                                                        challenge: p.challenge.to_vec(),
+                                                        rewards_earned_coal: None,
+                                                        rewards_earned_ore: None,
+                                                    };
+
+                                                    while let Err(_) = app_database
+                                                        .add_new_challenge(new_challenge.clone())
+                                                        .await
+                                                    {
+                                                        tracing::error!(target: "server_log", "Failed to add new challenge to db.");
+                                                        info!(target: "server_log", "Verifying challenge does not already exist.");
+                                                        if let Ok(_) = app_database
+                                                            .get_challenge_by_challenge(
+                                                                new_challenge.challenge.clone(),
+                                                            )
+                                                            .await
+                                                        {
+                                                            info!(target: "server_log", "Challenge already exists, continuing");
+                                                            break;
+                                                        }
+
+                                                        tokio::time::sleep(Duration::from_millis(
+                                                            1000,
+                                                        ))
+                                                        .await;
+                                                    }
+                                                    info!(target: "server_log", "New challenge successfully added to db");
+
+                                                    break;
+                                                }
+                                            }
+                                        } else {
+                                            let mut lock = app_last_challenge.lock().await;
+                                            *lock = old_proof.challenge;
+                                            drop(lock);
+                                            info!(target: "server_log", "Adding new challenge to db");
+                                            let new_challenge = InsertChallenge {
+                                                pool_id: app_config.pool_id,
+                                                challenge: latest_proof.challenge.to_vec(),
+                                                rewards_earned_coal: None,
+                                                rewards_earned_ore: None,
+                                            };
+
+                                            while let Err(_) = app_database
+                                                .add_new_challenge(new_challenge.clone())
+                                                .await
+                                            {
+                                                tracing::error!(target: "server_log", "Failed to add new challenge to db.");
+                                                info!(target: "server_log", "Verifying challenge does not already exist.");
+                                                if let Ok(_) = app_database
+                                                    .get_challenge_by_challenge(
+                                                        new_challenge.challenge.clone(),
+                                                    )
+                                                    .await
+                                                {
+                                                    info!(target: "server_log", "Challenge already exists, continuing");
+                                                    break;
+                                                }
+
+                                                tokio::time::sleep(Duration::from_millis(1000))
+                                                    .await;
+                                            }
+                                            info!(target: "server_log", "New challenge successfully added to db");
+
+                                            // reset nonce
+                                            {
+                                                let mut nonce = app_nonce.lock().await;
+                                                *nonce = 0;
+                                            }
+                                            // reset client nonce ranges
+                                            {
+                                                let mut writer =
+                                                    app_client_nonce_ranges.write().await;
+                                                *writer = HashMap::new();
+                                                drop(writer);
+                                            }
+                                            // reset epoch hashes
+                                            {
+                                                info!(target: "server_log", "reset epoch hashes");
+                                                let mut mut_epoch_hashes =
+                                                    app_epoch_hashes.write().await;
+                                                mut_epoch_hashes.challenge = latest_proof.challenge;
+                                                mut_epoch_hashes.best_hash.solution = None;
+                                                mut_epoch_hashes.best_hash.difficulty = 0;
+                                                mut_epoch_hashes.submissions = HashMap::new();
+                                            }
+                                            // Open submission window
+                                            info!(target: "server_log", "openning submission window.");
+                                            let mut writer = app_submission_window.write().await;
+                                            writer.closed = false;
+                                            drop(writer);
+
+                                            break;
+                                        }
+                                    }
+                                    tokio::time::sleep(Duration::from_millis(1000)).await;
+                                }
+                                return;
+                            });
+
                             let bundle_status = loop {
                                 // UUID for the bundle
                                 let uuid = None;
@@ -577,6 +771,9 @@ pub async fn pool_submission_system(
                                     }
                                 }
                             };
+
+                            // stop the tx sender
+                            let _ = tx_message_sender.send(0);
 
                             if (!bundle_status.is_err()) {
                                 let bundle_status = bundle_status.unwrap();

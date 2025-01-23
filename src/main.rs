@@ -64,6 +64,7 @@ use coal_guilds_api::state::Member;
 use coal_utils::{get_coal_mint, get_config, get_proof, get_register_ix, COAL_TOKEN_DECIMALS};
 use drillx::Solution;
 use futures::{stream::SplitSink, SinkExt, StreamExt};
+use jito_sdk_rust::JitoJsonRpcSDK;
 use ore_api::prelude::Proof;
 use ore_utils::get_ore_register_ix;
 use routes::{get_challenges, get_latest_mine_txn};
@@ -247,7 +248,7 @@ struct Args {
         long,
         value_name = "priority fee",
         help = "Number of microlamports to pay as priority fee per transaction",
-        default_value = "200000",
+        default_value = "0",
         global = true
     )]
     priority_fee: u64,
@@ -255,7 +256,7 @@ struct Args {
         long,
         value_name = "jito tip",
         help = "Number of lamports to pay as jito tip per transaction",
-        default_value = "0",
+        default_value = "1000",
         global = true
     )]
     jito_tip: u64,
@@ -416,7 +417,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rpc_client = RpcClient::new_with_commitment(rpc_url, CommitmentConfig::confirmed());
     let rpc_client_miner =
         RpcClient::new_with_commitment(rpc_url_miner, CommitmentConfig::confirmed());
-    let jito_client = RpcClient::new(jito_url);
+    let jito_client = RpcClient::new(jito_url.clone() + "/transactions");
+    let jito_client_miner = JitoJsonRpcSDK::new(&jito_url.clone(), None);
 
     info!(target: "server_log", "loading sol balance...");
     let balance = if let Ok(balance) = rpc_client.get_balance(&wallet.pubkey()).await {
@@ -610,6 +612,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rpc_client = Arc::new(rpc_client);
     let rpc_client_miner = Arc::new(rpc_client_miner);
     let jito_client = Arc::new(jito_client);
+    let jito_client_miner = Arc::new(jito_client_miner);
 
     let last_challenge = Arc::new(Mutex::new([0u8; 32]));
 
@@ -711,9 +714,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_nonce = nonce_ext.clone();
     let app_prio_fee = priority_fee.clone();
     let app_jito_tip = jito_tip.clone();
-    let app_rpc_client = rpc_client.clone();
     let app_rpc_client_miner = rpc_client_miner.clone();
-    let app_jito_client = jito_client.clone();
+    let app_jito_client = jito_client_miner.clone();
     let app_config = config.clone();
     let app_app_database = app_database.clone();
     let app_all_clients_sender = all_clients_sender.clone();

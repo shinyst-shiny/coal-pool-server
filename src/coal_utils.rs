@@ -87,15 +87,6 @@ pub fn get_mine_ix(
     guild: Option<Pubkey>,
 ) -> Instruction {
     info!(target: "server_log", "get_mine_ix coal: {:?} - {:?} - {:?} - {:?} - {:?} - {:?}",signer, solution, bus, tool, guild_member, guild);
-    /*coal_instruction::mine_coal(
-        signer,
-        signer,
-        COAL_BUS_ADDRESSES[bus],
-        Option::None,
-        Option::None,
-        Option::None,
-        solution,
-    )*/
     coal_instruction::mine_coal(
         signer,
         signer,

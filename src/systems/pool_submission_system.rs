@@ -59,7 +59,7 @@ use tokio::{
     sync::{mpsc::UnboundedSender, Mutex, RwLock},
     time::Instant,
 };
-use tracing::info;
+use tracing::{error, info};
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -151,7 +151,7 @@ pub async fn pool_submission_system(
                         {
                             Ok(accounts) => accounts,
                             Err(e) => {
-                                tracing::error!(target: "server_log", "Failed to get program accounts: {:?}", e);
+                                error!(target: "server_log", "Failed to get program accounts: {:?}", e);
                                 Vec::new() // Return an empty vector in case of error
                             }
                         };
@@ -225,7 +225,7 @@ pub async fn pool_submission_system(
                         {
                             Ok(accounts) => accounts,
                             Err(e) => {
-                                tracing::error!(target: "server_log", "Failed to get program accounts: {:?}", e);
+                                error!(target: "server_log", "Failed to get program accounts: {:?}", e);
                                 Vec::new() // Return an empty vector in case of error
                             }
                         };
@@ -299,7 +299,7 @@ pub async fn pool_submission_system(
                             info!(target: "server_log", "Proof COAL: {:?}",p);
 
                             if !best_solution.is_valid(&p.challenge) {
-                                tracing::error!(target: "server_log", "SOLUTION IS NOT VALID ANYMORE!");
+                                error!(target: "server_log", "SOLUTION IS NOT VALID ANYMORE!");
                                 info!(target: "server_log", "Updating to latest proof.");
                                 let mut lock = app_proof.lock().await;
                                 *lock = p;
@@ -546,7 +546,7 @@ pub async fn pool_submission_system(
                                 let bundle_uuid = match response["result"].as_str() {
                                     Some(uuid) => uuid,
                                     None => {
-                                        tracing::error!(target: "server_log", "Failed to get bundle id");
+                                        error!(target: "server_log", "Failed to get bundle id");
                                         bundle_send_attempt += 1;
                                         if bundle_send_attempt >= 5 {
                                             break Err("Failed to send tx");
@@ -565,8 +565,8 @@ pub async fn pool_submission_system(
                                 {
                                     Ok(status) => break Ok(status),
                                     Err(_) => {
-                                        tracing::error!(target: "server_log", "Failed to send bundle tx error");
-                                        tracing::error!(target: "server_log", "Attempt {} Failed to send mine transaction. retrying in 1 seconds...", bundle_send_attempt);
+                                        error!(target: "server_log", "Failed to send bundle tx error");
+                                        error!(target: "server_log", "Attempt {} Failed to send mine transaction. retrying in 1 seconds...", bundle_send_attempt);
                                         bundle_send_attempt += 1;
 
                                         if bundle_send_attempt >= 5 {
@@ -609,7 +609,7 @@ pub async fn pool_submission_system(
                                         while let Err(_) =
                                             app_db_coal.add_new_txn(itxn_coal.clone()).await
                                         {
-                                            tracing::error!(target: "server_log", "Failed to add tx to db! Retrying...");
+                                            error!(target: "server_log", "Failed to add tx to db! Retrying...");
                                             tokio::time::sleep(Duration::from_millis(2000)).await;
                                         }
                                     });
@@ -618,7 +618,7 @@ pub async fn pool_submission_system(
                                         while let Err(_) =
                                             app_db_ore.add_new_txn(itxn_ore.clone()).await
                                         {
-                                            tracing::error!(target: "server_log", "Failed to add tx to db! Retrying...");
+                                            error!(target: "server_log", "Failed to add tx to db! Retrying...");
                                             tokio::time::sleep(Duration::from_millis(2000)).await;
                                         }
                                     });
@@ -955,7 +955,7 @@ pub async fn pool_submission_system(
                                                             challenge = c;
                                                             break;
                                                         } else {
-                                                            tracing::error!(target: "server_log",
+                                                            error!(target: "server_log",
                                                                 "Failed to get challenge by challenge! Inserting if necessary..."
                                                             );
                                                             let new_challenge = InsertChallenge {
@@ -972,7 +972,7 @@ pub async fn pool_submission_system(
                                                                 )
                                                                 .await
                                                             {
-                                                                tracing::error!(target: "server_log", "Failed to add new challenge to db.");
+                                                                error!(target: "server_log", "Failed to add new challenge to db.");
                                                                 info!(target: "server_log", "Verifying challenge does not already exist.");
                                                                 if let Ok(_) = app_database
                                                                     .get_challenge_by_challenge(
@@ -1015,7 +1015,7 @@ pub async fn pool_submission_system(
                                                         )
                                                         .await
                                                     {
-                                                        tracing::error!(target: "server_log", "Failed to add commmissions earning... retrying...");
+                                                        error!(target: "server_log", "Failed to add commmissions earning... retrying...");
                                                         tokio::time::sleep(Duration::from_millis(
                                                             500,
                                                         ))
@@ -1042,7 +1042,7 @@ pub async fn pool_submission_system(
                                                         )
                                                         .await
                                                     {
-                                                        tracing::error!(target: "server_log", "Failed to update commission rewards in db. Retrying...");
+                                                        error!(target: "server_log", "Failed to update commission rewards in db. Retrying...");
                                                         tokio::time::sleep(Duration::from_millis(
                                                             500,
                                                         ))
@@ -1083,7 +1083,7 @@ pub async fn pool_submission_system(
                                                     break;
                                                 }
                                                 Err(e) => {
-                                                    tracing::error!(target: "server_log", "Failed to get confirmed transaction... Come on rpc... {:?}",e);
+                                                    error!(target: "server_log", "Failed to get confirmed transaction... Come on rpc... {:?}",e);
                                                     tokio::time::sleep(Duration::from_millis(2000))
                                                         .await;
                                                 }
@@ -1157,7 +1157,7 @@ pub async fn pool_submission_system(
                                                 .add_new_challenge(new_challenge.clone())
                                                 .await
                                             {
-                                                tracing::error!(target: "server_log", "Failed to add new challenge to db.");
+                                                error!(target: "server_log", "Failed to add new challenge to db.");
                                                 info!(target: "server_log", "Verifying challenge does not already exist.");
                                                 if let Ok(_) = app_database
                                                     .get_challenge_by_challenge(
@@ -1243,7 +1243,7 @@ pub async fn pool_submission_system(
                                             .add_new_challenge(new_challenge.clone())
                                             .await
                                         {
-                                            tracing::error!(target: "server_log", "Failed to add new challenge to db.");
+                                            error!(target: "server_log", "Failed to add new challenge to db.");
                                             info!(target: "server_log", "Verifying challenge does not already exist.");
                                             if let Ok(_) = app_database
                                                 .get_challenge_by_challenge(
@@ -1265,7 +1265,7 @@ pub async fn pool_submission_system(
                             break;
                         }
                     } else {
-                        tracing::error!(target: "server_log", "Solution is_some but got none on best hash re-check?");
+                        error!(target: "server_log", "Solution is_some but got none on best hash re-check?");
                         tokio::time::sleep(Duration::from_millis(1_000)).await;
                     }
                 }
@@ -1298,7 +1298,7 @@ pub async fn pool_submission_system(
                 }
                 tokio::time::sleep(Duration::from_millis(500)).await;
             } else {
-                // tracing::error!(target: "server_log", "No best solution yet.");
+                // error!(target: "server_log", "No best solution yet.");
                 tokio::time::sleep(Duration::from_millis(1000)).await;
             }
         } else {

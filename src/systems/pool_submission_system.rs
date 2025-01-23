@@ -368,19 +368,18 @@ pub async fn pool_submission_system(
                         };
 
                         let mut cu_limit_ore = 500_000;
-                        /*let should_add_reset_ix_ore = if let Some(config) = loaded_config_ore {
+                        let should_add_reset_ix_ore = if let Some(config) = loaded_config_ore {
                             let time_until_reset = (config.last_reset_at + 300) - now as i64;
                             if time_until_reset <= 5 {
-                                cu_limit += 50_000;
-                                prio_fee += 5_000;
-                                info!(target: "server_log", "Including reset tx COAL.");
+                                cu_limit_ore += 50_000;
+                                info!(target: "server_log", "Including reset tx ORE.");
                                 true
                             } else {
                                 false
                             }
                         } else {
                             false
-                        };*/
+                        };
 
                         info!(target: "server_log", "using priority fee of {}", prio_fee);
 
@@ -441,10 +440,10 @@ pub async fn pool_submission_system(
                             ixs_coal.push(get_reset_ix_coal(signer.pubkey()));
                         }
 
-                        /*if should_add_reset_ix_ore {
+                        if should_add_reset_ix_ore {
                             let reset_ix = get_reset_ix_ore(signer.pubkey());
                             ixs_ore.push(reset_ix);
-                        }*/
+                        }
 
                         info!(target: "server_log","Using for the transaction Signer: {:?} tool: {:?}, member: {:?}, guild_address: {:?}", signer.pubkey(), tool_address, guild_member_address, guild_address);
                         let coal_mine_ix = get_mine_ix(
@@ -573,7 +572,7 @@ pub async fn pool_submission_system(
                                         drop(lock);
 
                                         if old_proof.challenge.eq(&latest_proof.challenge) {
-                                            info!(target: "server_log", "Proof challenge not updated yet..");
+                                            // info!(target: "server_log", "Proof challenge not updated yet..");
                                             if let Ok(p) = get_proof(
                                                 &app_rpc_client,
                                                 app_wallet.clone().miner_wallet.pubkey(),

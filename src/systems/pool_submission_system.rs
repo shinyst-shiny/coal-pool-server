@@ -461,6 +461,8 @@ pub async fn pool_submission_system(
 
                         ixs_coal.push(coal_mine_ix);
 
+                        info!(target: "server_log", "boost_keys: {:?}",boost_keys);
+
                         let ore_mine_ix =
                             get_ore_mine_ix(signer.pubkey(), best_solution, bus, boost_keys);
 

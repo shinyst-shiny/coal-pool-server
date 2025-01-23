@@ -462,7 +462,7 @@ pub async fn pool_submission_system(
                         ixs_coal.push(coal_mine_ix);
 
                         let ore_mine_ix =
-                            get_ore_mine_ix(signer.pubkey(), best_solution, bus, None);
+                            get_ore_mine_ix(signer.pubkey(), best_solution, bus, boost_keys);
 
                         ixs_ore.push(ore_mine_ix);
 

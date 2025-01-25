@@ -1,3 +1,6 @@
+use rpassword::read_password;
+use std::fs::File;
+use std::io::Read;
 use std::{
     collections::{HashMap, HashSet},
     net::SocketAddr,
@@ -7,7 +10,6 @@ use std::{
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-
 use systems::{
     claim_system::claim_system, client_message_handler_system::client_message_handler_system,
     handle_ready_clients_system::handle_ready_clients_system,
@@ -65,10 +67,14 @@ use coal_utils::{get_coal_mint, get_config, get_proof, get_register_ix, COAL_TOK
 use drillx::Solution;
 use futures::{stream::SplitSink, SinkExt, StreamExt};
 use jito_sdk_rust::JitoJsonRpcSDK;
+use openssl::hash::MessageDigest;
+use openssl::pkcs5::pbkdf2_hmac;
+use openssl::symm::{decrypt, Cipher};
 use ore_api::prelude::Proof;
 use ore_utils::get_ore_register_ix;
 use routes::{get_challenges, get_latest_mine_txn};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use solana_account_decoder::StringDecimals;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_client::rpc_config::RpcSendTransactionConfig;
@@ -398,8 +404,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("Failed to find wallet path.".into());
     }
 
-    let wallet = read_keypair_file(wallet_path)
-        .expect("Failed to load keypair from file: {wallet_path_str}");
+    // encryption
+    // openssl enc -aes-256-cbc -md sha512 -pbkdf2 -iter 1000000 -salt -in key.json -out key.json.enc
+
+    // Read the encrypted file
+    let mut file = File::open(&wallet_path).unwrap();
+    let mut encrypted_data = Vec::new();
+    file.read_to_end(&mut encrypted_data).unwrap();
+
+    // Ensure the encrypted data is long enough to contain salt, IV, and ciphertext
+    if encrypted_data.len() < 32 {
+        return Err("Encrypted data is too short".into());
+    }
+
+    println!("Enter decryption key: ");
+    let key = match read_password() {
+        Ok(k) => k,
+        Err(_) => std::env::var("PASSWORD").expect("TEST PASSWORD must be set."),
+    };
+    let salt = &encrypted_data[8..16];
+    let ciphertext = &encrypted_data[16..];
+    // Derive key and IV using PBKDF2
+    let mut derived = [0u8; 48]; // 32 bytes for key + 16 bytes for IV
+    pbkdf2_hmac(
+        key.as_bytes(),
+        salt,
+        1_000_000,
+        MessageDigest::sha512(),
+        &mut derived,
+    )
+    .unwrap();
+    let (derived_key, derived_iv) = derived.split_at(32);
+
+    // Decrypt the file content
+    let decrypted_data = decrypt(
+        Cipher::aes_256_cbc(),
+        derived_key,
+        Some(derived_iv),
+        ciphertext,
+    )
+    .unwrap();
+
+    // Print the decrypted data for debugging
+    println!(
+        "Decrypted data: {:?}",
+        String::from_utf8_lossy(&decrypted_data)
+    );
+
+    // Parse the decrypted content as JSON
+    let wallet_content: Value = serde_json::from_slice(&decrypted_data).unwrap();
+
+    // Deserialize the JSON into a Keypair
+    let keypair_bytes: Vec<u8> = serde_json::from_value(wallet_content).unwrap();
+    let wallet = Keypair::from_bytes(&keypair_bytes).unwrap();
+
     info!(target: "server_log", "loaded wallet {}", wallet.pubkey().to_string());
 
     let wallet_path = Path::new(&fee_wallet_path_str);

@@ -504,7 +504,7 @@ async fn get_diamond_hands_rewards(
 
     info!(target: "reprocess_log", "DIAMOND HANDS: Total earnings COAL: {} ORE: {}", total_pool_coal, total_pool_ore);
 
-    let percentage_to_distribute = (1.0f64 * 100.0f64) as u64;
+    let percentage_to_distribute = (2.5f64 * 100.0f64) as u64;
 
     // get how much to distribute in COAL and ORE to diamond hands 4.591,98584883
     let coal_to_distribute = total_pool_coal

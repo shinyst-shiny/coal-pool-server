@@ -434,6 +434,85 @@ impl AppRRDatabase {
         };
     }
 
+    pub async fn get_extra_resources_rewards_in_period(
+        &self,
+        generation_type: models::ExtraResourcesGenerationType,
+        start_date: NaiveDateTime,
+        end_date: NaiveDateTime,
+    ) -> Result<models::EarningExtraResources, AppDatabaseError> {
+        if let Ok(db_conn) = self.connection_pool.get().await {
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    diesel::sql_query("
+                                            SELECT
+                                                0 as id,
+                                                0 as miner_id,
+                                                eer.pool_id,
+                                                eer.generation_type as extra_resources_generation_id,
+                                                SUM(eer.amount_sol) as amount_sol,
+                                                SUM(eer.amount_coal) as amount_coal,
+                                                SUM(eer.amount_ore) as amount_ore,
+                                                SUM(eer.amount_chromium) as amount_chromium,
+                                                SUM(eer.amount_wood) as amount_wood,
+                                                SUM(eer.amount_ingot) as amount_ingot,
+                                                MAX(eer.created_at) as created_at,
+                                                MAX(eer.updated_at) as updated_at,
+                                                eer.generation_type
+                                            FROM earnings_extra_resources eer
+                                            WHERE eer.generation_type = ? AND eer.created_at >= ? AND eer.created_at <= ?
+                                            GROUP BY eer.generation_type, eer.pool_id
+                                            ")
+                        .bind::<Integer, _>(generation_type as i32)
+                        .bind::<Datetime, _>(start_date)
+                        .bind::<Datetime, _>(end_date)
+                        .get_result::<models::EarningExtraResources>(conn)
+                })
+                .await;
+
+            println!(
+                "get_extra_resources_rewards_in_period {:?} {:?} {:?}",
+                generation_type, start_date, end_date
+            );
+            println!("get_extra_resources_rewards_in_period {:?}", res);
+
+            match res {
+                Ok(interaction) => match interaction {
+                    Ok(query) => {
+                        return Ok(query);
+                    }
+                    Err(diesel::result::Error::NotFound) => {
+                        // Return a default value if nothing is found
+                        return Ok(models::EarningExtraResources {
+                            id: 0,
+                            miner_id: 0,
+                            pool_id: 0,
+                            extra_resources_generation_id: 0,
+                            amount_sol: 0,
+                            amount_coal: 0,
+                            amount_ore: 0,
+                            amount_chromium: 0,
+                            amount_wood: 0,
+                            amount_ingot: 0,
+                            created_at: start_date,
+                            updated_at: end_date,
+                            generation_type: generation_type as i32,
+                        });
+                    }
+                    Err(e) => {
+                        error!(target: "server_log", "{:?}", e);
+                        return Err(AppDatabaseError::QueryFailed);
+                    }
+                },
+                Err(e) => {
+                    error!(target: "server_log", "{:?}", e);
+                    return Err(AppDatabaseError::InteractionFailed);
+                }
+            }
+        } else {
+            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
+        };
+    }
+
     pub async fn get_earnings_by_pubkey(
         &self,
         pubkey: String,

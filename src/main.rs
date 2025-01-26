@@ -27,10 +27,11 @@ use steel::AccountDeserialize;
 
 use self::models::*;
 use crate::coal_utils::{
-    amount_u64_to_string, calculate_multiplier, calculate_tool_multiplier, deserialize_guild,
-    deserialize_guild_config, deserialize_guild_member, deserialize_tool, get_chromium_mint,
-    get_config_pubkey, get_proof_and_config_with_busses as get_proof_and_config_with_busses_coal,
-    get_tool_pubkey, proof_pubkey, Resource, ToolType,
+    amount_u64_to_string, calculate_multiplier, calculate_tool_multiplier, deserialize_config,
+    deserialize_guild, deserialize_guild_config, deserialize_guild_member, deserialize_tool,
+    get_chromium_mint, get_config_pubkey,
+    get_proof_and_config_with_busses as get_proof_and_config_with_busses_coal, get_tool_pubkey,
+    proof_pubkey, Resource, ToolType,
 };
 use crate::ore_utils::{
     get_ore_mint, get_proof_and_config_with_busses as get_proof_and_config_with_busses_ore,
@@ -92,6 +93,7 @@ use solana_sdk::{
 };
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::instruction::TokenInstruction;
+use spl_token::solana_program;
 use tokio::{
     sync::{mpsc::UnboundedSender, Mutex, RwLock},
     time::Instant,
@@ -446,10 +448,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .unwrap();
 
     // Print the decrypted data for debugging
-    println!(
+    /*println!(
         "Decrypted data: {:?}",
         String::from_utf8_lossy(&decrypted_data)
-    );
+    );*/
 
     // Parse the decrypted content as JSON
     let wallet_content: Value = serde_json::from_slice(&decrypted_data).unwrap();
@@ -965,6 +967,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route(
             "/guild/lp-staking-rewards-24h",
             get(get_guild_lp_staking_rewards_24h),
+        )
+        .route(
+            "/guild/lp-staking-rewards-stats",
+            get(get_guild_lp_staking_rewards_stats),
         )
         .route("/coal/stake", post(post_coal_stake))
         .with_state(app_shared_state)
@@ -3090,6 +3096,147 @@ pub async fn get_guild_lp_staking_rewards_24h(
             .header("Content-Type", "text/text")
             .body("Invalid public key".to_string())
             .unwrap();
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+struct AvgGuildRewards {
+    last_24h: String,
+    last_7d: String,
+    last_30d: String,
+}
+
+pub async fn get_guild_lp_staking_rewards_stats(
+    Extension(app_rr_database): Extension<Arc<AppRRDatabase>>,
+    Extension(rpc_client): Extension<Arc<RpcClient>>,
+    Extension(app_wallet): Extension<Arc<WalletExtension>>,
+) -> Result<Json<AvgGuildRewards>, String> {
+    let now = Utc::now();
+    let one_day = Duration::from_secs(60 * 60 * 24 * 1);
+    let seven_days = Duration::from_secs(60 * 60 * 24 * 7);
+    let thirty_days = Duration::from_secs(60 * 60 * 24 * 30);
+    let yesterday = now - one_day;
+    let last_week = now - seven_days;
+    let last_month = now - thirty_days;
+
+    let db_rewards_yesterday = app_rr_database
+        .get_extra_resources_rewards_in_period(
+            ExtraResourcesGenerationType::CoalGuildStakingRewards,
+            yesterday.naive_utc(),
+            now.naive_utc(),
+        )
+        .await;
+    let db_rewards_week = app_rr_database
+        .get_extra_resources_rewards_in_period(
+            ExtraResourcesGenerationType::CoalGuildStakingRewards,
+            last_week.naive_utc(),
+            now.naive_utc(),
+        )
+        .await;
+    let db_rewards_month = app_rr_database
+        .get_extra_resources_rewards_in_period(
+            ExtraResourcesGenerationType::CoalGuildStakingRewards,
+            last_month.naive_utc(),
+            now.naive_utc(),
+        )
+        .await;
+
+    let config = coal_guilds_api::state::config_pda();
+    let member = member_pda(app_wallet.miner_wallet.pubkey());
+    let accounts = rpc_client
+        .get_multiple_accounts(&[member.0, config.0])
+        .await
+        .unwrap();
+    let config = deserialize_guild_config(&accounts[1].as_ref().unwrap().data);
+
+    let mut total_guild_stake = 0;
+
+    println!(
+        "Total network stake: {}",
+        amount_u64_to_string(config.total_stake)
+    );
+    println!(
+        "Total staking multiplier: {}x",
+        config.total_multiplier.to_string()
+    );
+
+    if accounts[0].is_some() {
+        let member = deserialize_guild_member(&accounts[0].as_ref().unwrap().data);
+        println!("Member stake: {}", amount_u64_to_string(member.total_stake));
+        println!(
+            "Member is active: {}",
+            if member.is_active == 1 { "Yes" } else { "No" }
+        );
+        println!("Member last stake at: {}", member.last_stake_at);
+        println!(
+            "Member multiplier: {}x",
+            calculate_multiplier(
+                config.total_stake,
+                config.total_multiplier,
+                member.total_stake
+            )
+        );
+
+        if member.guild.ne(&solana_program::system_program::id()) {
+            let guild_data = rpc_client.get_account_data(&member.guild).await.unwrap();
+            let guild = deserialize_guild(&guild_data);
+            println!("Guild: {}", member.guild.to_string());
+            println!(
+                "Guild total stake: {}",
+                amount_u64_to_string(guild.total_stake)
+            );
+            total_guild_stake = guild.total_stake;
+            println!(
+                "Guild multiplier: {}",
+                calculate_multiplier(
+                    config.total_stake,
+                    config.total_multiplier,
+                    guild.total_stake
+                )
+            );
+            println!("Guild last stake at: {}", guild.last_stake_at);
+        } else {
+            println!("Guild: None");
+        }
+    } else {
+        println!("Member: None");
+    }
+
+    println!("Total Guild Stake: {}", total_guild_stake);
+
+    if (total_guild_stake <= 0) {
+        error!(target: "server_log", "Error fetching Guild Info {:?}", total_guild_stake);
+        return Err("Error fetching Guild Info".to_string());
+    }
+
+    match (db_rewards_yesterday, db_rewards_week, db_rewards_month) {
+        (Ok(rewards_yesterday), Ok(rewards_week), Ok(rewards_month)) => {
+            // convert the total COAL rewards to UI amount
+
+            println!("Yesterday: {}", rewards_yesterday.amount_coal);
+            println!("Week: {}", rewards_week.amount_coal);
+            println!("Month: {}", rewards_month.amount_coal);
+
+            let avg_rewards = AvgGuildRewards {
+                last_24h: amount_u64_to_string(
+                    rewards_yesterday
+                        .amount_coal
+                        .saturating_div(total_guild_stake),
+                ),
+                last_7d: amount_u64_to_string(
+                    rewards_week.amount_coal.saturating_div(total_guild_stake),
+                ),
+                last_30d: amount_u64_to_string(
+                    rewards_month.amount_coal.saturating_div(total_guild_stake),
+                ),
+            };
+
+            return Ok(Json(avg_rewards));
+        }
+        (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
+            error!(target: "server_log", "Error fetching Guild Stake Info: {:?}", e);
+            return Err("Error fetching Guild Stake Info".to_string());
+        }
     }
 }
 

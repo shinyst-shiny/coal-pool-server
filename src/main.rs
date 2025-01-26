@@ -3204,6 +3204,8 @@ pub async fn get_guild_lp_staking_rewards_stats(
 
     println!("Total Guild Stake: {}", total_guild_stake);
 
+    total_guild_stake = 17093168778984;
+
     if (total_guild_stake <= 0) {
         error!(target: "server_log", "Error fetching Guild Info {:?}", total_guild_stake);
         return Err("Error fetching Guild Info".to_string());
@@ -3213,21 +3215,25 @@ pub async fn get_guild_lp_staking_rewards_stats(
         (Ok(rewards_yesterday), Ok(rewards_week), Ok(rewards_month)) => {
             // convert the total COAL rewards to UI amount
 
-            println!("Yesterday: {}", rewards_yesterday.amount_coal);
+            println!(
+                "Yesterday: {} {}",
+                rewards_yesterday.amount_coal, total_guild_stake
+            );
             println!("Week: {}", rewards_week.amount_coal);
             println!("Month: {}", rewards_month.amount_coal);
 
             let avg_rewards = AvgGuildRewards {
-                last_24h: amount_u64_to_string(
-                    rewards_yesterday
-                        .amount_coal
-                        .saturating_div(total_guild_stake),
+                last_24h: format!(
+                    "{:.2}",
+                    (rewards_yesterday.amount_coal as f64) / (total_guild_stake as f64)
                 ),
-                last_7d: amount_u64_to_string(
-                    rewards_week.amount_coal.saturating_div(total_guild_stake),
+                last_7d: format!(
+                    "{:.2}",
+                    (rewards_week.amount_coal as f64) / (total_guild_stake as f64)
                 ),
-                last_30d: amount_u64_to_string(
-                    rewards_month.amount_coal.saturating_div(total_guild_stake),
+                last_30d: format!(
+                    "{:.2}",
+                    (rewards_month.amount_coal as f64) / (total_guild_stake as f64)
                 ),
             };
 

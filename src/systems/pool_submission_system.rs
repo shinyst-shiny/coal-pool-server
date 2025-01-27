@@ -729,6 +729,7 @@ pub async fn pool_submission_system(
                             });
 
                             let bundle_status = loop {
+                                tokio::time::sleep(Duration::from_millis(1000)).await;
                                 // UUID for the bundle
                                 let uuid = None;
 

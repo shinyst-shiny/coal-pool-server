@@ -1102,7 +1102,12 @@ pub async fn pool_submission_system(
                                                         full_rewards_coal = 780_000_000_000;
                                                     }
                                                     let commissions_coal = full_rewards_coal
-                                                        .mul(5)
+                                                        .mul(app_config.commission_amount as u64)
+                                                        .saturating_div(100);
+                                                    let commissions_coal_omc = full_rewards_coal
+                                                        .mul(
+                                                            app_config.commission_omc_amount as u64,
+                                                        )
                                                         .saturating_div(100);
                                                     let guild_stake_rewards_coal =
                                                         ((((full_rewards_coal - commissions_coal)
@@ -1110,11 +1115,12 @@ pub async fn pool_submission_system(
                                                             / full_multiplier_coal)
                                                             .mul(guild_multiplier)
                                                             as u64)
-                                                            .mul(50))
+                                                            .mul(70))
                                                         .saturating_div(100);
                                                     // let stakers_rewards_coal = ((((full_rewards_coal - commissions_coal) as f64 / full_multiplier_coal).mul(stake_multiplier_coal) as u64).mul(10)).saturating_div(100);
                                                     let rewards_coal = full_rewards_coal
                                                         - commissions_coal
+                                                        - commissions_coal_omc
                                                         - guild_stake_rewards_coal;
                                                     let mut full_rewards_ore = ore_balance_after_tx
                                                         - ore_balance_before_tx;
@@ -1123,9 +1129,12 @@ pub async fn pool_submission_system(
                                                         full_rewards_ore = 100_000_000_000;
                                                     }
                                                     let commissions_ore =
-                                                        full_rewards_ore.mul(5).saturating_div(100);
-                                                    let rewards_ore =
-                                                        full_rewards_ore - commissions_ore;
+                                                        full_rewards_ore.mul(4).saturating_div(100);
+                                                    let commissions_ore_omc =
+                                                        full_rewards_ore.mul(1).saturating_div(100);
+                                                    let rewards_ore = full_rewards_ore
+                                                        - commissions_ore
+                                                        - commissions_ore_omc;
                                                     info!(target: "server_log", "Miners Rewards COAL: {}", rewards_coal);
                                                     info!(target: "server_log", "Commission COAL: {}", commissions_coal);
                                                     info!(target: "server_log", "Guild Staker Rewards COAL: {}", guild_stake_rewards_coal);
@@ -1208,10 +1217,24 @@ pub async fn pool_submission_system(
                                                         amount_ore: commissions_ore,
                                                         difficulty: 0,
                                                     }];
+                                                    let commissions_earning_omc =
+                                                        vec![InsertEarning {
+                                                            miner_id: app_config
+                                                                .commissions_omc_miner_id,
+                                                            pool_id: app_config.pool_id,
+                                                            challenge_id: challenge.id,
+                                                            amount_coal: commissions_coal_omc,
+                                                            amount_ore: commissions_ore_omc,
+                                                            difficulty: 0,
+                                                        }];
                                                     tracing::info!(target: "server_log", "Inserting commissions earning");
                                                     while let Err(_) = app_database
                                                         .add_new_earnings_batch(
-                                                            commissions_earning.clone(),
+                                                            [
+                                                                commissions_earning.clone(),
+                                                                commissions_earning_omc.clone(),
+                                                            ]
+                                                            .concat(),
                                                         )
                                                         .await
                                                     {
@@ -1223,8 +1246,8 @@ pub async fn pool_submission_system(
                                                     }
                                                     tracing::info!(target: "server_log", "Inserted commissions earning");
 
-                                                    let new_commission_rewards =
-                                                        vec![UpdateReward {
+                                                    let new_commission_rewards = vec![
+                                                        UpdateReward {
                                                             miner_id: app_config
                                                                 .commissions_miner_id,
                                                             balance_coal: commissions_coal,
@@ -1233,7 +1256,18 @@ pub async fn pool_submission_system(
                                                             balance_ingot: 0,
                                                             balance_sol: 0,
                                                             balance_wood: 0,
-                                                        }];
+                                                        },
+                                                        UpdateReward {
+                                                            miner_id: app_config
+                                                                .commissions_omc_miner_id,
+                                                            balance_coal: commissions_coal_omc,
+                                                            balance_ore: commissions_ore_omc,
+                                                            balance_chromium: 0,
+                                                            balance_ingot: 0,
+                                                            balance_sol: 0,
+                                                            balance_wood: 0,
+                                                        },
+                                                    ];
 
                                                     tracing::info!(target: "server_log", "Updating commissions rewards...");
                                                     while let Err(_) = app_database
@@ -1342,8 +1376,8 @@ async fn check_final_bundle_status(
     jito_client: &JitoJsonRpcSDK,
     bundle_uuid: &str,
 ) -> Result<BundleStatus, ()> {
-    let max_retries = 60;
-    let retry_delay = Duration::from_secs(1);
+    let max_retries = 35;
+    let retry_delay = Duration::from_secs(2);
 
     for attempt in 1..=max_retries {
         info!(target: "server_log",

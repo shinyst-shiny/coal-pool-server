@@ -183,12 +183,30 @@ pub async fn nft_distribution_system(
         let total_rewards = nft_rewards.clone();
 
         let commissions_nft_rewards = RewardsData {
-            amount_sol: total_rewards.amount_sol.mul(5).saturating_div(100),
-            amount_coal: total_rewards.amount_coal.mul(5).saturating_div(100),
-            amount_ore: total_rewards.amount_ore.mul(5).saturating_div(100),
-            amount_chromium: total_rewards.amount_chromium.mul(5).saturating_div(100),
-            amount_wood: total_rewards.amount_wood.mul(5).saturating_div(100),
-            amount_ingot: total_rewards.amount_ingot.mul(5).saturating_div(100),
+            amount_sol: total_rewards
+                .amount_sol
+                .mul(config.commission_amount as u64)
+                .saturating_div(100),
+            amount_coal: total_rewards
+                .amount_coal
+                .mul(config.commission_amount as u64)
+                .saturating_div(100),
+            amount_ore: total_rewards
+                .amount_ore
+                .mul(config.commission_amount as u64)
+                .saturating_div(100),
+            amount_chromium: total_rewards
+                .amount_chromium
+                .mul(config.commission_amount as u64)
+                .saturating_div(100),
+            amount_wood: total_rewards
+                .amount_wood
+                .mul(config.commission_amount as u64)
+                .saturating_div(100),
+            amount_ingot: total_rewards
+                .amount_ingot
+                .mul(config.commission_amount as u64)
+                .saturating_div(100),
         };
 
         // Insert commissions earning

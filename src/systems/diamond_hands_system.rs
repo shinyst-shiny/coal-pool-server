@@ -162,12 +162,30 @@ pub async fn diamond_hands_system(
         .await;
 
         let commissions_diamond_hands = RewardsData {
-            amount_sol: total_rewards.amount_sol.mul(5).saturating_div(100),
-            amount_coal: total_rewards.amount_coal.mul(5).saturating_div(100),
-            amount_ore: total_rewards.amount_ore.mul(5).saturating_div(100),
-            amount_chromium: total_rewards.amount_chromium.mul(5).saturating_div(100),
-            amount_wood: total_rewards.amount_wood.mul(5).saturating_div(100),
-            amount_ingot: total_rewards.amount_ingot.mul(5).saturating_div(100),
+            amount_sol: total_rewards
+                .amount_sol
+                .mul(config.commission_amount as u64)
+                .saturating_div(100),
+            amount_coal: total_rewards
+                .amount_coal
+                .mul(config.commission_amount as u64)
+                .saturating_div(100),
+            amount_ore: total_rewards
+                .amount_ore
+                .mul(config.commission_amount as u64)
+                .saturating_div(100),
+            amount_chromium: total_rewards
+                .amount_chromium
+                .mul(config.commission_amount as u64)
+                .saturating_div(100),
+            amount_wood: total_rewards
+                .amount_wood
+                .mul(config.commission_amount as u64)
+                .saturating_div(100),
+            amount_ingot: total_rewards
+                .amount_ingot
+                .mul(config.commission_amount as u64)
+                .saturating_div(100),
         };
 
         // Insert commissions earning
@@ -495,12 +513,12 @@ async fn get_diamond_hands_rewards(
 
     info!(target: "reprocess_log", "DIAMOND HANDS: Commission earnings: {:?}", commission_earnings);
 
-    // commission_earnings : 5% = x : 100%
+    // commission_earnings : config.commission_amount% = x : 100%
 
-    let pool_commission = 5 * 100;
+    let pool_commission = config.commission_amount * 100;
 
-    let total_pool_coal = commission_earnings.amount_coal * 10000 / pool_commission;
-    let total_pool_ore = commission_earnings.amount_ore * 10000 / pool_commission;
+    let total_pool_coal = commission_earnings.amount_coal * 10000 / (pool_commission as u64);
+    let total_pool_ore = commission_earnings.amount_ore * 10000 / (pool_commission as u64);
 
     info!(target: "reprocess_log", "DIAMOND HANDS: Total earnings COAL: {} ORE: {}", total_pool_coal, total_pool_ore);
 

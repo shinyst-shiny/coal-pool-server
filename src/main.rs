@@ -234,6 +234,10 @@ pub struct Config {
     signup_fee: f64,
     commissions_pubkey: String,
     commissions_miner_id: i32,
+    commission_amount: i32,
+    commissions_omc_pubkey: String,
+    commissions_omc_miner_id: i32,
+    commission_omc_amount: i32,
     guild_address: String,
 }
 
@@ -354,6 +358,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
     };
+    let commission_amount = std::env::var("COMMISSION_AMOUNT")
+        .expect("COMMISSION_AMOUNT must be set.")
+        .parse::<i32>()
+        .expect("COMMISSION_AMOUNT must be an integer.");
+    let commission_omc_env =
+        std::env::var("COMMISSION_OMC_PUBKEY").expect("COMMISSION_OMC_PUBKEY must be set.");
+    let commission_omc_pubkey = match Pubkey::from_str(&commission_omc_env) {
+        Ok(pk) => pk,
+        Err(_) => {
+            println!("Invalid COMMISSION_OMC_PUBKEY");
+            return Ok(());
+        }
+    };
+    let commission_omc_amount = std::env::var("COMMISSION_OMC_AMOUNT")
+        .expect("COMMISSION_OMC_AMOUNT must be set.")
+        .parse::<i32>()
+        .expect("COMMISSION_OMC_AMOUNT must be an integer.");
     let guild_env = std::env::var("GUILD_ADDRESS").expect("GUILD_ADDRESS must be set.");
 
     let disable_reprocess_string =
@@ -596,6 +617,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    let commission_omc_miner_id;
+    match app_database
+        .get_miner_by_pubkey_str(commission_omc_pubkey.to_string())
+        .await
+    {
+        Ok(miner) => {
+            info!(target: "server_log", "Found commissions OMC receiver in db.");
+            commission_omc_miner_id = miner.id;
+        }
+        Err(_) => {
+            info!(target: "server_log", "Failed to get commissions OMC receiver account from database.");
+            info!(target: "server_log", "Inserting Commissions OMC receiver account...");
+
+            match app_database
+                .signup_user_transaction(
+                    commission_omc_pubkey.to_string(),
+                    wallet.pubkey().to_string(),
+                )
+                .await
+            {
+                Ok(_) => {
+                    info!(target: "server_log", "Successfully inserted Commissions OMC receiver account...");
+                    if let Ok(m) = app_database
+                        .get_miner_by_pubkey_str(commission_omc_pubkey.to_string())
+                        .await
+                    {
+                        commission_omc_miner_id = m.id;
+                    } else {
+                        panic!("Failed to get commission OMC miner id")
+                    }
+                }
+                Err(_) => {
+                    panic!("Failed to insert comissions OMC receiver account")
+                }
+            }
+        }
+    }
+
     let db_pool = app_database
         .get_pool_by_authority_pubkey(wallet.pubkey().to_string())
         .await
@@ -634,6 +693,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         signup_fee: args.signup_fee,
         commissions_pubkey: commission_pubkey.to_string(),
         commissions_miner_id: commission_miner_id,
+        commission_amount,
+        commissions_omc_pubkey: commission_omc_pubkey.to_string(),
+        commissions_omc_miner_id: commission_omc_miner_id,
+        commission_omc_amount,
         guild_address: guild_env,
     });
 

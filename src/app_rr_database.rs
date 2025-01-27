@@ -41,7 +41,7 @@ impl AppRRDatabase {
                         return Ok(query);
                     }
                     Err(e) => {
-                        error!("get_miner_rewards: {:?}", e);
+                        error!("get_miner_rewards app_rr_database: {:?}", e);
                         return Err(AppDatabaseError::QueryFailed);
                     }
                 },

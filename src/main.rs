@@ -44,6 +44,7 @@ use crate::systems::diamond_hands_system::diamond_hands_system;
 use crate::systems::nft_distribution_system::nft_distribution_system;
 use app_database::{AppDatabase, AppDatabaseError};
 use app_rr_database::AppRRDatabase;
+use axum::handler::Handler;
 use axum::{
     extract::{
         ws::{Message, WebSocket},
@@ -54,6 +55,7 @@ use axum::{
     routing::{get, post},
     Extension, Json, Router,
 };
+use axum_extra::routing::RouterExt;
 use axum_extra::{headers::authorization::Basic, TypedHeader};
 use base64::engine::general_purpose;
 use base64::{prelude::BASE64_STANDARD, Engine};
@@ -883,9 +885,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .allow_methods([Method::GET])
         .allow_origin(tower_http::cors::Any);
 
+    // Load the environment variable
+    let environment = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "production".to_string());
+
     let client_channel = client_message_sender.clone();
     let app_shared_state = shared_state.clone();
-    let app = Router::new()
+    let app = create_router()
+        .with_state(app_shared_state)
+        .layer(Extension(app_database))
+        .layer(Extension(app_rr_database))
+        .layer(Extension(config))
+        .layer(Extension(wallet_extension))
+        .layer(Extension(client_channel))
+        .layer(Extension(rpc_client))
+        .layer(Extension(client_nonce_ranges))
+        .layer(Extension(claims_queue))
+        .layer(Extension(submission_window))
+        // Logging
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::default().include_headers(true)),
+        )
+        .layer(cors);
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+
+    tracing::info!(target: "server_log", "listening on {}", listener.local_addr().unwrap());
+
+    let app_shared_state = shared_state.clone();
+    tokio::spawn(async move {
+        ping_check_system(&app_shared_state).await;
+    });
+
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .unwrap();
+
+    Ok(())
+}
+
+fn create_router() -> Router<Arc<RwLock<AppState>>> {
+    Router::new()
         .route("/v2/ws", get(ws_handler_v2))
         .route("/v2/ws-pubkey", get(ws_handler_pubkey))
         //.route("/pause", post(post_pause))
@@ -973,40 +1016,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             get(get_guild_lp_staking_rewards_stats),
         )
         .route("/coal/stake", post(post_coal_stake))
-        .with_state(app_shared_state)
-        .layer(Extension(app_database))
-        .layer(Extension(app_rr_database))
-        .layer(Extension(config))
-        .layer(Extension(wallet_extension))
-        .layer(Extension(client_channel))
-        .layer(Extension(rpc_client))
-        .layer(Extension(client_nonce_ranges))
-        .layer(Extension(claims_queue))
-        .layer(Extension(submission_window))
-        // Logging
-        .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(DefaultMakeSpan::default().include_headers(true)),
-        )
-        .layer(cors);
-
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-
-    tracing::info!(target: "server_log", "listening on {}", listener.local_addr().unwrap());
-
-    let app_shared_state = shared_state.clone();
-    tokio::spawn(async move {
-        ping_check_system(&app_shared_state).await;
-    });
-
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .await
-    .unwrap();
-
-    Ok(())
 }
 
 async fn get_pool_authority_pubkey(
@@ -1242,7 +1251,7 @@ async fn get_miner_rewards(
                 return Ok(Json(response));
             }
             Err(_) => {
-                error!(target: "server_log", "get_miner_rewards: failed to get rewards balance from db for {}", user_pubkey.to_string());
+                error!(target: "server_log", "get_miner_rewards endpoint: failed to get rewards balance from db for {}", user_pubkey.to_string());
                 return Err("Failed to get balance".to_string());
             }
         }
@@ -1296,13 +1305,13 @@ async fn get_miner_last_reprocess_chromium(
                         }));
                     }
                     Err(_) => {
-                        error!(target: "server_log", "get_miner_rewards: failed to get rewards balance from db for {}", user_pubkey.to_string());
+                        error!(target: "server_log", "get_miner_rewards last reprocess chromium: failed to get rewards balance from db for {}", user_pubkey.to_string());
                         return Err("Failed to get balance".to_string());
                     }
                 }
             }
             Err(_) => {
-                error!(target: "server_log", "get_miner_rewards: failed to get rewards balance from db for {}", user_pubkey.to_string());
+                error!(target: "server_log", "get_miner_rewards last reprocess chromium 2: failed to get rewards balance from db for {}", user_pubkey.to_string());
                 return Err("Failed to get balance".to_string());
             }
         }
@@ -1356,13 +1365,13 @@ async fn get_miner_last_reprocess_diamond_hands(
                         }));
                     }
                     Err(_) => {
-                        error!(target: "server_log", "get_miner_rewards: failed to get rewards balance from db for {}", user_pubkey.to_string());
+                        error!(target: "server_log", "get_miner_rewards last reprocess diamond hands: failed to get rewards balance from db for {}", user_pubkey.to_string());
                         return Err("Failed to get balance".to_string());
                     }
                 }
             }
             Err(_) => {
-                error!(target: "server_log", "get_miner_rewards: failed to get rewards balance from db for {}", user_pubkey.to_string());
+                error!(target: "server_log", "get_miner_rewards last reprocess diamond hands 2: failed to get rewards balance from db for {}", user_pubkey.to_string());
                 return Err("Failed to get balance".to_string());
             }
         }

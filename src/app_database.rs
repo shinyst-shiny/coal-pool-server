@@ -100,6 +100,37 @@ impl AppDatabase {
         };
     }
 
+    pub async fn get_miner_rewards_coal_major_than_zero(
+        &self,
+    ) -> Result<Vec<models::Reward>, AppDatabaseError> {
+        if let Ok(db_conn) = self.connection_pool.get().await {
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    diesel::sql_query("SELECT * FROM rewards r WHERE r.balance_coal > 0")
+                        .get_results::<models::Reward>(conn)
+                })
+                .await;
+
+            match res {
+                Ok(interaction) => match interaction {
+                    Ok(query) => {
+                        return Ok(query);
+                    }
+                    Err(e) => {
+                        error!("get_miner_rewards app_rr_database: {:?}", e);
+                        return Err(AppDatabaseError::QueryFailed);
+                    }
+                },
+                Err(e) => {
+                    error!("{:?}", e);
+                    return Err(AppDatabaseError::InteractionFailed);
+                }
+            }
+        } else {
+            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
+        };
+    }
+
     pub async fn get_miner_rewards(
         &self,
         miner_pubkey: String,

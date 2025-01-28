@@ -183,6 +183,8 @@ pub struct PoolGuildMember {
 
 pub struct MessageInternalMineSuccess {
     difficulty: u32,
+    total_balance_coal_full: u64,
+    total_balance_ore_full: u64,
     total_balance_coal: f64,
     total_balance_ore: f64,
     rewards_coal: u64,
@@ -202,6 +204,7 @@ pub struct MessageInternalMineSuccess {
     tool_multiplier: f64,
     guild_stake_rewards_coal: u64,
     guild_members: Vec<PoolGuildMember>,
+    pool_stake_rewards_coal: u64,
 }
 
 pub struct LastPong {

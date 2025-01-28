@@ -519,12 +519,12 @@ pub async fn pool_submission_system(
                             let serialized_tx_ore =
                                 bs58::encode(bincode::serialize(&tx_ore).unwrap()).into_string();
 
-                            let sim_tx_coal =
+                            /*let sim_tx_coal =
                                 rpc_client.simulate_transaction(&tx_coal).await.unwrap();
                             info!(target: "server_log", "Simulation result: {:?}", sim_tx_coal);
                             let sim_tx_ore =
                                 rpc_client.simulate_transaction(&tx_ore).await.unwrap();
-                            info!(target: "server_log", "Simulation result: {:?}", sim_tx_ore);
+                            info!(target: "server_log", "Simulation result: {:?}", sim_tx_ore);*/
 
                             // Prepare bundle for submission (array of transactions)
                             let bundle = json!([serialized_tx_coal, serialized_tx_ore]);
@@ -754,6 +754,8 @@ pub async fn pool_submission_system(
                                 };
                                 info!(target: "server_log","Bundle sent with UUID: {}", bundle_uuid);
 
+                                tokio::time::sleep(Duration::from_millis(1000));
+
                                 match check_final_bundle_status(
                                     &jito_client.clone(),
                                     bundle_uuid.clone(),
@@ -858,15 +860,21 @@ pub async fn pool_submission_system(
                                                 Ok((txn_result_coal, txn_result_ore)) => {
                                                     // let data = txn_result.transaction.meta.unwrap();
 
-                                                    let guild_total_stake =
-                                                        guild.unwrap().total_stake as f64;
-                                                    let mut guild_multiplier = calculate_multiplier(
-                                                        guild_config.unwrap().total_stake,
-                                                        guild_config.unwrap().total_multiplier,
-                                                        guild.unwrap().total_stake,
-                                                    );
-                                                    let guild_last_stake_at =
-                                                        guild.unwrap().last_stake_at;
+                                                    let mut guild_total_stake = 0.0;
+                                                    if let Some(guild) = guild {
+                                                        guild_total_stake =
+                                                            guild.total_stake as f64;
+                                                    }
+                                                    let mut guild_multiplier = 1.0;
+                                                    if let (Some(guild_config), Some(guild)) =
+                                                        (guild_config, guild)
+                                                    {
+                                                        guild_multiplier = calculate_multiplier(
+                                                            guild_config.total_stake,
+                                                            guild_config.total_multiplier,
+                                                            guild.total_stake,
+                                                        )
+                                                    }
 
                                                     info!(target: "server_log", "---> starting cascade info");
 
@@ -1115,13 +1123,21 @@ pub async fn pool_submission_system(
                                                             / full_multiplier_coal)
                                                             .mul(guild_multiplier)
                                                             as u64)
-                                                            .mul(70))
+                                                            .mul(50))
                                                         .saturating_div(100);
-                                                    // let stakers_rewards_coal = ((((full_rewards_coal - commissions_coal) as f64 / full_multiplier_coal).mul(stake_multiplier_coal) as u64).mul(10)).saturating_div(100);
+                                                    let pool_stake_rewards_coal =
+                                                        ((((full_rewards_coal - commissions_coal)
+                                                            as f64
+                                                            / full_multiplier_coal)
+                                                            .mul(stake_multiplier_coal)
+                                                            as u64)
+                                                            .mul(10))
+                                                        .saturating_div(100);
                                                     let rewards_coal = full_rewards_coal
                                                         - commissions_coal
                                                         - commissions_coal_omc
-                                                        - guild_stake_rewards_coal;
+                                                        - guild_stake_rewards_coal
+                                                        - pool_stake_rewards_coal;
                                                     let mut full_rewards_ore = ore_balance_after_tx
                                                         - ore_balance_before_tx;
                                                     if (full_rewards_ore > 100_000_000_000) {
@@ -1138,6 +1154,7 @@ pub async fn pool_submission_system(
                                                     info!(target: "server_log", "Miners Rewards COAL: {}", rewards_coal);
                                                     info!(target: "server_log", "Commission COAL: {}", commissions_coal);
                                                     info!(target: "server_log", "Guild Staker Rewards COAL: {}", guild_stake_rewards_coal);
+                                                    info!(target: "server_log", "Pool Stake Rewards COAL: {}", pool_stake_rewards_coal);
                                                     info!(target: "server_log", "Guild total stake: {}", guild_total_stake);
                                                     info!(target: "server_log", "Guild multiplier: {}", guild_multiplier);
                                                     info!(target: "server_log", "Tool multiplier: {}", tool_multiplier);
@@ -1288,12 +1305,18 @@ pub async fn pool_submission_system(
                                                     let _ = mine_success_sender.send(
                                                         MessageInternalMineSuccess {
                                                             difficulty,
+                                                            total_balance_coal_full:
+                                                                coal_balance_after_tx,
+                                                            total_balance_ore_full:
+                                                                ore_balance_after_tx,
                                                             total_balance_coal: balance_coal,
                                                             total_balance_ore: balance_ore,
                                                             rewards_coal: full_rewards_coal,
                                                             rewards_ore: full_rewards_ore,
-                                                            commissions_coal: commissions_coal,
-                                                            commissions_ore: commissions_ore,
+                                                            commissions_coal: commissions_coal
+                                                                + commissions_coal_omc,
+                                                            commissions_ore: commissions_ore
+                                                                + commissions_ore_omc,
                                                             challenge_id: challenge.id,
                                                             challenge: old_proof.challenge,
                                                             best_nonce: u64::from_le_bytes(
@@ -1309,6 +1332,8 @@ pub async fn pool_submission_system(
                                                             tool_multiplier,
                                                             guild_stake_rewards_coal,
                                                             guild_members: pool_guild_members,
+
+                                                            pool_stake_rewards_coal,
                                                         },
                                                     );
                                                     tokio::time::sleep(Duration::from_millis(200))

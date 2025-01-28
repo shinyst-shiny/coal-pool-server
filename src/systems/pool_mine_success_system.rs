@@ -53,12 +53,169 @@ pub async fn pool_mine_success_system(
 
                 let instant = Instant::now();
                 info!(target: "server_log", "{} - Processing submission results for challenge: {}.", id, c);
+                let total_balance_coal_full = msg.total_balance_coal_full;
+                let total_balance_ore_full = msg.total_balance_ore_full;
                 let guild_stake_rewards_coal = msg.guild_stake_rewards_coal;
+                let pool_stake_rewards_coal = msg.pool_stake_rewards_coal;
                 let total_rewards_ore = msg.rewards_ore - msg.commissions_ore;
-                let total_rewards_coal =
-                    msg.rewards_coal - msg.commissions_coal - msg.guild_stake_rewards_coal;
+                let total_rewards_coal = msg.rewards_coal
+                    - msg.commissions_coal
+                    - msg.guild_stake_rewards_coal
+                    - msg.pool_stake_rewards_coal;
 
-                if msg.guild_members.len() > 0 {
+                info!(target: "server_log", "total_balance_coal_full: {}", total_balance_coal_full);
+                info!(target: "server_log", "guild_stake_rewards_coal: {}", guild_stake_rewards_coal);
+                info!(target: "server_log", "pool_stake_rewards_coal: {}", pool_stake_rewards_coal);
+
+                if pool_stake_rewards_coal > 0 && total_balance_coal_full > 0 {
+                    let mut miners_earnings: Vec<InsertEarningExtraResources> = Vec::new();
+                    let mut miners_rewards: Vec<UpdateReward> = Vec::new();
+
+                    while let Err(_) = app_database
+                        .add_extra_resources_generation(
+                            app_config.pool_id,
+                            ExtraResourcesGenerationType::CoalPoolStakingRewards,
+                            Some(msg.challenge_id),
+                        )
+                        .await
+                    {
+                        tracing::error!(target: "server_log", "COAL POOL STAKING REWARDS: Failed to add reprocessing to db. Retrying...");
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+
+                    let mut current_reprocessing: ExtraResourcesGeneration;
+
+                    loop {
+                        match app_database
+                            .get_pending_extra_resources_generation(
+                                app_config.pool_id,
+                                ExtraResourcesGenerationType::CoalPoolStakingRewards,
+                            )
+                            .await
+                        {
+                            Ok(resp) => {
+                                current_reprocessing = resp;
+                                break;
+                            }
+                            Err(_) => {
+                                tracing::error!(target: "server_log", "COAL POOL STAKING REWARDS: Failed to get current reprocessing. Retrying...");
+                                tokio::time::sleep(Duration::from_millis(200)).await;
+                            }
+                        }
+                    }
+
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+
+                    let mut miners_with_coal;
+
+                    loop {
+                        match app_database.get_miner_rewards_coal_major_than_zero().await {
+                            Ok(resp) => {
+                                miners_with_coal = resp;
+                                break;
+                            }
+                            Err(_) => {
+                                tracing::error!(target: "server_log", "COAL POOL STAKING REWARDS: Failed to get current reprocessing. Retrying...");
+                                tokio::time::sleep(Duration::from_millis(200)).await;
+                            }
+                        }
+                    }
+
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+
+                    for (miner_with_coal) in miners_with_coal.iter() {
+                        let percentage_of_user_stake = (miner_with_coal.balance_coal as u128)
+                            .saturating_mul(1_000_000)
+                            .saturating_div(total_balance_coal_full as u128);
+
+                        let member_revenue_coal = percentage_of_user_stake
+                            .saturating_mul(pool_stake_rewards_coal as u128)
+                            .saturating_div(1_000_000)
+                            as u64;
+
+                        // info!(target: "server_log", "COAL POOL STAKING REWARDS: Total revenue for {} Perc: {} Gain: {} - out of {}", miner_with_coal.miner_id,percentage_of_user_stake, member_revenue_coal, pool_stake_rewards_coal);
+
+                        if (member_revenue_coal > 0) {
+                            miners_earnings.push(InsertEarningExtraResources {
+                                miner_id: miner_with_coal.miner_id,
+                                pool_id: app_config.pool_id,
+                                extra_resources_generation_id: current_reprocessing.id,
+                                amount_chromium: 0,
+                                amount_sol: 0,
+                                amount_coal: member_revenue_coal,
+                                amount_ingot: 0,
+                                amount_ore: 0,
+                                amount_wood: 0,
+                                generation_type:
+                                    ExtraResourcesGenerationType::CoalPoolStakingRewards as i32,
+                            });
+                            miners_rewards.push(UpdateReward {
+                                miner_id: miner_with_coal.miner_id,
+                                balance_chromium: 0,
+                                balance_coal: member_revenue_coal,
+                                balance_ore: 0,
+                                balance_ingot: 0,
+                                balance_wood: 0,
+                                balance_sol: 0,
+                            });
+                        }
+                    }
+
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+
+                    let batch_size = 200;
+                    if miners_earnings.len() > 0 {
+                        for batch in miners_earnings.chunks(batch_size) {
+                            while let Err(_) = app_database
+                                .add_new_earnings_extra_resources_batch(batch.to_vec())
+                                .await
+                            {
+                                tracing::error!(target: "server_log", "COAL POOL STAKING REWARDS: Failed to add new earnings batch to db. Retrying...");
+                                tokio::time::sleep(Duration::from_millis(500)).await;
+                            }
+                            tokio::time::sleep(Duration::from_millis(200)).await;
+                        }
+                        info!(target: "server_log", "COAL POOL STAKING REWARDS: Successfully added earnings batch");
+                    }
+
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+
+                    if miners_rewards.len() > 0 {
+                        for batch in miners_rewards.chunks(batch_size) {
+                            while let Err(_) = app_database.update_rewards(batch.to_vec()).await {
+                                tracing::error!(target: "server_log", "COAL POOL STAKING REWARDS: Failed to add new rewards batch to db. Retrying...");
+                                tokio::time::sleep(Duration::from_millis(500)).await;
+                            }
+                            tokio::time::sleep(Duration::from_millis(200)).await;
+                        }
+                        info!(target: "server_log", "COAL POOL STAKING REWARDS: Successfully added rewards batch");
+                    }
+
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+
+                    while let Err(_) = app_database
+                        .finish_extra_resources_generation(
+                            current_reprocessing.id,
+                            0,
+                            pool_stake_rewards_coal,
+                            0,
+                            0,
+                            0,
+                            0,
+                            ExtraResourcesGenerationType::CoalPoolStakingRewards,
+                        )
+                        .await
+                    {
+                        tracing::error!(target: "server_log", "COAL POOL STAKING REWARDS: Failed to finish CoalStakingRewards reprocessing to db. Retrying...");
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+                }
+
+                tokio::time::sleep(Duration::from_millis(500)).await;
+
+                if msg.guild_members.len() > 0 && guild_stake_rewards_coal > 0 {
                     let mut miners_earnings: Vec<InsertEarningExtraResources> = Vec::new();
                     let mut miners_rewards: Vec<UpdateReward> = Vec::new();
 
@@ -70,9 +227,11 @@ pub async fn pool_mine_success_system(
                         )
                         .await
                     {
-                        tracing::error!(target: "server_log", "COAL STAKING REWARDS: Failed to add reprocessing to db. Retrying...");
+                        tracing::error!(target: "server_log", "COAL GUILD STAKING REWARDS: Failed to add reprocessing to db. Retrying...");
                         tokio::time::sleep(Duration::from_secs(1)).await;
                     }
+
+                    tokio::time::sleep(Duration::from_millis(500)).await;
 
                     let mut current_reprocessing: ExtraResourcesGeneration;
 
@@ -89,11 +248,13 @@ pub async fn pool_mine_success_system(
                                 break;
                             }
                             Err(_) => {
-                                tracing::error!(target: "server_log", "COAL STAKING REWARDS: Failed to get current reprocessing. Retrying...");
+                                tracing::error!(target: "server_log", "COAL GUILD STAKING REWARDS: Failed to get current reprocessing. Retrying...");
                                 tokio::time::sleep(Duration::from_millis(200)).await;
                             }
                         }
                     }
+
+                    tokio::time::sleep(Duration::from_millis(500)).await;
 
                     for (guild_member) in msg.guild_members.iter() {
                         let db_miner = app_database
@@ -103,10 +264,10 @@ pub async fn pool_mine_success_system(
                         match db_miner {
                             Ok(_) => {}
                             Err(AppDatabaseError::FailedToGetConnectionFromPool) => {
-                                error!(target: "server_log", "COAL STAKING REWARDS: Failed to get database pool connection");
+                                error!(target: "server_log", "COAL GUILD STAKING REWARDS: Failed to get database pool connection");
                             }
                             Err(_) => {
-                                info!(target: "server_log", "COAL STAKING REWARDS: No miner account exists. Signing up new user.");
+                                info!(target: "server_log", "COAL GUILD STAKING REWARDS: No miner account exists. Signing up new user.");
                                 let _ = app_database
                                     .signup_user_transaction(
                                         guild_member.member.authority.to_string(),
@@ -122,13 +283,13 @@ pub async fn pool_mine_success_system(
                             .saturating_div(1_000_000)
                             as u64;
 
-                        // info!(target: "server_log", "COAL STAKING REWARDS: Total revenue for {}: {} - out of {}", guild_member.member.authority, member_revenue_coal, guild_stake_rewards_coal);
+                        // info!(target: "server_log", "COAL GUILD STAKING REWARDS: Total revenue for {}: {} - out of {}", guild_member.member.authority, member_revenue_coal, guild_stake_rewards_coal);
 
                         let db_miner = app_database
                             .get_miner_by_pubkey_str(guild_member.member.authority.to_string())
                             .await;
 
-                        // info!(target: "server_log", "COAL STAKING REWARDS: db_miner {:?}",db_miner);
+                        // info!(target: "server_log", "COAL GUILD STAKING REWARDS: db_miner {:?}",db_miner);
 
                         match db_miner {
                             Ok(miner) => {
@@ -156,13 +317,15 @@ pub async fn pool_mine_success_system(
                                 });
                             }
                             Err(AppDatabaseError::FailedToGetConnectionFromPool) => {
-                                error!(target: "server_log", "COAL STAKING REWARDS: Failed to get database pool connection");
+                                error!(target: "server_log", "COAL GUILD STAKING REWARDS: Failed to get database pool connection");
                             }
                             Err(_) => {
-                                info!(target: "server_log", "COAL STAKING REWARDS: No miner account still exists. Will retry later.");
+                                info!(target: "server_log", "COAL GUILD STAKING REWARDS: No miner account still exists. Will retry later.");
                             }
                         }
                     }
+
+                    tokio::time::sleep(Duration::from_millis(500)).await;
 
                     let batch_size = 200;
                     if miners_earnings.len() > 0 {
@@ -171,12 +334,12 @@ pub async fn pool_mine_success_system(
                                 .add_new_earnings_extra_resources_batch(batch.to_vec())
                                 .await
                             {
-                                tracing::error!(target: "server_log", "COAL STAKING REWARDS: Failed to add new earnings batch to db. Retrying...");
+                                tracing::error!(target: "server_log", "COAL GUILD STAKING REWARDS: Failed to add new earnings batch to db. Retrying...");
                                 tokio::time::sleep(Duration::from_millis(500)).await;
                             }
                             tokio::time::sleep(Duration::from_millis(200)).await;
                         }
-                        info!(target: "server_log", "COAL STAKING REWARDS: Successfully added earnings batch");
+                        info!(target: "server_log", "COAL GUILD STAKING REWARDS: Successfully added earnings batch");
                     }
 
                     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -184,13 +347,15 @@ pub async fn pool_mine_success_system(
                     if miners_rewards.len() > 0 {
                         for batch in miners_rewards.chunks(batch_size) {
                             while let Err(_) = app_database.update_rewards(batch.to_vec()).await {
-                                tracing::error!(target: "server_log", "COAL STAKING REWARDS: Failed to add new rewards batch to db. Retrying...");
+                                tracing::error!(target: "server_log", "COAL GUILD STAKING REWARDS: Failed to add new rewards batch to db. Retrying...");
                                 tokio::time::sleep(Duration::from_millis(500)).await;
                             }
                             tokio::time::sleep(Duration::from_millis(200)).await;
                         }
-                        info!(target: "server_log", "COAL STAKING REWARDS: Successfully added rewards batch");
+                        info!(target: "server_log", "COAL GUILD STAKING REWARDS: Successfully added rewards batch");
                     }
+
+                    tokio::time::sleep(Duration::from_millis(500)).await;
 
                     while let Err(_) = app_database
                         .finish_extra_resources_generation(
@@ -205,10 +370,12 @@ pub async fn pool_mine_success_system(
                         )
                         .await
                     {
-                        tracing::error!(target: "server_log", "COAL STAKING REWARDS: Failed to finish CoalStakingRewards reprocessing to db. Retrying...");
+                        tracing::error!(target: "server_log", "COAL GUILD STAKING REWARDS: Failed to finish CoalStakingRewards reprocessing to db. Retrying...");
                         tokio::time::sleep(Duration::from_secs(1)).await;
                     }
                 }
+
+                tokio::time::sleep(Duration::from_millis(500)).await;
 
                 for (miner_uuid, msg_submission) in msg.submissions.iter() {
                     let miner_details = app_database

@@ -734,13 +734,23 @@ pub async fn pool_submission_system(
                                 let uuid = None;
 
                                 // Send bundle using Jito SDK
-                                let response = jito_client
-                                    .send_bundle(Some(bundle.clone()), uuid)
-                                    .await
-                                    .unwrap();
+                                let jito_send_response =
+                                    match jito_client.send_bundle(Some(bundle.clone()), uuid).await
+                                    {
+                                        Ok(response) => response,
+                                        Err(_) => {
+                                            error!(target: "server_log", "Failed to get bundle id");
+                                            bundle_send_attempt += 1;
+                                            if bundle_send_attempt >= 5 {
+                                                break Err("Failed to send tx");
+                                            } else {
+                                                continue;
+                                            }
+                                        }
+                                    };
 
                                 // Extract bundle UUID from response
-                                let bundle_uuid = match response["result"].as_str() {
+                                let bundle_uuid = match jito_send_response["result"].as_str() {
                                     Some(uuid) => uuid,
                                     None => {
                                         error!(target: "server_log", "Failed to get bundle id");

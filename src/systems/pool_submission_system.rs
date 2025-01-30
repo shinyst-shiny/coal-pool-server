@@ -165,35 +165,26 @@ pub async fn pool_submission_system(
                         info!(target: "server_log", "setting up accounts");
 
                         if accounts_multipliers.len() > 1 {
-                            if accounts_multipliers[1].as_ref().is_some() {
-                                tool = Some(deserialize_tool(
-                                    &accounts_multipliers[1].as_ref().unwrap().data,
-                                    &Resource::Coal,
-                                ));
+                            if let Some(account) = accounts_multipliers[1].as_ref() {
+                                tool = Some(deserialize_tool(&account.data, &Resource::Coal));
                             }
 
-                            if accounts_multipliers.len() > 2
-                                && accounts_multipliers[2].as_ref().is_some()
-                            {
-                                guild_config = Some(deserialize_guild_config(
-                                    &accounts_multipliers[2].as_ref().unwrap().data,
-                                ));
+                            if accounts_multipliers.len() > 2 {
+                                if let Some(account) = accounts_multipliers[2].as_ref() {
+                                    guild_config = Some(deserialize_guild_config(&account.data));
+                                }
                             }
 
-                            if accounts_multipliers.len() > 3
-                                && accounts_multipliers[3].as_ref().is_some()
-                            {
-                                member = Some(deserialize_guild_member(
-                                    &accounts_multipliers[3].as_ref().unwrap().data,
-                                ));
+                            if accounts_multipliers.len() > 3 {
+                                if let Some(account) = accounts_multipliers[3].as_ref() {
+                                    member = Some(deserialize_guild_member(&account.data));
+                                }
                             }
 
-                            if accounts_multipliers.len() > 4
-                                && accounts_multipliers[4].as_ref().is_some()
-                            {
-                                guild = Some(deserialize_guild(
-                                    &accounts_multipliers[4].as_ref().unwrap().data,
-                                ));
+                            if accounts_multipliers.len() > 4 {
+                                if let Some(account) = accounts_multipliers[4].as_ref() {
+                                    guild = Some(deserialize_guild(&account.data));
+                                }
                             }
                         }
 
@@ -201,16 +192,19 @@ pub async fn pool_submission_system(
 
                         tokio::time::sleep(Duration::from_millis(1000)).await;
 
-                        if member.is_some()
-                            && member.unwrap().guild.ne(&coal_guilds_api::ID)
-                            && guild_address.is_none()
-                        {
-                            let guild_data = rpc_client
-                                .get_account_data(&member.unwrap().guild)
-                                .await
-                                .unwrap();
-                            guild = Some(deserialize_guild(&guild_data));
-                            guild_address = Some(member.unwrap().guild);
+                        if let Some(member) = member {
+                            if member.guild.ne(&coal_guilds_api::ID) && guild_address.is_none() {
+                                match rpc_client.get_account_data(&member.guild).await {
+                                    Ok(guild_data) => {
+                                        guild = Some(deserialize_guild(&guild_data));
+                                        guild_address = Some(member.guild);
+                                    }
+                                    Err(e) => {
+                                        error!(target: "server_log", "Failed to get guild account data: {:?}", e);
+                                        return;
+                                    }
+                                }
+                            }
                         }
 
                         let mut tool_multiplier = calculate_tool_multiplier(&tool);
@@ -410,19 +404,17 @@ pub async fn pool_submission_system(
                                 "DttWaMuVvTiduZRnguLF7jNxTgiMBZ1hyAumKUiL2KRL",
                                 "3AVi9Tg9Uo68tJfuvoKvqKNWKkC5wPdSSdeBnizKZ6jT",
                             ];
-                            ixs_ore.push(transfer(
-                                &signer.pubkey(),
-                                &Pubkey::from_str(
-                                    &tip_accounts
-                                        .choose(&mut rand::thread_rng())
-                                        .unwrap()
-                                        .to_string(),
-                                )
-                                .unwrap(),
-                                jito_tip,
-                            ));
-
-                            info!(target: "server_log", "Jito tip: {} SOL", lamports_to_sol(jito_tip));
+                            if let Some(tip_account) = tip_accounts.choose(&mut rand::thread_rng())
+                            {
+                                if let Ok(pubkey) = Pubkey::from_str(tip_account) {
+                                    ixs_ore.push(transfer(&signer.pubkey(), &pubkey, jito_tip));
+                                    info!(target: "server_log", "Jito tip: {} SOL", lamports_to_sol(jito_tip));
+                                } else {
+                                    error!(target: "server_log", "Failed to parse tip account pubkey");
+                                }
+                            } else {
+                                error!(target: "server_log", "Failed to choose a tip account");
+                            }
                         }
 
                         info!(target: "server_log", "Adding noop ix ORE");
@@ -514,17 +506,21 @@ pub async fn pool_submission_system(
                             tx_coal.sign(&[&signer], hash);
                             tx_ore.sign(&[&signer], hash);
 
-                            let serialized_tx_coal =
-                                bs58::encode(bincode::serialize(&tx_coal).unwrap()).into_string();
-                            let serialized_tx_ore =
-                                bs58::encode(bincode::serialize(&tx_ore).unwrap()).into_string();
+                            let serialized_tx_coal = match bincode::serialize(&tx_coal) {
+                                Ok(serialized) => bs58::encode(serialized).into_string(),
+                                Err(e) => {
+                                    error!(target: "server_log", "Failed to serialize tx_coal: {:?}", e);
+                                    continue;
+                                }
+                            };
 
-                            /*let sim_tx_coal =
-                                rpc_client.simulate_transaction(&tx_coal).await.unwrap();
-                            info!(target: "server_log", "Simulation result: {:?}", sim_tx_coal);
-                            let sim_tx_ore =
-                                rpc_client.simulate_transaction(&tx_ore).await.unwrap();
-                            info!(target: "server_log", "Simulation result: {:?}", sim_tx_ore);*/
+                            let serialized_tx_ore = match bincode::serialize(&tx_ore) {
+                                Ok(serialized) => bs58::encode(serialized).into_string(),
+                                Err(e) => {
+                                    error!(target: "server_log", "Failed to serialize tx_ore: {:?}", e);
+                                    continue;
+                                }
+                            };
 
                             // Prepare bundle for submission (array of transactions)
                             let bundle = json!([serialized_tx_coal, serialized_tx_ore]);
@@ -788,20 +784,28 @@ pub async fn pool_submission_system(
                             // stop the tx sender
                             let _ = tx_message_sender.send(0);
 
-                            if (!bundle_status.is_err()) {
-                                let bundle_status = bundle_status.unwrap();
-
+                            if let Ok(bundle_status) = bundle_status {
                                 info!(target: "server_log", "bundle_status: {:?}", bundle_status);
 
                                 if let Some(transactions) = &bundle_status.transactions {
-                                    let signature_coal =
-                                        Signature::from_str(&transactions[0]).unwrap();
-                                    let signature_ore =
-                                        Signature::from_str(&transactions[1]).unwrap();
+                                    let signature_coal = match Signature::from_str(&transactions[0])
+                                    {
+                                        Ok(sig) => sig,
+                                        Err(e) => {
+                                            error!(target: "server_log", "Failed to parse signature_coal: {:?}", e);
+                                            continue;
+                                        }
+                                    };
 
-                                    // match result {
-                                    //    Ok(sig) => {
-                                    // success
+                                    let signature_ore = match Signature::from_str(&transactions[1])
+                                    {
+                                        Ok(sig) => sig,
+                                        Err(e) => {
+                                            error!(target: "server_log", "Failed to parse signature_ore: {:?}", e);
+                                            continue;
+                                        }
+                                    };
+
                                     success = true;
                                     info!(target: "server_log", "Success!!");
                                     info!(target: "server_log", "signature_coal: {}", signature_coal);
@@ -868,8 +872,6 @@ pub async fn pool_submission_system(
 
                                             match tnx_results {
                                                 Ok((txn_result_coal, txn_result_ore)) => {
-                                                    // let data = txn_result.transaction.meta.unwrap();
-
                                                     let mut guild_total_stake = 0.0;
                                                     if let Some(guild) = guild {
                                                         guild_total_stake =
@@ -1154,10 +1156,14 @@ pub async fn pool_submission_system(
                                                         info!(target: "server_log", "HIT MAX ORE: {}", full_rewards_ore);
                                                         full_rewards_ore = 100_000_000_000;
                                                     }
-                                                    let commissions_ore =
-                                                        full_rewards_ore.mul(4).saturating_div(100);
-                                                    let commissions_ore_omc =
-                                                        full_rewards_ore.mul(1).saturating_div(100);
+                                                    let commissions_ore = full_rewards_ore
+                                                        .mul(app_config.commission_amount as u64)
+                                                        .saturating_div(100);
+                                                    let commissions_ore_omc = full_rewards_ore
+                                                        .mul(
+                                                            app_config.commission_omc_amount as u64,
+                                                        )
+                                                        .saturating_div(100);
                                                     let rewards_ore = full_rewards_ore
                                                         - commissions_ore
                                                         - commissions_ore_omc;
@@ -1428,8 +1434,8 @@ async fn check_final_bundle_status(
             Err(e) => Err(()),
         };
 
-        if (!status_response.is_err()) {
-            let bundle_status = match get_bundle_status(&status_response.unwrap()) {
+        if let Ok(status_response) = status_response {
+            let bundle_status = match get_bundle_status(&status_response) {
                 Ok(response) => Ok(response),
                 Err(e) => {
                     error!(target: "server_log","Error parsing bundle status: {:?}", e);
@@ -1437,27 +1443,29 @@ async fn check_final_bundle_status(
                 }
             };
 
-            if (!bundle_status.is_err()) {
-                let bundle_status = bundle_status.unwrap();
+            if let Ok(bundle_status) = bundle_status {
                 match bundle_status.confirmation_status.as_deref() {
                     Some("confirmed") => {
-                        info!(target: "server_log","Bundle confirmed on-chain. Waiting for finalization...");
-                        check_transaction_error(&bundle_status).unwrap();
+                        info!(target: "server_log", "Bundle confirmed on-chain. Waiting for finalization...");
+                        if let Err(e) = check_transaction_error(&bundle_status) {
+                            error!(target: "server_log", "Transaction error: {:?}", e);
+                            return Err(());
+                        }
                     }
                     Some("finalized") => {
-                        info!(target: "server_log","Bundle finalized on-chain successfully!");
-                        check_transaction_error(&bundle_status).unwrap();
+                        info!(target: "server_log", "Bundle finalized on-chain successfully!");
+                        if let Err(e) = check_transaction_error(&bundle_status) {
+                            error!(target: "server_log", "Transaction error: {:?}", e);
+                            return Err(());
+                        }
                         print_transaction_url(&bundle_status);
                         return Ok(bundle_status);
                     }
                     Some(status) => {
-                        error!(target: "server_log",
-                            "Unexpected final bundle status: {}. Continuing to poll...",
-                            status
-                        );
+                        error!(target: "server_log", "Unexpected final bundle status: {}. Continuing to poll...", status);
                     }
                     None => {
-                        error!(target: "server_log","Unable to parse final bundle status. Continuing to poll...");
+                        error!(target: "server_log", "Unable to parse final bundle status. Continuing to poll...");
                     }
                 }
             }

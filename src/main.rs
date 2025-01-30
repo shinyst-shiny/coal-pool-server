@@ -1,3 +1,4 @@
+use futures::FutureExt;
 use rpassword::read_password;
 use std::fs::File;
 use std::io::Read;
@@ -852,24 +853,49 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_last_challenge = last_challenge.clone();
 
     tokio::spawn(async move {
-        pool_submission_system(
-            app_proof,
-            app_epoch_hashes,
-            app_wallet,
-            app_nonce,
-            app_prio_fee,
-            app_jito_tip,
-            app_rpc_client_miner,
-            app_jito_client,
-            app_config,
-            app_app_database,
-            app_all_clients_sender,
-            mine_success_sender,
-            app_submission_window,
-            app_client_nonce_ranges,
-            app_last_challenge,
-        )
-        .await;
+        loop {
+            let app_proof = app_proof.clone();
+            let app_epoch_hashes = app_epoch_hashes.clone();
+            let app_wallet = app_wallet.clone();
+            let app_nonce = app_nonce.clone();
+            let app_prio_fee = app_prio_fee.clone();
+            let app_jito_tip = app_jito_tip.clone();
+            let app_rpc_client_miner = app_rpc_client_miner.clone();
+            let app_jito_client = app_jito_client.clone();
+            let app_config = app_config.clone();
+            let app_app_database = app_app_database.clone();
+            let app_all_clients_sender = app_all_clients_sender.clone();
+            let mine_success_sender = mine_success_sender.clone();
+            let app_submission_window = app_submission_window.clone();
+            let app_client_nonce_ranges = app_client_nonce_ranges.clone();
+            let app_last_challenge = app_last_challenge.clone();
+
+            if let Err(e) = std::panic::AssertUnwindSafe(pool_submission_system(
+                app_proof,
+                app_epoch_hashes,
+                app_wallet,
+                app_nonce,
+                app_prio_fee,
+                app_jito_tip,
+                app_rpc_client_miner,
+                app_jito_client,
+                app_config,
+                app_app_database,
+                app_all_clients_sender,
+                mine_success_sender,
+                app_submission_window,
+                app_client_nonce_ranges,
+                app_last_challenge,
+            ))
+            .catch_unwind()
+            .await
+            {
+                error!("pool_submission_system panicked: {:?}", e);
+            }
+
+            // Optionally add a delay before restarting
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
     });
 
     if !disable_reprocess {

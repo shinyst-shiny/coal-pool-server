@@ -278,11 +278,7 @@ pub async fn diamond_hands_system(
             }
         }
 
-        let total_mine_event = submissions
-            .iter()
-            .map(|submission| submission.challenge_id)
-            .collect::<Vec<i32>>()
-            .len();
+        let total_mine_event = submissions.iter().collect::<Vec<i32>>().len();
 
         let mut total_hash_power: u64 = 0;
 
@@ -444,6 +440,7 @@ pub async fn diamond_hands_system(
             info!(target: "reprocess_log", "DIAMOND HANDS: Successfully added rewards batch");
         }
 
+        let mut attempts = 0;
         while let Err(_) = app_database
             .decrease_miner_reward(UpdateReward {
                 miner_id: config.commissions_miner_id,
@@ -456,6 +453,11 @@ pub async fn diamond_hands_system(
             })
             .await
         {
+            attempts += 1;
+            if attempts >= 5 {
+                tracing::error!(target: "reprocess_log", "DIAMOND HANDS: Failed to remove commissions rewards to db after 5 attempts. Moving on...");
+                break;
+            }
             tracing::error!(target: "reprocess_log", "DIAMOND HANDS: Failed to remove commissions rewards to db. Retrying...");
             tokio::time::sleep(Duration::from_millis(500)).await;
         }

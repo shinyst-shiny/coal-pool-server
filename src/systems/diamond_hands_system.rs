@@ -278,9 +278,8 @@ pub async fn diamond_hands_system(
             }
         }
 
-        let total_mine_event = submissions.iter().collect::<Vec<i32>>().len();
-
         let mut total_hash_power: u64 = 0;
+        let mut total_mine_event = 0;
 
         let mut miner_stats: HashMap<i32, MinerStats> = HashMap::new();
 
@@ -300,6 +299,7 @@ pub async fn diamond_hands_system(
             total_hash_power += hash_power;
             entry.total_hash_power += hash_power;
             entry.submission_count += 1;
+            total_mine_event += 1;
         }
 
         let mut total_miners_perc = 0.0;

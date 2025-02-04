@@ -64,7 +64,7 @@ pub async fn client_message_handler_system(
                     drop(reader);
 
                     if submission_windows_closed {
-                        tracing::error!(target: "server_log", "{} submitted after submission window was closed!", uuid);
+                        // tracing::error!(target: "server_log", "{} submitted after submission window was closed!", uuid);
 
                         let reader = app_state.read().await;
                         if let Some(app_client_socket) = reader.sockets.get(&addr) {

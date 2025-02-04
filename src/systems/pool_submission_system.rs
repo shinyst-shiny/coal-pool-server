@@ -133,11 +133,14 @@ pub async fn pool_submission_system(
                             app_wallet.clone().miner_wallet.clone().pubkey(),
                             &Resource::Coal,
                         );
+                        info!(target: "server_log", "Fetched coal_proof");
                         let guild_config_address = coal_guilds_api::state::config_pda().0;
                         let guild_member_address = coal_guilds_api::state::member_pda(
                             app_wallet.clone().miner_wallet.clone().pubkey(),
                         )
                         .0;
+
+                        info!(target: "server_log", "Fetched guild info");
 
                         let mut accounts_multipliers = vec![
                             config_address,
@@ -155,6 +158,8 @@ pub async fn pool_submission_system(
                                 Vec::new() // Return an empty vector in case of error
                             }
                         };
+
+                        info!(target: "server_log", "Fetched account multipliers");
 
                         let mut tool: Option<ToolType> = None;
                         let mut member: Option<coal_guilds_api::state::Member> = None;
@@ -1359,7 +1364,7 @@ pub async fn pool_submission_system(
                                                 }
                                                 Err(e) => {
                                                     error!(target: "server_log", "Failed to get confirmed transaction... Come on rpc... {:?}",e);
-                                                    tokio::time::sleep(Duration::from_millis(2000))
+                                                    tokio::time::sleep(Duration::from_millis(4000))
                                                         .await;
                                                 }
                                             }

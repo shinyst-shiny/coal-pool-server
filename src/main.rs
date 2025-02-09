@@ -898,6 +898,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    info!(target: "server_log", "disable_reprocess {}",disable_reprocess);
+
     if !disable_reprocess {
         let app_config = config.clone();
         let app_wallet = wallet_extension.clone();
@@ -1628,6 +1630,8 @@ async fn get_miner_earnings_for_submissions(
 ) -> impl IntoResponse {
     let one_day = Duration::from_secs(60 * 60 * 24 * 1);
     let check_end_time = query_params.end_time - one_day;
+
+    info!(target: "server_log", "get_miner_earnings_for_submissions: start_time: {:?}, end_time: {:?}", query_params.start_time.naive_utc(), query_params.end_time.naive_utc());
 
     if check_end_time > query_params.start_time {
         return Err("Maximum time period is one day".to_string());

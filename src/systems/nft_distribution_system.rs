@@ -306,11 +306,7 @@ pub async fn nft_distribution_system(
 
         info!(target: "reprocess_log", "NFT REPROCESSING: Filtered {} submissions from NFT holders", filtered_submissions.len());
 
-        let total_mine_event = filtered_submissions
-            .iter()
-            .map(|submission| submission.challenge_id)
-            .collect::<Vec<i32>>()
-            .len();
+        let mut total_mine_event = 0;
 
         let mut total_hash_power: u64 = 0;
 
@@ -332,6 +328,7 @@ pub async fn nft_distribution_system(
             total_hash_power += hash_power;
             entry.total_hash_power += hash_power;
             entry.submission_count += 1;
+            total_mine_event += 1;
         }
 
         let mut total_miners_perc = 0.0;

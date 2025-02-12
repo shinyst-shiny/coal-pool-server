@@ -366,7 +366,7 @@ pub async fn pool_submission_system(
                             false
                         };
 
-                        let mut cu_limit_ore = 500_000;
+                        let mut cu_limit_ore = 550_000;
                         let should_add_reset_ix_ore = if let Some(config) = loaded_config_ore {
                             let time_until_reset = (config.last_reset_at + 300) - now as i64;
                             if time_until_reset <= 5 {

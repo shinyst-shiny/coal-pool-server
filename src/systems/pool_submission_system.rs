@@ -527,6 +527,25 @@ pub async fn pool_submission_system(
                                 }
                             };
 
+                            match rpc_client.simulate_transaction(&tx_coal).await {
+                                Ok(sim_tx_coal) => {
+                                    info!(target: "server_log", "Simulation result COAL: {:?}", sim_tx_coal);
+                                }
+                                Err(e) => {
+                                    error!(target: "server_log", "Failed to simulate tx_coal: {:?}", e);
+                                    continue;
+                                }
+                            }
+                            match rpc_client.simulate_transaction(&tx_ore).await {
+                                Ok(sim_tx_ore) => {
+                                    info!(target: "server_log", "Simulation result ORE: {:?}", sim_tx_ore);
+                                }
+                                Err(e) => {
+                                    error!(target: "server_log", "Failed to simulate tx_ore: {:?}", e);
+                                    continue;
+                                }
+                            }
+
                             // Prepare bundle for submission (array of transactions)
                             let bundle = json!([serialized_tx_coal, serialized_tx_ore]);
 

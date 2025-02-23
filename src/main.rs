@@ -1304,13 +1304,6 @@ struct PubkeyAndPeriodParam {
 }
 
 #[derive(Deserialize, Serialize)]
-struct MinerRewards {
-    coal: f64,
-    ore: f64,
-    chromium: f64,
-}
-
-#[derive(Deserialize, Serialize)]
 struct FullMinerRewards {
     sol: f64,
     coal: f64,
@@ -1335,12 +1328,21 @@ async fn get_miner_rewards(
                     / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
                 let decimal_bal_ore =
                     rewards.balance_ore as f64 / 10f64.powf(ore_api::consts::TOKEN_DECIMALS as f64);
+                let decimal_bal_sol = rewards.balance_sol as f64
+                    / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
                 let decimal_bal_chromium = rewards.balance_chromium as f64
                     / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
-                let response = MinerRewards {
-                    ore: decimal_bal_ore,
+                let decimal_bal_ingot = rewards.balance_ingot as f64
+                    / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
+                let decimal_bal_wood = rewards.balance_wood as f64
+                    / 10f64.powf(coal_api::consts::TOKEN_DECIMALS as f64);
+                let response = FullMinerRewards {
+                    sol: decimal_bal_sol,
                     coal: decimal_bal_coal,
+                    ore: decimal_bal_ore,
                     chromium: decimal_bal_chromium,
+                    ingot: decimal_bal_ingot,
+                    wood: decimal_bal_wood,
                 };
                 return Ok(Json(response));
             }

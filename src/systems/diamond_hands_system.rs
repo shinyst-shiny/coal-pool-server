@@ -444,12 +444,12 @@ pub async fn diamond_hands_system(
         while let Err(_) = app_database
             .decrease_miner_reward(UpdateReward {
                 miner_id: config.commissions_miner_id,
-                balance_sol: total_rewards.amount_sol,
-                balance_coal: total_rewards.amount_coal,
-                balance_ore: total_rewards.amount_ore,
-                balance_chromium: total_rewards.amount_chromium,
-                balance_wood: total_rewards.amount_wood,
-                balance_ingot: total_rewards.amount_ingot,
+                balance_sol: total_rewards.amount_sol - extra_rewards.amount_sol,
+                balance_coal: total_rewards.amount_coal - extra_rewards.amount_coal,
+                balance_ore: total_rewards.amount_ore - extra_rewards.amount_ore,
+                balance_chromium: total_rewards.amount_chromium - extra_rewards.amount_chromium,
+                balance_wood: total_rewards.amount_wood - extra_rewards.amount_wood,
+                balance_ingot: total_rewards.amount_ingot - extra_rewards.amount_ingot,
             })
             .await
         {

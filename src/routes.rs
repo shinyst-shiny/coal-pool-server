@@ -34,7 +34,10 @@ pub async fn get_challenges(
 
         match res {
             Ok(challenges) => Ok(Json(challenges)),
-            Err(_) => Err("Failed to get submissions for miner".to_string()),
+            Err(_) => {
+                error!("Failed to get challenges {:?}", res);
+                return Err("Failed to get submissions for miner".to_string());
+            }
         }
     } else {
         return Err("Stats not enabled for this server.".to_string());
@@ -136,6 +139,33 @@ pub async fn get_diamond_hands_reprocess_info(
             .get_last_reprocessing(
                 app_config.pool_id,
                 ExtraResourcesGenerationType::DiamondHandsReprocess,
+            )
+            .await;
+
+        match res {
+            Ok(pool) => {
+                let next_preprocess = pool.created_at + Duration::from_secs(60 * 60 * 24 * 7);
+                return Ok(Json(ChromiumReprocessInfo {
+                    last_reprocess: pool.created_at,
+                    next_reprocess: next_preprocess,
+                }));
+            }
+            Err(_) => Err("Failed to get pool data".to_string()),
+        }
+    } else {
+        return Err("Stats not enabled for this server.".to_string());
+    }
+}
+
+pub async fn get_omc_reprocess_info(
+    Extension(app_rr_database): Extension<Arc<AppRRDatabase>>,
+    Extension(app_config): Extension<Arc<Config>>,
+) -> impl IntoResponse {
+    if app_config.stats_enabled {
+        let res = app_rr_database
+            .get_last_reprocessing(
+                app_config.pool_id,
+                ExtraResourcesGenerationType::NftReprocessOMC,
             )
             .await;
 

@@ -134,6 +134,8 @@ pub struct ChallengeWithDifficulty {
     pub rewards_earned_ore: Option<u64>,
     #[diesel(sql_type = TinyInt)]
     pub difficulty: i8,
+    #[diesel(sql_type = Unsigned<BigInt>)]
+    pub challenge_hashpower: u64,
     #[diesel(sql_type = Timestamp)]
     pub updated_at: NaiveDateTime,
 }

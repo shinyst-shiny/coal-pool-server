@@ -123,8 +123,22 @@ impl AppRRDatabase {
         if let Ok(db_conn) = self.connection_pool.get().await {
             let res = db_conn
                 .interact(move |conn: &mut MysqlConnection| {
-                    diesel::sql_query("SELECT c.id, c.rewards_earned_coal, c.rewards_earned_ore, c.updated_at, s.difficulty FROM challenges c JOIN submissions s ON c.submission_id = s.id WHERE c.submission_id IS NOT NULL ORDER BY c.id  DESC LIMIT 1440")
-                        .load::<ChallengeWithDifficulty>(conn)
+                    diesel::sql_query(
+                        "SELECT
+                        c.id,
+                        c.rewards_earned_coal,
+                        c.rewards_earned_ore,
+                        s.difficulty,
+                        ? * POW(2, s.difficulty - ?) as challenge_hashpower,
+                        c.updated_at
+                    FROM challenges c
+                    JOIN submissions s ON c.submission_id = s.id
+                    WHERE c.submission_id IS NOT NULL ORDER BY c.id  DESC LIMIT 1440
+                    ",
+                    )
+                    .bind::<BigInt, _>(MIN_HASHPOWER as i64)
+                    .bind::<Integer, _>(MIN_DIFF as i32)
+                    .load::<ChallengeWithDifficulty>(conn)
                 })
                 .await;
 
@@ -134,16 +148,17 @@ impl AppRRDatabase {
                         return Ok(query);
                     }
                     Err(e) => {
-                        error!("{:?}", e);
+                        error!("{:?} -->", e);
                         return Err(AppDatabaseError::QueryFailed);
                     }
                 },
                 Err(e) => {
-                    error!("{:?}", e);
+                    error!("{:?} -->", e);
                     return Err(AppDatabaseError::InteractionFailed);
                 }
             }
         } else {
+            error!("--> failed connection");
             return Err(AppDatabaseError::FailedToGetConnectionFromPool);
         };
     }

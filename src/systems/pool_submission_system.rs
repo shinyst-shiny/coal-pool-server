@@ -530,18 +530,50 @@ pub async fn pool_submission_system(
                             match rpc_client.simulate_transaction(&tx_coal).await {
                                 Ok(sim_tx_coal) => {
                                     info!(target: "server_log", "Simulation result COAL: {:?}", sim_tx_coal);
+
+                                    // Check if there's an error in the simulation result
+                                    if let Some(err) = &sim_tx_coal.value.err {
+                                        error!(target: "server_log", "COAL transaction simulation succeeded but contained errors: {:?}", err);
+
+                                        // Log the specific error details if logs are available
+                                        if let Some(logs) = &sim_tx_coal.value.logs {
+                                            if logs.iter().any(|log| log.contains("failed:")) {
+                                                error!(target: "server_log", "COAL program execution failed with logs: {:?}",
+                        logs.iter().filter(|log| log.contains("failed:")).collect::<Vec<_>>());
+                                            }
+                                        }
+                                        tokio::time::sleep(Duration::from_millis(500)).await;
+                                        continue;
+                                    }
                                 }
                                 Err(e) => {
                                     error!(target: "server_log", "Failed to simulate tx_coal: {:?}", e);
+                                    tokio::time::sleep(Duration::from_millis(500)).await;
                                     continue;
                                 }
                             }
                             match rpc_client.simulate_transaction(&tx_ore).await {
                                 Ok(sim_tx_ore) => {
                                     info!(target: "server_log", "Simulation result ORE: {:?}", sim_tx_ore);
+
+                                    // Check if there's an error in the simulation result
+                                    if let Some(err) = &sim_tx_ore.value.err {
+                                        error!(target: "server_log", "ORE transaction simulation succeeded but contained errors: {:?}", err);
+
+                                        // Log the specific error details if logs are available
+                                        if let Some(logs) = &sim_tx_ore.value.logs {
+                                            if logs.iter().any(|log| log.contains("failed:")) {
+                                                error!(target: "server_log", "ORE program execution failed with logs: {:?}",
+                        logs.iter().filter(|log| log.contains("failed:")).collect::<Vec<_>>());
+                                            }
+                                        }
+                                        tokio::time::sleep(Duration::from_millis(500)).await;
+                                        continue;
+                                    }
                                 }
                                 Err(e) => {
                                     error!(target: "server_log", "Failed to simulate tx_ore: {:?}", e);
+                                    tokio::time::sleep(Duration::from_millis(500)).await;
                                     continue;
                                 }
                             }

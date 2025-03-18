@@ -317,14 +317,14 @@ pub async fn pool_submission_system(
 
                         tokio::time::sleep(Duration::from_millis(1000)).await;
 
-                        let ore_proof_address = proof_pda(signer.pubkey()).0;
+                        //let ore_proof_address = proof_pda(signer.pubkey()).0;
 
-                        let reservation_address = reservation_pda(ore_proof_address).0;
-                        let reservation = get_reservation(&rpc_client, reservation_address).await;
+                        //let reservation_address = reservation_pda(ore_proof_address).0;
+                        //let reservation = get_reservation(&rpc_client, reservation_address).await;
 
-                        info!(target: "server_log", "reservation: {:?}", reservation);
+                        //info!(target: "server_log", "reservation: {:?}", reservation);
 
-                        let boost_address = reservation
+                        /*let boost_address = reservation
                             .map(|r| {
                                 if r.boost == Pubkey::default() {
                                     None
@@ -337,7 +337,7 @@ pub async fn pool_submission_system(
                             Some((boost_address, reservation_address))
                         } else {
                             None
-                        };
+                        };*/
 
                         let now = SystemTime::now()
                             .duration_since(UNIX_EPOCH)
@@ -458,17 +458,19 @@ pub async fn pool_submission_system(
 
                         ixs_coal.push(coal_mine_ix);
 
-                        info!(target: "server_log", "boost_keys: {:?}",boost_keys);
+                        // info!(target: "server_log", "boost_keys: {:?}",boost_keys);
 
+                        /*let ore_mine_ix =
+                        get_ore_mine_ix(signer.pubkey(), best_solution, bus, boost_keys);*/
                         let ore_mine_ix =
-                            get_ore_mine_ix(signer.pubkey(), best_solution, bus, boost_keys);
+                            get_ore_mine_ix(signer.pubkey(), best_solution, bus, None);
 
                         ixs_ore.push(ore_mine_ix);
 
                         // Build rotation ix
-                        let rotate_ix =
+                        /*let rotate_ix =
                             ore_boost_api::sdk::rotate(signer.pubkey(), ore_proof_address);
-                        ixs_ore.push(rotate_ix);
+                        ixs_ore.push(rotate_ix);*/
 
                         info!(target: "server_log", "built ixs getting balances...");
 

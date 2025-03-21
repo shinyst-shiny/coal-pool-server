@@ -183,7 +183,8 @@ pub async fn chromium_reprocessing_system(
 
         while reprocessor.is_none() {
             info!(target: "reprocess_log", "CHROMIUM: Reprocessor not found. Creating it...");
-            let reprocessor_creation_ix = coal_api::instruction::init_reprocess(signer.pubkey());
+            let reprocessor_creation_ix =
+                crate::coal_api::instruction::init_reprocess(signer.pubkey());
             send_and_confirm(
                 &[reprocessor_creation_ix],
                 ComputeBudget::Fixed(100_000),
@@ -211,7 +212,7 @@ pub async fn chromium_reprocessing_system(
                 Ok(current_slot) => {
                     if current_slot >= target_slot - 1 {
                         info!(target: "reprocess_log", "CHROMIUM: Target slot {} reached", target_slot);
-                        let ix = coal_api::instruction::reprocess(signer.pubkey());
+                        let ix = crate::coal_api::instruction::reprocess(signer.pubkey());
                         send_and_confirm(
                             &[ix],
                             ComputeBudget::Fixed(200_000),

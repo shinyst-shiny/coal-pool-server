@@ -1,4 +1,3 @@
-use coal_api::consts::CHROMIUM_MINT_ADDRESS;
 use solana_client::{nonblocking::rpc_client::RpcClient, rpc_config::RpcSendTransactionConfig};
 use solana_sdk::{
     compute_budget::ComputeBudgetInstruction,
@@ -17,6 +16,7 @@ use crate::models::UpdateReward;
 use crate::ore_utils::{get_ore_mint, ORE_TOKEN_DECIMALS};
 use crate::{
     app_database::AppDatabase,
+    coal_api,
     coal_utils::{get_coal_mint, COAL_TOKEN_DECIMALS},
     ClaimsQueue, InsertClaim, InsertTxn,
 };

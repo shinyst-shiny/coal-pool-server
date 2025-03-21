@@ -7,7 +7,6 @@ use ore_api::{
     consts::{BUS_ADDRESSES, MINT_ADDRESS, PROOF},
     ID as ORE_ID,
 };
-use ore_boost_api::state::{reservation_pda, Reservation};
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::account::ReadableAccount;
 use solana_sdk::signature::Signer;
@@ -35,7 +34,7 @@ pub fn get_ore_mine_ix(
     signer: Pubkey,
     solution: Solution,
     bus: usize,
-    boost: Option<(Pubkey, Pubkey)>,
+    boost: Option<[Pubkey; 2]>,
 ) -> Instruction {
     info!(target: "server_log", "get_ore_mine_ix ORE: {:?} - {:?} - {:?} - {:?}", signer, solution, bus, boost);
     ore_api::sdk::mine(signer, signer, BUS_ADDRESSES[bus], solution, boost)
@@ -204,7 +203,7 @@ pub fn amount_f64_to_u64(amount: f64) -> u64 {
     (amount * 10f64.powf(ORE_TOKEN_DECIMALS as f64)) as u64
 }
 
-pub async fn get_reservation(client: &RpcClient, address: Pubkey) -> Result<Reservation, ()> {
+/*pub async fn get_reservation(client: &RpcClient, address: Pubkey) -> Result<Reservation, ()> {
     if let Ok(data) = client.get_account_data(&address).await {
         if let Ok(reservation) = bytemuck::try_from_bytes::<Reservation>(&data[8..]) {
             Ok(*reservation)
@@ -214,9 +213,9 @@ pub async fn get_reservation(client: &RpcClient, address: Pubkey) -> Result<Rese
     } else {
         Err(())
     }
-}
+}*/
 
-pub async fn register_reservation_ore(client: Arc<RpcClient>, wallet: Arc<WalletExtension>) {
+/*pub async fn register_reservation_ore(client: Arc<RpcClient>, wallet: Arc<WalletExtension>) {
     let mut ixs = Vec::new();
     let proof_address = proof_pubkey(wallet.miner_wallet.pubkey());
     // Register reservation
@@ -247,4 +246,4 @@ pub async fn register_reservation_ore(client: Arc<RpcClient>, wallet: Arc<Wallet
         .expect("ERROR: register_reservation_ore");
         return;
     }
-}
+}*/

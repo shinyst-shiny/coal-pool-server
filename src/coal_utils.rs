@@ -1,25 +1,18 @@
 use std::io::Read;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::coal_api::consts::{
+    BUS_COUNT, CHROMIUM_MINT_ADDRESS, COAL_BUS_ADDRESSES, COAL_CONFIG_ADDRESS, COAL_MAIN_HAND_TOOL,
+    COAL_MINT_ADDRESS, REPROCESSOR, TOKEN_DECIMALS, TREASURY_ADDRESS, WOOD_BUS_ADDRESSES,
+    WOOD_MAIN_HAND_TOOL,
+};
+use crate::{coal_api, coal_guilds_api};
 use bytemuck::{Pod, Zeroable};
-use coal_api::consts::{
-    BUS_COUNT, CHROMIUM_MINT_ADDRESS, COAL_MAIN_HAND_TOOL, REPROCESSOR, TREASURY_ADDRESS,
-    WOOD_BUS_ADDRESSES, WOOD_MAIN_HAND_TOOL,
-};
-use coal_api::state::{ProofV2, Reprocessor, Tool, Treasury, WoodConfig, WoodTool};
-use coal_api::{
-    consts::{COAL_BUS_ADDRESSES, COAL_CONFIG_ADDRESS, COAL_MINT_ADDRESS, TOKEN_DECIMALS},
-    instruction as coal_instruction,
-    state::{Config, Proof},
-};
-use coal_guilds_api::state as guilds_state;
-pub use coal_utils::AccountDeserialize as _;
 use drillx::Solution;
 use serde::Deserialize;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::{account::ReadableAccount, instruction::Instruction, pubkey::Pubkey};
-use steel::AccountDeserialize;
-use steel::{sysvar, Clock};
+use steel::*;
 use tracing::info;
 
 pub const COAL_TOKEN_DECIMALS: u8 = TOKEN_DECIMALS;
@@ -49,12 +42,15 @@ fn get_reprocessor_address(signer: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[REPROCESSOR, signer.as_ref()], &coal_api::id()).0
 }
 
-pub async fn get_reprocessor(client: &RpcClient, signer: &Pubkey) -> Option<Reprocessor> {
+pub async fn get_reprocessor(
+    client: &RpcClient,
+    signer: &Pubkey,
+) -> Option<coal_api::state::Reprocessor> {
     let address = get_reprocessor_address(&signer);
     let account_data = client.get_account_data(&address).await;
 
     if let Ok(account_data) = account_data {
-        Some(*Reprocessor::try_from_bytes(&account_data).unwrap())
+        Some(*coal_api::state::Reprocessor::try_from_bytes(&account_data).unwrap())
     } else {
         None
     }
@@ -75,7 +71,7 @@ pub fn deserialize_guild(data: &[u8]) -> coal_guilds_api::state::Guild {
 pub fn get_auth_ix(signer: Pubkey) -> Instruction {
     let proof = proof_pubkey(signer, Resource::Coal);
 
-    coal_instruction::auth(proof)
+    coal_api::instruction::auth(proof)
 }
 
 pub fn get_mine_ix(
@@ -87,7 +83,7 @@ pub fn get_mine_ix(
     guild: Option<Pubkey>,
 ) -> Instruction {
     info!(target: "server_log", "get_mine_ix coal: {:?} - {:?} - {:?} - {:?} - {:?} - {:?}",signer, solution, bus, tool, guild_member, guild);
-    coal_instruction::mine_coal(
+    coal_api::instruction::mine_coal(
         signer,
         signer,
         COAL_BUS_ADDRESSES[bus],
@@ -99,7 +95,7 @@ pub fn get_mine_ix(
 }
 
 pub fn get_register_ix(signer: Pubkey) -> Instruction {
-    coal_instruction::open_coal(signer, signer, signer)
+    coal_api::instruction::open_coal(signer, signer, signer)
 }
 
 pub fn get_reset_ix(signer: Pubkey) -> Instruction {
@@ -107,19 +103,19 @@ pub fn get_reset_ix(signer: Pubkey) -> Instruction {
 }
 
 pub fn get_claim_ix(signer: Pubkey, beneficiary: Pubkey, claim_amount: u64) -> Instruction {
-    coal_instruction::claim_coal(signer, beneficiary, claim_amount)
+    coal_api::instruction::claim_coal(signer, beneficiary, claim_amount)
 }
 
 pub fn get_stake_ix(signer: Pubkey, sender: Pubkey, stake_amount: u64) -> Instruction {
-    coal_instruction::stake_coal(signer, sender, stake_amount)
+    coal_api::instruction::stake_coal(signer, sender, stake_amount)
 }
 
 pub fn get_guild_member(miner: Pubkey) -> (Pubkey, u8) {
-    guilds_state::member_pda(miner)
+    coal_guilds_api::state::member_pda(miner)
 }
 
 pub fn get_guild_proof(miner: Pubkey) -> (Pubkey, u8) {
-    guilds_state::guild_pda(miner)
+    coal_guilds_api::state::guild_pda(miner)
 }
 pub fn get_coal_mint() -> Pubkey {
     COAL_MINT_ADDRESS
@@ -189,7 +185,7 @@ pub async fn get_config(client: &RpcClient) -> Result<coal_api::state::Config, S
     let data = client.get_account_data(&COAL_CONFIG_ADDRESS).await;
     match data {
         Ok(data) => {
-            let config = Config::try_from_bytes(&data);
+            let config = coal_api::state::Config::try_from_bytes(&data);
             if let Ok(config) = config {
                 return Ok(*config);
             } else {
@@ -204,7 +200,7 @@ pub async fn get_proof_and_config_with_busses(
     client: &RpcClient,
     authority: Pubkey,
 ) -> (
-    Result<Proof, ()>,
+    Result<coal_api::state::Proof, ()>,
     Result<coal_api::state::Config, ()>,
     Result<Vec<Result<coal_api::state::Bus, ()>>, ()>,
 ) {
@@ -223,7 +219,8 @@ pub async fn get_proof_and_config_with_busses(
     let datas = client.get_multiple_accounts(&account_pubkeys).await;
     if let Ok(datas) = datas {
         let proof = if let Some(data) = &datas[0] {
-            Ok(*Proof::try_from_bytes(data.data()).expect("Failed to parse treasury account"))
+            Ok(*coal_api::state::Proof::try_from_bytes(data.data())
+                .expect("Failed to parse treasury account"))
         } else {
             Err(())
         };
@@ -293,12 +290,15 @@ pub async fn get_proof_and_config_with_busses(
     }
 }
 
-pub async fn get_original_proof(client: &RpcClient, authority: Pubkey) -> Result<Proof, String> {
+pub async fn get_original_proof(
+    client: &RpcClient,
+    authority: Pubkey,
+) -> Result<coal_api::state::Proof, String> {
     let proof_address = proof_pubkey(authority, Resource::Coal);
     let data = client.get_account_data(&proof_address).await;
     match data {
         Ok(data) => {
-            let proof = Proof::try_from_bytes(&data);
+            let proof = coal_api::state::Proof::try_from_bytes(&data);
             if let Ok(proof) = proof {
                 return Ok(*proof);
             } else {
@@ -309,7 +309,7 @@ pub async fn get_original_proof(client: &RpcClient, authority: Pubkey) -> Result
     }
 }
 
-pub fn get_cutoff(proof: Proof, buffer_time: u64) -> i64 {
+pub fn get_cutoff(proof: coal_api::state::Proof, buffer_time: u64) -> i64 {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Failed to get time")
@@ -331,8 +331,8 @@ pub enum Resource {
 }
 
 pub enum ConfigType {
-    General(Config),
-    Wood(WoodConfig),
+    General(coal_api::state::Config),
+    Wood(coal_api::state::WoodConfig),
 }
 
 impl ConfigType {
@@ -366,8 +366,8 @@ impl ConfigType {
 }
 
 pub enum ProofType {
-    Proof(Proof),
-    ProofV2(ProofV2),
+    Proof(coal_api::state::Proof),
+    ProofV2(coal_api::state::ProofV2),
 }
 
 impl ProofType {
@@ -436,8 +436,8 @@ impl ProofType {
 }
 
 pub enum ToolType {
-    Tool(Tool),
-    WoodTool(WoodTool),
+    Tool(coal_api::state::Tool),
+    WoodTool(coal_api::state::WoodTool),
 }
 
 impl ToolType {
@@ -470,12 +470,12 @@ impl ToolType {
     }
 }
 
-pub async fn _get_treasury(client: &RpcClient) -> Treasury {
+pub async fn _get_treasury(client: &RpcClient) -> coal_api::state::Treasury {
     let data = client
         .get_account_data(&TREASURY_ADDRESS)
         .await
         .expect("Failed to get treasury account");
-    *Treasury::try_from_bytes(&data).expect("Failed to parse treasury account")
+    *coal_api::state::Treasury::try_from_bytes(&data).expect("Failed to parse treasury account")
 }
 
 pub fn get_config_pubkey(resource: &Resource) -> Pubkey {
@@ -490,10 +490,12 @@ pub fn get_config_pubkey(resource: &Resource) -> Pubkey {
 pub fn deserialize_config(data: &[u8], resource: &Resource) -> ConfigType {
     match resource {
         Resource::Wood => ConfigType::Wood(
-            *WoodConfig::try_from_bytes(&data).expect("Failed to parse wood config account"),
+            *coal_api::state::WoodConfig::try_from_bytes(&data)
+                .expect("Failed to parse wood config account"),
         ),
         _ => ConfigType::General(
-            *Config::try_from_bytes(&data).expect("Failed to parse config account"),
+            *coal_api::state::Config::try_from_bytes(&data)
+                .expect("Failed to parse config account"),
         ),
     }
 }
@@ -501,18 +503,24 @@ pub fn deserialize_config(data: &[u8], resource: &Resource) -> ConfigType {
 pub fn deserialize_tool(data: &[u8], resource: &Resource) -> ToolType {
     match resource {
         Resource::Wood => ToolType::WoodTool(
-            *WoodTool::try_from_bytes(&data).expect("Failed to parse tool account"),
+            *coal_api::state::WoodTool::try_from_bytes(&data)
+                .expect("Failed to parse tool account"),
         ),
-        _ => ToolType::Tool(*Tool::try_from_bytes(&data).expect("Failed to parse tool account")),
+        _ => ToolType::Tool(
+            *coal_api::state::Tool::try_from_bytes(&data).expect("Failed to parse tool account"),
+        ),
     }
 }
 
-pub async fn get_proof(client: &RpcClient, authority: Pubkey) -> Result<Proof, String> {
+pub async fn get_proof(
+    client: &RpcClient,
+    authority: Pubkey,
+) -> Result<coal_api::state::Proof, String> {
     let proof_address = proof_pubkey(authority, Resource::Coal);
     let data = client.get_account_data(&proof_address).await;
     match data {
         Ok(data) => {
-            let proof = Proof::try_from_bytes(&data);
+            let proof = coal_api::state::Proof::try_from_bytes(&data);
             if let Ok(proof) = proof {
                 return Ok(*proof);
             } else {

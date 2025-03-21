@@ -8,7 +8,6 @@ use std::{
 use uuid::Uuid;
 
 use axum::extract::ws::Message;
-use coal_api::state::Proof;
 use futures::SinkExt;
 use solana_sdk::pubkey::Pubkey;
 use tokio::{
@@ -17,14 +16,14 @@ use tokio::{
 };
 
 use crate::{
-    AppState, ClientMessage, EpochHashes, InternalMessageSubmission, LastPong, SubmissionWindow,
-    MAX_CALCULATED_HASHPOWER, MIN_DIFF, MIN_HASHPOWER,
+    coal_api, AppState, ClientMessage, EpochHashes, InternalMessageSubmission, LastPong,
+    SubmissionWindow, MAX_CALCULATED_HASHPOWER, MIN_DIFF, MIN_HASHPOWER,
 };
 
 pub async fn client_message_handler_system(
     mut receiver_channel: UnboundedReceiver<ClientMessage>,
     ready_clients: Arc<Mutex<HashSet<SocketAddr>>>,
-    proof: Arc<Mutex<Proof>>,
+    proof: Arc<Mutex<coal_api::state::Proof>>,
     epoch_hashes: Arc<RwLock<EpochHashes>>,
     client_nonce_ranges: Arc<RwLock<HashMap<Uuid, Vec<Range<u64>>>>>,
     app_state: Arc<RwLock<AppState>>,

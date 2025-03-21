@@ -1,8 +1,8 @@
 use std::{str::FromStr, time::Duration};
 
+use crate::coal_api::error::CoalError;
 use chrono::Local;
-use coal_api::error::CoalError;
-use rand::seq::SliceRandom;
+use rand::seq::{IndexedRandom, SliceRandom};
 use solana_client::{
     client_error::{ClientError, ClientErrorKind, Result as ClientResult},
     nonblocking::rpc_client::RpcClient,
@@ -98,13 +98,7 @@ pub async fn send_and_confirm(
         ];
         final_ixs.push(transfer(
             &signer.pubkey().clone(),
-            &Pubkey::from_str(
-                &tip_accounts
-                    .choose(&mut rand::thread_rng())
-                    .unwrap()
-                    .to_string(),
-            )
-            .unwrap(),
+            &Pubkey::from_str(&tip_accounts.choose(&mut rand::rng()).unwrap().to_string()).unwrap(),
             jito_tip,
         ));
         info!(target: "server_log", "Jito tip: {} SOL", lamports_to_sol(jito_tip));

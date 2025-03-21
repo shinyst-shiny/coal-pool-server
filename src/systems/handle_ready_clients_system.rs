@@ -7,12 +7,11 @@ use std::{
 };
 
 use crate::{
-    coal_utils::get_cutoff, message::ServerMessageStartMining, AppState, EpochHashes,
+    coal_api, coal_utils::get_cutoff, message::ServerMessageStartMining, AppState, EpochHashes,
     SubmissionWindow,
 };
 use axum::extract::ws::Message;
 use base64::{prelude::BASE64_STANDARD, Engine};
-use coal_api::state::Proof;
 use futures::SinkExt;
 use solana_sdk::pubkey::Pubkey;
 use tokio::sync::{Mutex, RwLock};
@@ -23,7 +22,7 @@ const NONCE_RANGE_SIZE: u64 = 40_000_000;
 
 pub async fn handle_ready_clients_system(
     app_state: Arc<RwLock<AppState>>,
-    app_proof: Arc<Mutex<Proof>>,
+    app_proof: Arc<Mutex<coal_api::state::Proof>>,
     app_epoch_hashes: Arc<RwLock<EpochHashes>>,
     ready_clients: Arc<Mutex<HashSet<SocketAddr>>>,
     app_nonce: Arc<Mutex<u64>>,

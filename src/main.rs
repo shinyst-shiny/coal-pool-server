@@ -36,7 +36,6 @@ use crate::coal_utils::{
 };
 use crate::ore_utils::{
     get_ore_mint, get_proof_and_config_with_busses as get_proof_and_config_with_busses_ore,
-    register_reservation_ore,
 };
 use crate::routes::get_guild_addresses;
 use crate::send_and_confirm::{send_and_confirm, ComputeBudget};
@@ -255,6 +254,8 @@ struct RewardsData {
     amount_ingot: u64,
 }
 
+mod coal_api;
+mod coal_guilds_api;
 mod coal_utils;
 mod ore_utils;
 mod send_and_confirm;
@@ -748,7 +749,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_rpc_client = rpc_client.clone();
     let app_wallet = wallet_extension.clone();
 
-    register_reservation_ore(app_rpc_client, app_wallet).await;
+    // register_reservation_ore(app_rpc_client, app_wallet).await;
 
     let app_rpc_client = rpc_client.clone();
     let app_wallet = wallet_extension.clone();

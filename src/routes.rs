@@ -10,6 +10,8 @@ use spl_associated_token_account::get_associated_token_address;
 use steel::AccountDeserialize;
 use tracing::error;
 
+use crate::coal_guilds_api::state::Guild;
+use crate::coal_guilds_api::state::Member;
 use crate::coal_utils::Resource;
 use crate::models::ExtraResourcesGenerationType;
 use crate::ore_utils::get_proof_with_authority;
@@ -19,8 +21,6 @@ use crate::{
     ChallengeWithDifficulty, Config, Txn,
 };
 use chrono::{NaiveDateTime, Utc};
-use coal_guilds_api::prelude::Member;
-use coal_guilds_api::state::Guild;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use std::{str::FromStr, sync::Arc};

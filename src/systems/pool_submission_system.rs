@@ -1,6 +1,5 @@
 use b64::FromBase64;
 use bs58;
-use rand::seq::SliceRandom;
 use serde_json::json;
 use std::{
     collections::HashMap,
@@ -17,11 +16,12 @@ use crate::coal_utils::{
 };
 use crate::ore_utils::{
     get_ore_auth_ix, get_ore_balance, get_ore_mine_ix,
-    get_proof_and_config_with_busses as get_proof_and_config_with_busses_ore, get_reservation,
+    get_proof_and_config_with_busses as get_proof_and_config_with_busses_ore,
     get_reset_ix as get_reset_ix_ore, ore_proof_pubkey, ORE_TOKEN_DECIMALS,
 };
 use crate::{
     app_database::AppDatabase,
+    coal_api, coal_guilds_api,
     coal_utils::{
         get_auth_ix, get_cutoff, get_guild_member, get_guild_proof, get_mine_ix, get_proof,
         get_proof_and_config_with_busses as get_proof_and_config_with_busses_coal,
@@ -31,12 +31,11 @@ use crate::{
     MessageInternalMineSuccess, PoolGuildMember, SubmissionWindow, UpdateReward, WalletExtension,
 };
 use base64::{prelude::BASE64_STANDARD, Engine};
-use coal_api::{consts::BUS_COUNT, state::Proof};
-use coal_guilds_api::state::config_pda;
 use futures::future::try_join;
 use jito_sdk_rust::JitoJsonRpcSDK;
-use ore_api::state::proof_pda;
-use ore_boost_api::state::reservation_pda;
+use ore_api::consts::BUS_COUNT;
+use ore_api::state::{proof_pda, Proof};
+use rand::prelude::IndexedRandom;
 use rand::Rng;
 use solana_client::{
     nonblocking::rpc_client::RpcClient,
@@ -70,7 +69,7 @@ struct BundleStatus {
 }
 
 pub async fn pool_submission_system(
-    app_proof: Arc<Mutex<Proof>>,
+    app_proof: Arc<Mutex<coal_api::state::Proof>>,
     app_epoch_hashes: Arc<RwLock<EpochHashes>>,
     app_wallet: Arc<WalletExtension>,
     app_nonce: Arc<Mutex<u64>>,

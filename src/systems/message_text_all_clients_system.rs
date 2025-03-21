@@ -8,7 +8,7 @@ use crate::{AppState, MessageInternalAllClients};
 
 pub async fn message_text_all_clients_system(
     app_shared_state: Arc<RwLock<AppState>>,
-    mut all_clients_receiver: UnboundedReceiver<MessageInternalAllClients>
+    mut all_clients_receiver: UnboundedReceiver<MessageInternalAllClients>,
 ) {
     loop {
         while let Some(msg) = all_clients_receiver.recv().await {
@@ -20,9 +20,7 @@ pub async fn message_text_all_clients_system(
                     let text = msg.text.clone();
                     let socket = socket_sender.clone();
                     tokio::spawn(async move {
-                        if let Ok(_) =
-                            socket.socket.lock().await.send(Message::Text(text)).await
-                        {
+                        if let Ok(_) = socket.socket.lock().await.send(Message::Text(text)).await {
                         } else {
                             tracing::error!(target: "server_log", "Failed to send client text");
                         }

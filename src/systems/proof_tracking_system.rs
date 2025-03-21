@@ -2,18 +2,19 @@ use std::{sync::Arc, time::Duration};
 
 use crate::coal_utils::{proof_pubkey, Resource};
 use base64::{prelude::BASE64_STANDARD, Engine};
-use coal_api::state::Proof;
-use coal_utils::AccountDeserialize;
 use futures::StreamExt;
 use solana_account_decoder::UiAccountEncoding;
 use solana_client::{nonblocking::pubsub_client::PubsubClient, rpc_config::RpcAccountInfoConfig};
 use solana_sdk::{commitment_config::CommitmentConfig, signature::Keypair, signer::Signer};
+use steel::AccountDeserialize;
 use tokio::sync::Mutex;
+
+use crate::coal_api;
 
 pub async fn proof_tracking_system(
     ws_url: String,
     wallet: Arc<Keypair>,
-    proof: Arc<Mutex<Proof>>,
+    proof: Arc<Mutex<coal_api::state::Proof>>,
     app_last_challenge: Arc<Mutex<[u8; 32]>>,
 ) {
     loop {
@@ -56,14 +57,13 @@ pub async fn proof_tracking_system(
                         // if let Ok(coal_config) = coal_api::state::Config::try_from_bytes(&data_bytes) {
                         //     let _ = sender.send(AccountUpdatesData::TreasuryConfigData(*coal_config));
                         // }
-                        if let Ok(new_proof) = Proof::try_from_bytes(&data_bytes) {
+                        if let Ok(new_proof) = coal_api::state::Proof::try_from_bytes(&data_bytes) {
                             tracing::info!(target: "server_log", "Got new proof data");
                             tracing::info!(target: "server_log", "Challenge: {}", BASE64_STANDARD.encode(new_proof.challenge));
 
                             let lock = app_last_challenge.lock().await;
                             let last_challenge = lock.clone();
                             drop(lock);
-
 
                             if last_challenge.eq(&new_proof.challenge) {
                                 tracing::error!(target: "server_log", "Websocket tried to update proof with old challenge!");

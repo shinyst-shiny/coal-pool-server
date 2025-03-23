@@ -203,6 +203,21 @@ pub fn amount_f64_to_u64(amount: f64) -> u64 {
     (amount * 10f64.powf(ORE_TOKEN_DECIMALS as f64)) as u64
 }
 
+pub async fn get_boost_config(client: &RpcClient) -> Result<ore_boost_api::state::Config, ()> {
+    if let Ok(data) = client
+        .get_account_data(&ore_boost_api::state::config_pda().0)
+        .await
+    {
+        if let Ok(boost_config) = ore_boost_api::state::Config::try_from_bytes(&data) {
+            Ok(*boost_config)
+        } else {
+            Err(())
+        }
+    } else {
+        Err(())
+    }
+}
+
 /*pub async fn get_reservation(client: &RpcClient, address: Pubkey) -> Result<Reservation, ()> {
     if let Ok(data) = client.get_account_data(&address).await {
         if let Ok(reservation) = bytemuck::try_from_bytes::<Reservation>(&data[8..]) {

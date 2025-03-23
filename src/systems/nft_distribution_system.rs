@@ -94,7 +94,7 @@ pub async fn nft_distribution_system(
         if last_reprocess.is_some() && last_reprocess.unwrap().created_at > rewards_date.naive_utc()
         {
             info!(target: "reprocess_log", "NFT REPROCESSING: Last reprocessing was less than 7 days ago, waiting then retrying");
-            tokio::time::sleep(Duration::from_secs(25)).await;
+            tokio::time::sleep(Duration::from_secs(60 * 60)).await;
             continue;
         }
 

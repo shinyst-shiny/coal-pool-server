@@ -15,7 +15,7 @@ use crate::coal_utils::{
     get_coal_balance, get_config_pubkey, get_tool_pubkey, Resource, ToolType,
 };
 use crate::ore_utils::{
-    get_ore_auth_ix, get_ore_balance, get_ore_mine_ix,
+    get_boost_config, get_ore_auth_ix, get_ore_balance, get_ore_mine_ix,
     get_proof_and_config_with_busses as get_proof_and_config_with_busses_ore,
     get_reset_ix as get_reset_ix_ore, ore_proof_pubkey, ORE_TOKEN_DECIMALS,
 };
@@ -85,6 +85,7 @@ pub async fn pool_submission_system(
     app_client_nonce_ranges: Arc<RwLock<HashMap<Uuid, Vec<Range<u64>>>>>,
     app_last_challenge: Arc<Mutex<[u8; 32]>>,
 ) {
+    let boost_config_address = ore_boost_api::state::config_pda().0;
     loop {
         let lock = app_proof.lock().await;
         let old_proof = lock.clone();
@@ -316,27 +317,23 @@ pub async fn pool_submission_system(
 
                         tokio::time::sleep(Duration::from_millis(1000)).await;
 
-                        //let ore_proof_address = proof_pda(signer.pubkey()).0;
-
-                        //let reservation_address = reservation_pda(ore_proof_address).0;
-                        //let reservation = get_reservation(&rpc_client, reservation_address).await;
-
-                        //info!(target: "server_log", "reservation: {:?}", reservation);
-
-                        /*let boost_address = reservation
-                            .map(|r| {
-                                if r.boost == Pubkey::default() {
-                                    None
-                                } else {
-                                    Some(r.boost)
-                                }
-                            })
-                            .unwrap_or(None);
+                        // Build mine ix
+                        let boost_config = match get_boost_config(&rpc_client).await {
+                            Ok(boost_config) => Some(boost_config),
+                            Err(e) => None,
+                        };
+                        let boost_address = if boost_config.is_none()
+                            || boost_config.unwrap().current == Pubkey::default()
+                        {
+                            None
+                        } else {
+                            Some(boost_config.unwrap().current)
+                        };
                         let boost_keys = if let Some(boost_address) = boost_address {
-                            Some((boost_address, reservation_address))
+                            Some([boost_address, boost_config_address])
                         } else {
                             None
-                        };*/
+                        };
 
                         let now = SystemTime::now()
                             .duration_since(UNIX_EPOCH)
@@ -462,7 +459,7 @@ pub async fn pool_submission_system(
                         /*let ore_mine_ix =
                         get_ore_mine_ix(signer.pubkey(), best_solution, bus, boost_keys);*/
                         let ore_mine_ix =
-                            get_ore_mine_ix(signer.pubkey(), best_solution, bus, None);
+                            get_ore_mine_ix(signer.pubkey(), best_solution, bus, boost_keys);
 
                         ixs_ore.push(ore_mine_ix);
 

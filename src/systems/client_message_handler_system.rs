@@ -87,7 +87,7 @@ pub async fn client_message_handler_system(
                         if let Some(nr) = reader.get(&uuid) {
                             nr.clone()
                         } else {
-                            tracing::error!(target: "server_log", "Client nonce range not set!");
+                            // tracing::error!(target: "server_log", "Client nonce range not set!");
                             return;
                         }
                     };

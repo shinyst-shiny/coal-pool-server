@@ -66,7 +66,7 @@ use coal_api::consts::COAL_MINT_ADDRESS;
 use coal_guilds_api::consts::LP_MINT_ADDRESS;
 use coal_guilds_api::state::member_pda;
 use coal_guilds_api::state::Member;
-use coal_utils::{get_coal_mint, get_config, get_proof, get_register_ix, COAL_TOKEN_DECIMALS};
+use coal_utils::{get_coal_mint, get_config, get_register_ix, COAL_TOKEN_DECIMALS};
 use drillx::Solution;
 use futures::{stream::SplitSink, SinkExt, StreamExt};
 use jito_sdk_rust::JitoJsonRpcSDK;
@@ -75,6 +75,7 @@ use openssl::pkcs5::pbkdf2_hmac;
 use openssl::symm::{decrypt, Cipher};
 use ore_api::prelude::Proof;
 use ore_utils::get_ore_register_ix;
+use rand::Rng;
 use routes::{get_challenges, get_latest_mine_txn};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -106,6 +107,7 @@ use tower_http::{
 };
 use tracing::{error, info};
 use uuid::Uuid;
+// Add rand crate dependency
 
 mod app_database;
 mod app_rr_database;
@@ -298,6 +300,12 @@ struct Args {
     migrate: bool,
 }
 
+// Helper function to get a random RPC client from the array
+fn get_random_rpc_client(clients: &[RpcClient]) -> &RpcClient {
+    let index = rand::rng().random_range(0..clients.len());
+    &clients[index]
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv::dotenv().ok();
@@ -347,7 +355,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wallet_path_str = std::env::var("WALLET_PATH").expect("WALLET_PATH must be set.");
     let fee_wallet_path_str =
         std::env::var("FEE_WALLET_PATH").expect("FEE_WALLET_PATH must be set.");
-    let rpc_url = std::env::var("RPC_URL").expect("RPC_URL must be set.");
     let rpc_ws_url = std::env::var("RPC_WS_URL").expect("RPC_WS_URL must be set.");
     let rpc_url_miner = std::env::var("RPC_URL_MINER").expect("RPC_URL must be set.");
     let jito_url = std::env::var("JITO_URL").expect("JITO_URL must be set.");
@@ -502,14 +509,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(target: "server_log", "loaded fee wallet {}", fee_wallet.pubkey().to_string());
 
     info!(target: "server_log", "establishing rpc connection...");
-    let rpc_client = RpcClient::new_with_commitment(rpc_url, CommitmentConfig::confirmed());
+    // Load multiple RPC URLs
+    let mut rpc_urls = Vec::new();
+    for i in 0..5 {
+        let env_var = format!("RPC_URL_{}", i);
+        if let Ok(url) = std::env::var(&env_var) {
+            rpc_urls.push(url);
+        }
+    }
+
+    if rpc_urls.is_empty() {
+        return Err(
+            "No RPC URLs configured. Please set RPC_URL_0 to RPC_URL_4 environment variables."
+                .into(),
+        );
+    }
+
+    // Create an array of RPC clients
+    let mut rpc_clients_vec = Vec::new();
+    for url in &rpc_urls {
+        rpc_clients_vec.push(RpcClient::new_with_commitment(
+            url.clone(),
+            CommitmentConfig::confirmed(),
+        ));
+    }
+
+    // We now use an array of RPC clients instead of a single one
+    let rpc_clients = Arc::new(rpc_clients_vec);
     let rpc_client_miner =
         RpcClient::new_with_commitment(rpc_url_miner, CommitmentConfig::confirmed());
     let jito_client = RpcClient::new(jito_url.clone() + "/transactions");
     let jito_client_miner = JitoJsonRpcSDK::new(&jito_url.clone(), None);
 
     info!(target: "server_log", "loading sol balance...");
-    let balance = if let Ok(balance) = rpc_client.get_balance(&wallet.pubkey()).await {
+    let balance = if let Ok(balance) = get_balance(&rpc_clients, &wallet.pubkey()).await {
         balance
     } else {
         return Err("Failed to load balance".into());
@@ -521,7 +554,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("Sol balance is too low!".into());
     }
 
-    let proof = if let Ok(loaded_proof) = get_proof(&rpc_client, wallet.pubkey()).await {
+    let proof = if let Ok(loaded_proof) = get_proof(&rpc_clients, wallet.pubkey()).await {
         info!(target: "server_log", "LOADED PROOF: \n{:?}", loaded_proof);
         loaded_proof
     } else {
@@ -531,31 +564,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let coal_register_ix = get_register_ix(wallet.pubkey());
         let ore_register_ix = get_ore_register_ix(wallet.pubkey());
 
-        if let Ok((hash, _slot)) = rpc_client
-            .get_latest_blockhash_with_commitment(rpc_client.commitment())
-            .await
-        {
-            let mut tx = Transaction::new_with_payer(
-                &[coal_register_ix, ore_register_ix],
-                Some(&wallet.pubkey()),
-            );
+        if let Some(random_client) = rpc_clients.get(0) {
+            if let Ok((hash, _slot)) = random_client
+                .get_latest_blockhash_with_commitment(random_client.commitment())
+                .await
+            {
+                let mut tx = Transaction::new_with_payer(
+                    &[coal_register_ix, ore_register_ix],
+                    Some(&wallet.pubkey()),
+                );
 
-            tx.sign(&[&wallet], hash);
+                tx.sign(&[&wallet], hash);
 
-            let result = rpc_client
-                .send_and_confirm_transaction_with_spinner_and_commitment(
-                    &tx,
-                    rpc_client.commitment(),
-                )
-                .await;
+                let result = random_client
+                    .send_and_confirm_transaction_with_spinner_and_commitment(
+                        &tx,
+                        random_client.commitment(),
+                    )
+                    .await;
 
-            if let Ok(sig) = result {
-                info!(target: "server_log", "Sig: {}", sig.to_string());
-            } else {
-                return Err("Failed to create proof account".into());
+                if let Ok(sig) = result {
+                    info!(target: "server_log", "Sig: {}", sig.to_string());
+                } else {
+                    return Err("Failed to create proof account".into());
+                }
             }
         }
-        let proof = if let Ok(loaded_proof) = get_proof(&rpc_client, wallet.pubkey()).await {
+        let proof = if let Ok(loaded_proof) = get_proof(&rpc_clients, wallet.pubkey()).await {
             loaded_proof
         } else {
             return Err("Failed to get newly created proof".into());
@@ -739,19 +774,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let submission_window = Arc::new(RwLock::new(SubmissionWindow { closed: false }));
 
-    let rpc_client = Arc::new(rpc_client);
+    let rpc_clients = Arc::new(rpc_clients);
     let rpc_client_miner = Arc::new(rpc_client_miner);
     let jito_client = Arc::new(jito_client);
     let jito_client_miner = Arc::new(jito_client_miner);
 
     let last_challenge = Arc::new(Mutex::new([0u8; 32]));
 
-    let app_rpc_client = rpc_client.clone();
+    let app_rpc_client = get_random_rpc_client(&rpc_clients).clone();
     let app_wallet = wallet_extension.clone();
 
     // register_reservation_ore(app_rpc_client, app_wallet).await;
 
-    let app_rpc_client = rpc_client.clone();
+    // Get a random index
+    let random_index = rand::thread_rng().gen_range(0..rpc_urls.len());
+    // Create a new RpcClient with the same configuration as the ones in your array
+    let app_rpc_client = Arc::new(RpcClient::new_with_commitment(
+        rpc_urls[random_index].clone(),
+        CommitmentConfig::confirmed(),
+    ));
     let app_wallet = wallet_extension.clone();
     let app_claims_queue = claims_queue.clone();
     let app_app_database = app_database.clone();
@@ -940,7 +981,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_app_database = app_database.clone();
     let app_app_rr_database = app_rr_database.clone();
     let app_omc_rewards_daily = omc_rewards_daily;
-    let app_rpc_client = rpc_client.clone();
+    // Get a random index
+    let random_index = rand::thread_rng().gen_range(0..rpc_urls.len());
+    // Create a new RpcClient with the same configuration as the ones in your array
+    let app_rpc_client = Arc::new(RpcClient::new_with_commitment(
+        rpc_urls[random_index].clone(),
+        CommitmentConfig::confirmed(),
+    ));
     let app_omc_nft_pubkey = omc_nft_pubkey.clone();
     tokio::spawn(async move {
         nft_distribution_system(
@@ -982,7 +1029,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load the environment variable
     let environment = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "production".to_string());
-
     let client_channel = client_message_sender.clone();
     let app_shared_state = shared_state.clone();
     let app = create_router()
@@ -992,7 +1038,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(Extension(config))
         .layer(Extension(wallet_extension))
         .layer(Extension(client_channel))
-        .layer(Extension(rpc_client))
+        .layer(Extension(rpc_clients))
         .layer(Extension(client_nonce_ranges))
         .layer(Extension(claims_queue))
         .layer(Extension(submission_window))
@@ -1020,6 +1066,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .unwrap();
 
     Ok(())
+}
+
+// Add a new function to get balance using the RPC client array
+async fn get_balance(
+    rpc_clients: &Arc<Vec<RpcClient>>,
+    pubkey: &Pubkey,
+) -> Result<u64, Box<dyn std::error::Error>> {
+    let random_client = get_random_rpc_client(rpc_clients);
+    match random_client.get_balance(pubkey).await {
+        Ok(balance) => Ok(balance),
+        Err(e) => Err(Box::new(e)),
+    }
+}
+
+// Update get_proof to work with an array of RPC clients
+async fn get_proof(
+    rpc_clients: &Arc<Vec<RpcClient>>,
+    pubkey: Pubkey,
+) -> Result<coal_api::state::Proof, String> {
+    let random_client = get_random_rpc_client(rpc_clients);
+    coal_utils::get_proof(random_client, pubkey).await
 }
 
 fn create_router() -> Router<Arc<RwLock<AppState>>> {
@@ -1142,8 +1209,9 @@ async fn get_pool_fee_payer_pubkey(
 }
 
 async fn get_latest_blockhash(
-    Extension(rpc_client): Extension<Arc<RpcClient>>,
+    Extension(rpc_clients): Extension<Arc<Vec<RpcClient>>>,
 ) -> impl IntoResponse {
+    let rpc_client = get_random_rpc_client(&rpc_clients);
     let latest_blockhash = rpc_client.get_latest_blockhash().await.unwrap();
 
     let serialized_blockhash = bincode::serialize(&latest_blockhash).unwrap();
@@ -1268,10 +1336,11 @@ async fn get_signup_fee(Extension(app_config): Extension<Arc<Config>>) -> impl I
 }
 
 async fn get_sol_balance(
-    Extension(rpc_client): Extension<Arc<RpcClient>>,
+    Extension(rpc_clients): Extension<Arc<Vec<RpcClient>>>,
     query_params: Query<PubkeyParam>,
 ) -> impl IntoResponse {
     if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
+        let rpc_client = get_random_rpc_client(&rpc_clients);
         let res = rpc_client.get_balance(&user_pubkey).await;
 
         match res {
@@ -1626,9 +1695,10 @@ struct MinerBalance {
 
 async fn get_miner_balance(
     query_params: Query<PubkeyParam>,
-    Extension(rpc_client): Extension<Arc<RpcClient>>,
+    Extension(rpc_clients): Extension<Arc<Vec<RpcClient>>>,
 ) -> impl IntoResponse {
     if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
+        let rpc_client = get_random_rpc_client(&rpc_clients);
         let miner_token_account_coal = get_associated_token_address(&user_pubkey, &get_coal_mint());
         let miner_token_account_ore = get_associated_token_address(&user_pubkey, &get_ore_mint());
         let miner_token_account_chromium =
@@ -1725,34 +1795,14 @@ async fn get_miner_earnings_for_submissions(
     }
 }
 
-/*async fn get_miner_stake(
-    query_params: Query<PubkeyParam>,
-    Extension(rpc_client): Extension<Arc<RpcClient>>,
-    Extension(wallet): Extension<Arc<WalletExtension>>,
-) -> impl IntoResponse {
-    if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
-        if let Ok(account) =
-            get_delegated_stake_account(&rpc_client, user_pubkey, wallet.miner_wallet.pubkey())
-                .await
-        {
-            let decimals = 10f64.powf(COAL_TOKEN_DECIMALS as f64);
-            let dec_amount = (account.amount as f64).div(decimals);
-            return Ok(dec_amount.to_string());
-        } else {
-            return Err("Failed to get token account balance".to_string());
-        }
-    } else {
-        return Err("Invalid pubkey".to_string());
-    }
-}*/
-
 async fn get_stake_multiplier(
-    Extension(rpc_client): Extension<Arc<RpcClient>>,
+    Extension(rpc_clients): Extension<Arc<Vec<RpcClient>>>,
     Extension(app_config): Extension<Arc<Config>>,
 ) -> impl IntoResponse {
     if app_config.stats_enabled {
+        let rpc_client = get_random_rpc_client(&rpc_clients).clone();
         let pubkey = Pubkey::from_str("6zbGwDbfwVS3hF8r7Yei8HuwSWm2yb541jUtmAZKhFDM").unwrap();
-        let proof = if let Ok(loaded_proof) = get_proof(&rpc_client, pubkey).await {
+        let proof = if let Ok(loaded_proof) = get_proof(&rpc_clients, pubkey).await {
             loaded_proof
         } else {
             error!(target: "server_log", "get_pool_staked: Failed to load proof.");
@@ -1842,9 +1892,10 @@ async fn post_claim_v2(
     TypedHeader(auth_header): TypedHeader<axum_extra::headers::Authorization<Basic>>,
     Extension(app_database): Extension<Arc<AppDatabase>>,
     Extension(claims_queue): Extension<Arc<ClaimsQueue>>,
-    Extension(rpc_client): Extension<Arc<RpcClient>>,
+    Extension(rpc_clients): Extension<Arc<Vec<RpcClient>>>,
     query_params: Query<ClaimParamsV2>,
 ) -> impl IntoResponse {
+    let rpc_client = get_random_rpc_client(&rpc_clients);
     let msg_timestamp = query_params.timestamp;
 
     let miner_pubkey_str = auth_header.username();
@@ -2197,11 +2248,12 @@ struct GuildStakeParams {
 
 async fn post_guild_stake(
     query_params: Query<GuildStakeParams>,
-    Extension(rpc_client): Extension<Arc<RpcClient>>,
+    Extension(rpc_clients): Extension<Arc<Vec<RpcClient>>>,
     Extension(wallet): Extension<Arc<WalletExtension>>,
     Extension(app_config): Extension<Arc<Config>>,
     body: String,
 ) -> impl IntoResponse {
+    let rpc_client = get_random_rpc_client(&rpc_clients);
     const MAX_RETRIES: u32 = 5; // Maximum number of retry attempts
     const BASE_DELAY: u64 = 500; // Base delay in milliseconds
 
@@ -2368,12 +2420,13 @@ struct CoalStakeParams {
 }
 async fn post_coal_stake(
     query_params: Query<CoalStakeParams>,
-    Extension(rpc_client): Extension<Arc<RpcClient>>,
+    Extension(rpc_clients): Extension<Arc<Vec<RpcClient>>>,
     Extension(wallet): Extension<Arc<WalletExtension>>,
     Extension(app_config): Extension<Arc<Config>>,
     Extension(app_database): Extension<Arc<AppDatabase>>,
     body: String,
 ) -> impl IntoResponse {
+    let rpc_client = get_random_rpc_client(&rpc_clients);
     const MAX_RETRIES: u32 = 5; // Maximum number of retry attempts
     const BASE_DELAY: u64 = 500; // Base delay in milliseconds
 
@@ -2582,11 +2635,12 @@ struct GuildUnStakeParams {
 
 async fn post_guild_un_stake(
     query_params: Query<GuildUnStakeParams>,
-    Extension(rpc_client): Extension<Arc<RpcClient>>,
+    Extension(rpc_clients): Extension<Arc<Vec<RpcClient>>>,
     Extension(wallet): Extension<Arc<WalletExtension>>,
     Extension(app_config): Extension<Arc<Config>>,
     body: String,
 ) -> impl IntoResponse {
+    let rpc_client = get_random_rpc_client(&rpc_clients);
     const MAX_RETRIES: u32 = 5; // Maximum number of retry attempts
     const BASE_DELAY: u64 = 500; // Base delay in milliseconds
 
@@ -3083,8 +3137,9 @@ struct PubkeyMintParam {
 
 async fn get_miner_balance_v2(
     query_params: Query<PubkeyMintParam>,
-    Extension(rpc_client): Extension<Arc<RpcClient>>,
+    Extension(rpc_clients): Extension<Arc<Vec<RpcClient>>>,
 ) -> impl IntoResponse {
+    let rpc_client = get_random_rpc_client(&rpc_clients);
     let mint = match Pubkey::from_str(&query_params.mint) {
         Ok(pk) => pk,
         Err(_) => {
@@ -3122,8 +3177,9 @@ async fn get_miner_balance_v2(
 pub async fn get_guild_check_member(
     query_params: Query<PubkeyParam>,
     Extension(app_config): Extension<Arc<Config>>,
-    Extension(rpc_client): Extension<Arc<RpcClient>>,
+    Extension(rpc_clients): Extension<Arc<Vec<RpcClient>>>,
 ) -> impl IntoResponse {
+    let rpc_client = get_random_rpc_client(&rpc_clients);
     if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
         let member = member_pda(user_pubkey);
         let member_data = rpc_client.get_account_data(&member.0).await;
@@ -3284,9 +3340,10 @@ struct AvgGuildRewards {
 
 pub async fn get_guild_lp_staking_rewards_stats(
     Extension(app_rr_database): Extension<Arc<AppRRDatabase>>,
-    Extension(rpc_client): Extension<Arc<RpcClient>>,
+    Extension(rpc_clients): Extension<Arc<Vec<RpcClient>>>,
     Extension(app_wallet): Extension<Arc<WalletExtension>>,
 ) -> Result<Json<AvgGuildRewards>, String> {
+    let rpc_client = get_random_rpc_client(&rpc_clients);
     let now = Utc::now();
     let one_day = Duration::from_secs(60 * 60 * 24 * 1);
     let seven_days = Duration::from_secs(60 * 60 * 24 * 7);
@@ -3548,8 +3605,9 @@ pub struct StakeAndMultipliers {
 
 pub async fn get_pool_stakes_and_multipliers(
     Extension(app_wallet): Extension<Arc<WalletExtension>>,
-    Extension(rpc_client): Extension<Arc<RpcClient>>,
+    Extension(rpc_clients): Extension<Arc<Vec<RpcClient>>>,
 ) -> Result<Json<StakeAndMultipliers>, String> {
+    let rpc_client = get_random_rpc_client(&rpc_clients);
     // Fetch coal_proof
     let config_address = get_config_pubkey(&Resource::Coal);
     let tool_address = get_tool_pubkey(
@@ -3674,8 +3732,9 @@ pub async fn get_pool_stakes_and_multipliers(
 
 async fn get_miner_guild_stake(
     query_params: Query<PubkeyParam>,
-    Extension(rpc_client): Extension<Arc<RpcClient>>,
+    Extension(rpc_clients): Extension<Arc<Vec<RpcClient>>>,
 ) -> impl IntoResponse {
+    let rpc_client = get_random_rpc_client(&rpc_clients);
     if let Ok(user_pubkey) = (Pubkey::from_str(&query_params.pubkey)) {
         let member_address = coal_guilds_api::state::member_pda(user_pubkey).0;
         let miner_token_account = get_associated_token_address(&member_address, &LP_MINT_ADDRESS);

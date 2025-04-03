@@ -18,7 +18,7 @@ use crate::ore_utils::get_proof_with_authority;
 use crate::{
     app_rr_database,
     coal_utils::{get_coal_mint, get_proof as get_proof_coal},
-    ChallengeWithDifficulty, Config, Txn,
+    get_random_rpc_client, ChallengeWithDifficulty, Config, Txn,
 };
 use chrono::{NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -62,12 +62,13 @@ pub async fn get_latest_mine_txn(
 
 pub async fn get_guild_addresses(
     Extension(app_config): Extension<Arc<Config>>,
-    Extension(rpc_client): Extension<Arc<RpcClient>>,
+    Extension(rpc_clients): Extension<Arc<Vec<RpcClient>>>,
 ) -> Result<Json<PoolGuild>, String> {
     if app_config.guild_address.is_empty() {
         return Err("Failed to get guild info".to_string());
     }
     let guild_address = app_config.guild_address.clone();
+    let rpc_client = get_random_rpc_client(&rpc_clients).clone();
     let guild_data = rpc_client
         .get_account_data(&Pubkey::from_str(&guild_address).unwrap())
         .await;
@@ -191,10 +192,11 @@ struct BalanceData {
 }
 pub async fn get_pool_staked(
     Extension(app_config): Extension<Arc<Config>>,
-    Extension(rpc_client): Extension<Arc<RpcClient>>,
+    Extension(rpc_clients): Extension<Arc<Vec<RpcClient>>>,
 ) -> impl IntoResponse {
     if app_config.stats_enabled {
         let pubkey = Pubkey::from_str("6zbGwDbfwVS3hF8r7Yei8HuwSWm2yb541jUtmAZKhFDM").unwrap();
+        let rpc_client = get_random_rpc_client(&rpc_clients).clone();
         let proof_coal = if let Ok(loaded_proof) = get_proof_coal(&rpc_client, pubkey).await {
             loaded_proof
         } else {

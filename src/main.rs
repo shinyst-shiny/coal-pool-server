@@ -774,17 +774,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let submission_window = Arc::new(RwLock::new(SubmissionWindow { closed: false }));
 
-    let rpc_clients = Arc::new(rpc_clients);
     let rpc_client_miner = Arc::new(rpc_client_miner);
     let jito_client = Arc::new(jito_client);
     let jito_client_miner = Arc::new(jito_client_miner);
 
     let last_challenge = Arc::new(Mutex::new([0u8; 32]));
-
-    let app_rpc_client = get_random_rpc_client(&rpc_clients).clone();
-    let app_wallet = wallet_extension.clone();
-
-    // register_reservation_ore(app_rpc_client, app_wallet).await;
 
     // Get a random index
     let random_index = rand::thread_rng().gen_range(0..rpc_urls.len());

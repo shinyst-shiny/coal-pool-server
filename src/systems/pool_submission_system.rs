@@ -317,24 +317,6 @@ pub async fn pool_submission_system(
 
                         tokio::time::sleep(Duration::from_millis(1000)).await;
 
-                        // Build mine ix
-                        let boost_config = match get_boost_config(&rpc_client).await {
-                            Ok(boost_config) => Some(boost_config),
-                            Err(e) => None,
-                        };
-                        let boost_address = if boost_config.is_none()
-                            || boost_config.unwrap().current == Pubkey::default()
-                        {
-                            None
-                        } else {
-                            Some(boost_config.unwrap().current)
-                        };
-                        let boost_keys = if let Some(boost_address) = boost_address {
-                            Some([boost_address, boost_config_address])
-                        } else {
-                            None
-                        };
-
                         let now = SystemTime::now()
                             .duration_since(UNIX_EPOCH)
                             .expect("Time went backwards")
@@ -454,19 +436,14 @@ pub async fn pool_submission_system(
 
                         ixs_coal.push(coal_mine_ix);
 
-                        // info!(target: "server_log", "boost_keys: {:?}",boost_keys);
-
-                        /*let ore_mine_ix =
-                        get_ore_mine_ix(signer.pubkey(), best_solution, bus, boost_keys);*/
-                        let ore_mine_ix =
-                            get_ore_mine_ix(signer.pubkey(), best_solution, bus, boost_keys);
+                        let ore_mine_ix = get_ore_mine_ix(
+                            signer.pubkey(),
+                            best_solution,
+                            bus,
+                            boost_config_address,
+                        );
 
                         ixs_ore.push(ore_mine_ix);
-
-                        // Build rotation ix
-                        /*let rotate_ix =
-                            ore_boost_api::sdk::rotate(signer.pubkey(), ore_proof_address);
-                        ixs_ore.push(rotate_ix);*/
 
                         info!(target: "server_log", "built ixs getting balances...");
 

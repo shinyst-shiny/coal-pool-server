@@ -34,7 +34,7 @@ pub fn get_ore_mine_ix(
     signer: Pubkey,
     solution: Solution,
     bus: usize,
-    boost: Option<[Pubkey; 2]>,
+    boost: Pubkey,
 ) -> Instruction {
     info!(target: "server_log", "get_ore_mine_ix ORE: {:?} - {:?} - {:?} - {:?}", signer, solution, bus, boost);
     ore_api::sdk::mine(signer, signer, BUS_ADDRESSES[bus], solution, boost)

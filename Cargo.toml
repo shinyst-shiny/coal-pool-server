@@ -1,6 +1,6 @@
 [package]
 name = "coal-pool-server"
-version = "4.0.1"
+version = "4.1.0"
 edition = "2021"
 
 [dependencies]
@@ -10,8 +10,8 @@ bytemuck = "1.14.3"
 bytemuck_derive = "1.7.0"
 drillx = { version = "2.2", features = ["solana"] }
 futures = "0.3.30"
-ore-api = "3.2.0"
-ore-boost-api = "3.0.1"
+ore-api = "3.6.0-beta"
+ore-boost-api = "4.0.0-beta"
 serde = { version = "1.0.204", features = ["derive"] }
 serde_json = "1.0.122"
 solana-sdk = "=2.1"

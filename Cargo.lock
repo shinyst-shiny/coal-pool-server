@@ -877,7 +877,7 @@ checksum = "f46ad14479a25103f283c0f10005961cf086d8dc42205bb44c46ac563475dca6"
 
 [[package]]
 name = "coal-pool-server"
-version = "4.0.1"
+version = "4.1.0"
 dependencies = [
  "array-const-fn-init",
  "axum",
@@ -3073,9 +3073,9 @@ dependencies = [
 
 [[package]]
 name = "ore-api"
-version = "3.2.0"
+version = "3.6.0-beta"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "759a7970fa49d3561d1f16b0543be5d05532a5ae45572bcdf81e643e7ef76f84"
+checksum = "eff73b3394583f3df7ce0f58e9ec66d890777c6cc6dd739de63f8ec826fd4baf"
 dependencies = [
  "array-const-fn-init",
  "bytemuck",
@@ -3093,9 +3093,9 @@ dependencies = [
 
 [[package]]
 name = "ore-boost-api"
-version = "3.0.1"
+version = "4.0.0-beta"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3500a9e03d7cf4acc920400476fea51883261247f89796a3b7aedb5a921a8fb0"
+checksum = "d0d09065544f61448a879ee9cc04e1c45a13ba76c38988fce83faa3f7aa31b1f"
 dependencies = [
  "array-const-fn-init",
  "bytemuck",

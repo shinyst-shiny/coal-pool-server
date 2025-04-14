@@ -506,6 +506,8 @@ pub async fn pool_submission_system(
                             let mut sim_retries = 0;
 
                             loop {
+                                let mut fine_match_coal = false;
+                                let mut fine_match_ore = false;
                                 match rpc_client.simulate_transaction(&tx_coal).await {
                                     Ok(sim_tx_coal) => {
                                         info!(target: "server_log", "Simulation result COAL: {:?}", sim_tx_coal);
@@ -531,6 +533,8 @@ pub async fn pool_submission_system(
                                                     .await;
                                                 continue;
                                             }
+                                        } else {
+                                            fine_match_coal = true;
                                         }
                                     }
                                     Err(e) => {
@@ -571,6 +575,8 @@ pub async fn pool_submission_system(
                                                     .await;
                                                 continue;
                                             }
+                                        } else {
+                                            fine_match_ore = true;
                                         }
                                     }
                                     Err(e) => {
@@ -585,6 +591,9 @@ pub async fn pool_submission_system(
                                             continue;
                                         }
                                     }
+                                }
+                                if fine_match_coal && fine_match_ore {
+                                    break;
                                 }
                             }
 

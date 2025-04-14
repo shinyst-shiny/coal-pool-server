@@ -1270,7 +1270,7 @@ async fn post_signup_v2(
         match db_miner {
             Ok(miner) => {
                 if miner.enabled {
-                    info!(target: "server_log", "Miner account already enabled!");
+                    // info!(target: "server_log", "Miner account already enabled!");
                     return Response::builder()
                         .status(StatusCode::OK)
                         .header("Content-Type", "text/text")

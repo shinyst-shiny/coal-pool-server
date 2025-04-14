@@ -531,8 +531,6 @@ pub async fn pool_submission_system(
                                                     .await;
                                                 continue;
                                             }
-                                        } else {
-                                            break;
                                         }
                                     }
                                     Err(e) => {
@@ -573,8 +571,6 @@ pub async fn pool_submission_system(
                                                     .await;
                                                 continue;
                                             }
-                                        } else {
-                                            break;
                                         }
                                     }
                                     Err(e) => {

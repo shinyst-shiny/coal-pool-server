@@ -529,7 +529,7 @@ pub async fn pool_submission_system(
                                                 break;
                                             } else {
                                                 info!(target: "server_log", "Retrying simulation for transaction...");
-                                                tokio::time::sleep(Duration::from_millis(500))
+                                                tokio::time::sleep(Duration::from_millis(1000))
                                                     .await;
                                                 continue;
                                             }
@@ -545,7 +545,7 @@ pub async fn pool_submission_system(
                                             break;
                                         } else {
                                             info!(target: "server_log", "Retrying simulation for transaction...");
-                                            tokio::time::sleep(Duration::from_millis(500)).await;
+                                            tokio::time::sleep(Duration::from_millis(1000)).await;
                                             continue;
                                         }
                                     }
@@ -571,7 +571,7 @@ pub async fn pool_submission_system(
                                                 break;
                                             } else {
                                                 info!(target: "server_log", "Retrying simulation for transaction...");
-                                                tokio::time::sleep(Duration::from_millis(500))
+                                                tokio::time::sleep(Duration::from_millis(1000))
                                                     .await;
                                                 continue;
                                             }
@@ -587,7 +587,7 @@ pub async fn pool_submission_system(
                                             break;
                                         } else {
                                             info!(target: "server_log", "Retrying simulation for transaction...");
-                                            tokio::time::sleep(Duration::from_millis(500)).await;
+                                            tokio::time::sleep(Duration::from_millis(1000)).await;
                                             continue;
                                         }
                                     }

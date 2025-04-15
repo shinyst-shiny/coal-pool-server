@@ -1690,7 +1690,7 @@ struct MinerBalance {
 async fn get_miner_balance(
     query_params: Query<PubkeyParam>,
     Extension(rpc_clients): Extension<Arc<Vec<RpcClient>>>,
-) -> impl IntoResponse {
+) -> Result<Json<MinerBalance>, String> {
     let mut resp = MinerBalance {
         ore: 0.0,
         coal: 0.0,

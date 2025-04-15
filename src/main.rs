@@ -1691,7 +1691,13 @@ async fn get_miner_balance(
     query_params: Query<PubkeyParam>,
     Extension(rpc_clients): Extension<Arc<Vec<RpcClient>>>,
 ) -> impl IntoResponse {
-    if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
+    let mut resp = MinerBalance {
+        ore: 0.0,
+        coal: 0.0,
+        chromium: 0.0,
+    };
+    return Ok(Json(resp));
+    /*if let Ok(user_pubkey) = Pubkey::from_str(&query_params.pubkey) {
         let rpc_client = get_random_rpc_client(&rpc_clients);
         let miner_token_account_coal = get_associated_token_address(&user_pubkey, &get_coal_mint());
         let miner_token_account_ore = get_associated_token_address(&user_pubkey, &get_ore_mint());
@@ -1728,7 +1734,7 @@ async fn get_miner_balance(
         return Ok(Json(resp));
     } else {
         return Err("Invalid public key".to_string());
-    }
+    }*/
 }
 
 async fn get_miner_earnings(

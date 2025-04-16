@@ -502,6 +502,8 @@ pub async fn pool_submission_system(
                                 }
                             };
 
+                            tokio::time::sleep(Duration::from_millis(1000)).await;
+
                             let max_sim_retries = 5;
                             let mut sim_retries = 0;
 
@@ -1497,7 +1499,7 @@ async fn check_final_bundle_status(
     jito_client: &JitoJsonRpcSDK,
     bundle_uuid: &str,
 ) -> Result<BundleStatus, ()> {
-    let max_retries = 35;
+    let max_retries = 15;
     let retry_delay = Duration::from_secs(2);
 
     for attempt in 1..=max_retries {

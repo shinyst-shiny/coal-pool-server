@@ -754,4 +754,54 @@ impl AppRRDatabase {
             return Err(AppDatabaseError::FailedToGetConnectionFromPool);
         }
     }
+
+    pub async fn get_difficulty_distribution_24h(
+        &self,
+    ) -> Result<Vec<models::DifficultyDistribution>, AppDatabaseError> {
+        if let Ok(db_conn) = self.connection_pool.get().await {
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    diesel::sql_query(
+                        "
+                    WITH total_submissions AS (
+                        SELECT COUNT(*) as total FROM submissions
+                        WHERE created_at >= NOW() - INTERVAL 24 HOUR
+                    )
+                    SELECT
+                        s.difficulty,
+                        COUNT(*) as count,
+                        (COUNT(*) * 100.0 / (SELECT total FROM total_submissions)) as percentage
+                    FROM
+                        submissions s
+                    WHERE
+                        s.created_at >= NOW() - INTERVAL 24 HOUR
+                    GROUP BY
+                        s.difficulty
+                    ORDER BY
+                        s.difficulty
+                    ",
+                    )
+                    .load::<models::DifficultyDistribution>(conn)
+                })
+                .await;
+
+            match res {
+                Ok(interaction) => match interaction {
+                    Ok(query) => {
+                        return Ok(query);
+                    }
+                    Err(e) => {
+                        error!("get_difficulty_distribution_24h: {:?}", e);
+                        return Err(AppDatabaseError::QueryFailed);
+                    }
+                },
+                Err(e) => {
+                    error!("get_difficulty_distribution_24h: {:?}", e);
+                    return Err(AppDatabaseError::InteractionFailed);
+                }
+            }
+        } else {
+            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
+        }
+    }
 }

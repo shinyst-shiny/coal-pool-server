@@ -395,3 +395,15 @@ pub struct ConnectedMiners {
     #[diesel(sql_type = Double)]
     pub average_connected_miners: f64,
 }
+
+#[derive(Debug, Deserialize, Serialize, QueryableByName)]
+pub struct DifficultyDistribution {
+    #[diesel(sql_type = Integer)]
+    pub difficulty: i32,
+
+    #[diesel(sql_type = BigInt)]
+    pub count: i64,
+
+    #[diesel(sql_type = Double)]
+    pub percentage: f64,
+}

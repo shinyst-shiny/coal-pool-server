@@ -1106,6 +1106,10 @@ fn create_router() -> Router<Arc<RwLock<AppState>>> {
         //.route("/unstake", post(post_unstake))
         .route("/active-miners", get(get_connected_miners))
         .route("/active-miners-24h", get(get_average_connected_miners_24h))
+        .route(
+            "/difficulty-distribution-24h",
+            get(get_difficulty_distribution_24h),
+        )
         .route("/timestamp", get(get_timestamp))
         .route("/miner/earnings", get(get_miner_earnings))
         .route(
@@ -1879,6 +1883,22 @@ async fn get_average_connected_miners_24h(
         match res {
             Ok(miners) => Ok(miners.average_connected_miners.to_string()),
             Err(_) => Err("Failed to get miners".to_string()),
+        }
+    } else {
+        return Err("Stats not enabled for this server.".to_string());
+    }
+}
+
+async fn get_difficulty_distribution_24h(
+    Extension(app_rr_database): Extension<Arc<AppRRDatabase>>,
+    Extension(app_config): Extension<Arc<Config>>,
+) -> impl IntoResponse {
+    if app_config.stats_enabled {
+        let res = app_rr_database.get_difficulty_distribution_24h().await;
+
+        match res {
+            Ok(avg_distribution) => Ok(Json(avg_distribution)),
+            Err(_) => Err("Failed to get distribution".to_string()),
         }
     } else {
         return Err("Stats not enabled for this server.".to_string());

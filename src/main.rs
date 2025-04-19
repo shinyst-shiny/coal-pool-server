@@ -306,7 +306,8 @@ pub struct CacheEntry<T> {
 }
 
 pub struct QueryCache {
-    difficulty_distribution: RwLock<Option<CacheEntry<Vec<models::DifficultyDistribution>>>>,
+    difficulty_distribution: RwLock<Option<CacheEntry<Vec<DifficultyDistribution>>>>,
+    best_difficulty_distribution: RwLock<Option<CacheEntry<Vec<DifficultyDistribution>>>>,
     average_miners: RwLock<Option<CacheEntry<f64>>>,
     challenges: RwLock<Option<CacheEntry<Vec<ChallengeWithDifficulty>>>>,
     cache_duration: Duration,
@@ -316,6 +317,7 @@ impl QueryCache {
     fn new() -> Self {
         Self {
             difficulty_distribution: RwLock::new(None),
+            best_difficulty_distribution: RwLock::new(None),
             average_miners: RwLock::new(None),
             challenges: RwLock::new(None),
             cache_duration: Duration::from_secs(3600), // 1 hour in seconds
@@ -808,7 +810,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let last_challenge = Arc::new(Mutex::new([0u8; 32]));
 
     // Get a random index
-    let random_index = rand::thread_rng().gen_range(0..rpc_urls.len());
+    let random_index = rand::rng().random_range(0..rpc_urls.len());
     // Create a new RpcClient with the same configuration as the ones in your array
     let app_rpc_client = Arc::new(RpcClient::new_with_commitment(
         rpc_urls[random_index].clone(),
@@ -1005,7 +1007,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_app_rr_database = app_rr_database.clone();
     let app_omc_rewards_daily = omc_rewards_daily;
     // Get a random index
-    let random_index = rand::thread_rng().gen_range(0..rpc_urls.len());
+    let random_index = rand::rng().random_range(0..rpc_urls.len());
     // Create a new RpcClient with the same configuration as the ones in your array
     let app_rpc_client = Arc::new(RpcClient::new_with_commitment(
         rpc_urls[random_index].clone(),
@@ -1052,8 +1054,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let query_cache = Arc::new(QueryCache::new());
 
-    // Load the environment variable
-    let environment = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "production".to_string());
     let client_channel = client_message_sender.clone();
     let app_shared_state = shared_state.clone();
     let app = create_router()
@@ -1135,6 +1135,10 @@ fn create_router() -> Router<Arc<RwLock<AppState>>> {
         .route(
             "/difficulty-distribution-24h",
             get(get_difficulty_distribution_24h),
+        )
+        .route(
+            "/best-difficulty-distribution-24h",
+            get(get_best_difficulty_distribution_24h),
         )
         .route("/timestamp", get(get_timestamp))
         .route("/miner/earnings", get(get_miner_earnings))
@@ -1966,6 +1970,43 @@ async fn get_difficulty_distribution_24h(
             Err(e) => {
                 error!(target: "server_log", "get_difficulty_distribution_24h: {:?}", e);
                 Err("Failed to get difficulty distribution.".to_string())
+            }
+        }
+    } else {
+        Err("Stats not enabled for this server.".to_string())
+    }
+}
+
+async fn get_best_difficulty_distribution_24h(
+    Extension(app_rr_database): Extension<Arc<AppRRDatabase>>,
+    Extension(app_config): Extension<Arc<Config>>,
+    Extension(cache): Extension<Arc<QueryCache>>,
+) -> impl IntoResponse {
+    if app_config.stats_enabled {
+        // Check cache first
+        let cache_read = cache.best_difficulty_distribution.read().await;
+        if let Some(entry) = &*cache_read {
+            if entry.last_updated.elapsed() < cache.cache_duration {
+                return Ok(Json(entry.data.clone()));
+            }
+        }
+        drop(cache_read);
+
+        // Cache miss or expired, query database
+        let res = app_rr_database.get_best_difficulty_distribution_24h().await;
+        match res {
+            Ok(distribution) => {
+                // Update cache
+                let mut cache_write = cache.best_difficulty_distribution.write().await;
+                *cache_write = Some(CacheEntry {
+                    data: distribution.clone(),
+                    last_updated: Instant::now(),
+                });
+                Ok(Json(distribution))
+            }
+            Err(e) => {
+                error!(target: "server_log", "get_best_difficulty_distribution_24h: {:?}", e);
+                Err("Failed to get best difficulty distribution.".to_string())
             }
         }
     } else {

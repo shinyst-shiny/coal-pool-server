@@ -1,5 +1,6 @@
 use chrono::{NaiveDate, NaiveDateTime};
 use deadpool_diesel::mysql::{Manager, Pool};
+use diesel::mysql::Mysql;
 use diesel::sql_types::{BigInt, Date, Datetime, Integer};
 use diesel::{sql_types::Text, MysqlConnection, RunQueryDsl};
 use tracing::{error, info};
@@ -705,6 +706,47 @@ impl AppRRDatabase {
                 },
                 Err(e) => {
                     error!("get_earnings_with_challenge_and_submission {:?}", e);
+                    return Err(AppDatabaseError::InteractionFailed);
+                }
+            }
+        } else {
+            return Err(AppDatabaseError::FailedToGetConnectionFromPool);
+        }
+    }
+
+    pub async fn get_average_connected_miners_24h(
+        &self,
+    ) -> Result<models::ConnectedMiners, AppDatabaseError> {
+        if let Ok(db_conn) = self.connection_pool.get().await {
+            let res = db_conn
+                .interact(move |conn: &mut MysqlConnection| {
+                    diesel::sql_query(
+                        "
+                        SELECT COALESCE(AVG(connected_miners),0) as average_connected_miners
+                        FROM (
+                            SELECT COUNT(miner_id) as connected_miners
+                            FROM submissions
+                            WHERE created_at >= NOW() - INTERVAL 24 HOUR
+                            GROUP BY challenge_id
+                        ) AS daily_connected_miners
+                        ",
+                    )
+                    .get_result::<models::ConnectedMiners>(conn)
+                })
+                .await;
+
+            match res {
+                Ok(interaction) => match interaction {
+                    Ok(query) => {
+                        return Ok(query);
+                    }
+                    Err(e) => {
+                        error!("get_average_connected_miners_24h: {:?}", e);
+                        return Err(AppDatabaseError::QueryFailed);
+                    }
+                },
+                Err(e) => {
+                    error!("get_average_connected_miners_24h {:?}", e);
                     return Err(AppDatabaseError::InteractionFailed);
                 }
             }

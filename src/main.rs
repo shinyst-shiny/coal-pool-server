@@ -393,6 +393,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::var("DISABLE_REPROCESS").expect("DISABLE_REPROCESS must be set.");
     let disable_reprocess = disable_reprocess_string == "true";
 
+    let disable_diamond_hands_string =
+        std::env::var("DISABLE_DIAMOND_HANDS").expect("DISABLE_DIAMON_HANDS must be set.");
+    let disable_diamond_hands = disable_diamond_hands_string == "true";
+
     let diamond_hands_extra_rewards_string = std::env::var("DIAMOND_HANDS_EXTRA_REWARDS")
         .expect("DIAMOND_HANDS_EXTRA_REWARDS must be set.");
     let diamond_hands_extra_rewards_daily: RewardsData = match serde_json::from_str(
@@ -956,19 +960,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
-    let app_config = config.clone();
-    let app_app_database = app_database.clone();
-    let app_app_rr_database = app_rr_database.clone();
-    let app_diamond_hands_extra_rewards = diamond_hands_extra_rewards_daily;
-    tokio::spawn(async move {
-        diamond_hands_system(
-            app_config,
-            app_app_database,
-            app_app_rr_database,
-            app_diamond_hands_extra_rewards,
-        )
-        .await;
-    });
+    if !disable_diamond_hands {
+        let app_config = config.clone();
+        let app_app_database = app_database.clone();
+        let app_app_rr_database = app_rr_database.clone();
+        let app_diamond_hands_extra_rewards = diamond_hands_extra_rewards_daily;
+        tokio::spawn(async move {
+            diamond_hands_system(
+                app_config,
+                app_app_database,
+                app_app_rr_database,
+                app_diamond_hands_extra_rewards,
+            )
+            .await;
+        });
+    }
 
     let app_wallet = wallet_extension.clone();
     let app_config = config.clone();
@@ -1099,6 +1105,7 @@ fn create_router() -> Router<Arc<RwLock<AppState>>> {
         //.route("/stake", post(post_stake))
         //.route("/unstake", post(post_unstake))
         .route("/active-miners", get(get_connected_miners))
+        .route("/active-miners-24h", get(get_average_connected_miners_24h))
         .route("/timestamp", get(get_timestamp))
         .route("/miner/earnings", get(get_miner_earnings))
         .route(
@@ -1859,6 +1866,22 @@ async fn get_connected_miners(
             .status(StatusCode::OK)
             .body(socks.len().to_string())
             .unwrap();
+    }
+}
+
+async fn get_average_connected_miners_24h(
+    Extension(app_rr_database): Extension<Arc<AppRRDatabase>>,
+    Extension(app_config): Extension<Arc<Config>>,
+) -> impl IntoResponse {
+    if app_config.stats_enabled {
+        let res = app_rr_database.get_average_connected_miners_24h().await;
+
+        match res {
+            Ok(miners) => Ok(miners.average_connected_miners.to_string()),
+            Err(_) => Err("Failed to get miners".to_string()),
+        }
+    } else {
+        return Err("Stats not enabled for this server.".to_string());
     }
 }
 

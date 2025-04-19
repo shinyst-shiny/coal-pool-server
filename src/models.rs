@@ -1,6 +1,6 @@
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
-use diesel::sql_types::{BigInt, Integer, Nullable, Text, Timestamp, TinyInt, Unsigned};
+use diesel::sql_types::{BigInt, Double, Integer, Nullable, Text, Timestamp, TinyInt, Unsigned};
 use diesel::*;
 use serde::{Deserialize, Serialize};
 
@@ -388,4 +388,10 @@ pub struct EarningWithChallengeWithSubmission {
     pub total_rewards_earned_coal: Option<u64>,
     #[diesel(sql_type = Nullable<Unsigned<BigInt>>)]
     pub total_rewards_earned_ore: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, Serialize, QueryableByName)]
+pub struct ConnectedMiners {
+    #[diesel(sql_type = Double)]
+    pub average_connected_miners: f64,
 }

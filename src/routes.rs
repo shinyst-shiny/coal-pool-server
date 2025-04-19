@@ -18,29 +18,43 @@ use crate::ore_utils::get_proof_with_authority;
 use crate::{
     app_rr_database,
     coal_utils::{get_coal_mint, get_proof as get_proof_coal},
-    get_random_rpc_client, ChallengeWithDifficulty, Config, Txn,
+    get_random_rpc_client, CacheEntry, ChallengeWithDifficulty, Config, QueryCache, Txn,
 };
 use chrono::{NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use std::{str::FromStr, sync::Arc};
+use tokio::time::Instant;
 
 pub async fn get_challenges(
     Extension(app_rr_database): Extension<Arc<AppRRDatabase>>,
-    Extension(app_config): Extension<Arc<Config>>,
-) -> Result<Json<Vec<ChallengeWithDifficulty>>, String> {
-    if app_config.stats_enabled {
-        let res = app_rr_database.get_challenges().await;
-
-        match res {
-            Ok(challenges) => Ok(Json(challenges)),
-            Err(_) => {
-                error!("Failed to get challenges {:?}", res);
-                return Err("Failed to get submissions for miner".to_string());
-            }
+    Extension(cache): Extension<Arc<QueryCache>>,
+) -> impl IntoResponse {
+    // Check cache first
+    let cache_read = cache.challenges.read().await;
+    if let Some(entry) = &*cache_read {
+        if entry.last_updated.elapsed() < cache.cache_duration {
+            return Json(entry.data.clone());
         }
-    } else {
-        return Err("Stats not enabled for this server.".to_string());
+    }
+    drop(cache_read);
+
+    // Cache miss or expired, query database
+    let challenges = app_rr_database.get_challenges().await;
+    match challenges {
+        Ok(challenges) => {
+            // Update cache
+            let mut cache_write = cache.challenges.write().await;
+            *cache_write = Some(CacheEntry {
+                data: challenges.clone(),
+                last_updated: Instant::now(),
+            });
+            Json(challenges)
+        }
+        Err(e) => {
+            error!(target: "server_log", "get_challenges: {:?}", e);
+            Json(Vec::new()) // Return empty array on error
+        }
     }
 }
 

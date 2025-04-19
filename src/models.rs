@@ -112,7 +112,7 @@ pub struct EarningExtraResources {
     pub generation_type: i32,
 }
 
-#[derive(Debug, Serialize, Deserialize, Queryable, Selectable, QueryableByName)]
+#[derive(Debug, Serialize, Clone, Deserialize, Queryable, Selectable, QueryableByName)]
 #[diesel(table_name = crate::schema::challenges)]
 #[diesel(check_for_backend(diesel::mysql::Mysql))]
 pub struct Challenge {
@@ -124,7 +124,7 @@ pub struct Challenge {
     pub rewards_earned_ore: Option<u64>,
 }
 
-#[derive(Debug, Deserialize, Serialize, QueryableByName)]
+#[derive(Debug, Deserialize, Clone, Serialize, QueryableByName)]
 pub struct ChallengeWithDifficulty {
     #[diesel(sql_type = Integer)]
     pub id: i32,
@@ -390,13 +390,13 @@ pub struct EarningWithChallengeWithSubmission {
     pub total_rewards_earned_ore: Option<u64>,
 }
 
-#[derive(Debug, Deserialize, Serialize, QueryableByName)]
+#[derive(Debug, Deserialize, Serialize, Clone, QueryableByName)]
 pub struct ConnectedMiners {
     #[diesel(sql_type = Double)]
     pub average_connected_miners: f64,
 }
 
-#[derive(Debug, Deserialize, Serialize, QueryableByName)]
+#[derive(Debug, Deserialize, Serialize, Clone, QueryableByName)]
 pub struct DifficultyDistribution {
     #[diesel(sql_type = Integer)]
     pub difficulty: i32,

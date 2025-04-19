@@ -300,6 +300,29 @@ struct Args {
     migrate: bool,
 }
 
+pub struct CacheEntry<T> {
+    data: T,
+    last_updated: Instant,
+}
+
+pub struct QueryCache {
+    difficulty_distribution: RwLock<Option<CacheEntry<Vec<models::DifficultyDistribution>>>>,
+    average_miners: RwLock<Option<CacheEntry<f64>>>,
+    challenges: RwLock<Option<CacheEntry<Vec<ChallengeWithDifficulty>>>>,
+    cache_duration: Duration,
+}
+
+impl QueryCache {
+    fn new() -> Self {
+        Self {
+            difficulty_distribution: RwLock::new(None),
+            average_miners: RwLock::new(None),
+            challenges: RwLock::new(None),
+            cache_duration: Duration::from_secs(3600), // 1 hour in seconds
+        }
+    }
+}
+
 // Helper function to get a random RPC client from the array
 fn get_random_rpc_client(clients: &[RpcClient]) -> &RpcClient {
     let index = rand::rng().random_range(0..clients.len());
@@ -1027,12 +1050,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .allow_methods([Method::GET])
         .allow_origin(tower_http::cors::Any);
 
+    let query_cache = Arc::new(QueryCache::new());
+
     // Load the environment variable
     let environment = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "production".to_string());
     let client_channel = client_message_sender.clone();
     let app_shared_state = shared_state.clone();
     let app = create_router()
         .with_state(app_shared_state)
+        .layer(Extension(query_cache))
         .layer(Extension(app_database))
         .layer(Extension(app_rr_database))
         .layer(Extension(config))
@@ -1876,32 +1902,74 @@ async fn get_connected_miners(
 async fn get_average_connected_miners_24h(
     Extension(app_rr_database): Extension<Arc<AppRRDatabase>>,
     Extension(app_config): Extension<Arc<Config>>,
+    Extension(cache): Extension<Arc<QueryCache>>,
 ) -> impl IntoResponse {
     if app_config.stats_enabled {
-        let res = app_rr_database.get_average_connected_miners_24h().await;
+        // Check cache first
+        let cache_read = cache.average_miners.read().await;
+        if let Some(entry) = &*cache_read {
+            if entry.last_updated.elapsed() < cache.cache_duration {
+                return Ok(format!("{:.2}", entry.data));
+            }
+        }
+        drop(cache_read); // Release the read lock before writing
 
+        // Cache miss or expired, query database
+        let res = app_rr_database.get_average_connected_miners_24h().await;
         match res {
-            Ok(miners) => Ok(miners.average_connected_miners.to_string()),
-            Err(_) => Err("Failed to get miners".to_string()),
+            Ok(avg) => {
+                // Update cache
+                let mut cache_write = cache.average_miners.write().await;
+                *cache_write = Some(CacheEntry {
+                    data: avg.average_connected_miners,
+                    last_updated: Instant::now(),
+                });
+                Ok(format!("{:.2}", avg.average_connected_miners))
+            }
+            Err(e) => {
+                error!(target: "server_log", "get_average_connected_miners_24h: {:?}", e);
+                Err("Failed to get average connected miners.".to_string())
+            }
         }
     } else {
-        return Err("Stats not enabled for this server.".to_string());
+        Err("Stats not enabled for this server.".to_string())
     }
 }
 
 async fn get_difficulty_distribution_24h(
     Extension(app_rr_database): Extension<Arc<AppRRDatabase>>,
     Extension(app_config): Extension<Arc<Config>>,
+    Extension(cache): Extension<Arc<QueryCache>>,
 ) -> impl IntoResponse {
     if app_config.stats_enabled {
-        let res = app_rr_database.get_difficulty_distribution_24h().await;
+        // Check cache first
+        let cache_read = cache.difficulty_distribution.read().await;
+        if let Some(entry) = &*cache_read {
+            if entry.last_updated.elapsed() < cache.cache_duration {
+                return Ok(Json(entry.data.clone()));
+            }
+        }
+        drop(cache_read);
 
+        // Cache miss or expired, query database
+        let res = app_rr_database.get_difficulty_distribution_24h().await;
         match res {
-            Ok(avg_distribution) => Ok(Json(avg_distribution)),
-            Err(_) => Err("Failed to get distribution".to_string()),
+            Ok(distribution) => {
+                // Update cache
+                let mut cache_write = cache.difficulty_distribution.write().await;
+                *cache_write = Some(CacheEntry {
+                    data: distribution.clone(),
+                    last_updated: Instant::now(),
+                });
+                Ok(Json(distribution))
+            }
+            Err(e) => {
+                error!(target: "server_log", "get_difficulty_distribution_24h: {:?}", e);
+                Err("Failed to get difficulty distribution.".to_string())
+            }
         }
     } else {
-        return Err("Stats not enabled for this server.".to_string());
+        Err("Stats not enabled for this server.".to_string())
     }
 }
 

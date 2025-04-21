@@ -310,6 +310,8 @@ pub struct QueryCache {
     best_difficulty_distribution: RwLock<Option<CacheEntry<Vec<DifficultyDistribution>>>>,
     average_miners: RwLock<Option<CacheEntry<f64>>>,
     challenges: RwLock<Option<CacheEntry<Vec<ChallengeWithDifficulty>>>>,
+    guild_lp_staking_rewards_stats: RwLock<Option<CacheEntry<AvgGuildRewards>>>,
+    pool_stakes_and_multipliers: RwLock<Option<CacheEntry<StakeAndMultipliers>>>,
     cache_duration: Duration,
 }
 
@@ -320,6 +322,8 @@ impl QueryCache {
             best_difficulty_distribution: RwLock::new(None),
             average_miners: RwLock::new(None),
             challenges: RwLock::new(None),
+            guild_lp_staking_rewards_stats: RwLock::new(None),
+            pool_stakes_and_multipliers: RwLock::new(None),
             cache_duration: Duration::from_secs(3600), // 1 hour in seconds
         }
     }
@@ -3483,7 +3487,7 @@ pub async fn get_guild_lp_staking_rewards_24h(
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 struct AvgGuildRewards {
     last_24h: String,
     last_7d: String,
@@ -3494,7 +3498,19 @@ pub async fn get_guild_lp_staking_rewards_stats(
     Extension(app_rr_database): Extension<Arc<AppRRDatabase>>,
     Extension(rpc_clients): Extension<Arc<Vec<RpcClient>>>,
     Extension(app_wallet): Extension<Arc<WalletExtension>>,
+    Extension(cache): Extension<Arc<QueryCache>>,
 ) -> Result<Json<AvgGuildRewards>, String> {
+    // Try to get from cache first
+    {
+        let cached_data = cache.guild_lp_staking_rewards_stats.read().await;
+        if let Some(cache_entry) = &*cached_data {
+            if cache_entry.last_updated.elapsed() < cache.cache_duration {
+                return Ok(Json(cache_entry.data.clone()));
+            }
+        }
+    }
+
+    // Cache miss or expired, fetch new data
     let rpc_client = get_random_rpc_client(&rpc_clients);
     let now = Utc::now();
     let one_day = Duration::from_secs(60 * 60 * 24 * 1);
@@ -3622,6 +3638,13 @@ pub async fn get_guild_lp_staking_rewards_stats(
                 ),
             };
 
+            // Update cache with new data
+            let mut cache_writer = cache.guild_lp_staking_rewards_stats.write().await;
+            *cache_writer = Some(CacheEntry {
+                data: avg_rewards.clone(),
+                last_updated: Instant::now(),
+            });
+
             return Ok(Json(avg_rewards));
         }
         (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
@@ -3745,7 +3768,7 @@ pub async fn get_guild_unstake_instruction(
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct StakeAndMultipliers {
     coal_multiplier: f64,
     coal_stake: f64,
@@ -3756,9 +3779,20 @@ pub struct StakeAndMultipliers {
 }
 
 pub async fn get_pool_stakes_and_multipliers(
-    Extension(app_wallet): Extension<Arc<WalletExtension>>,
     Extension(rpc_clients): Extension<Arc<Vec<RpcClient>>>,
+    Extension(app_wallet): Extension<Arc<WalletExtension>>,
+    Extension(cache): Extension<Arc<QueryCache>>, // Add this line
+                                                  // Keep any other existing parameters
 ) -> Result<Json<StakeAndMultipliers>, String> {
+    // Try to get from cache first
+    {
+        let cached_data = cache.pool_stakes_and_multipliers.read().await;
+        if let Some(cache_entry) = &*cached_data {
+            if cache_entry.last_updated.elapsed() < cache.cache_duration {
+                return Ok(Json(cache_entry.data.clone()));
+            }
+        }
+    }
     let rpc_client = get_random_rpc_client(&rpc_clients);
     // Fetch coal_proof
     let config_address = get_config_pubkey(&Resource::Coal);
@@ -3872,14 +3906,23 @@ pub async fn get_pool_stakes_and_multipliers(
 
     let ore_stake = loaded_config_proof_ore.unwrap().balance as f64;
 
-    return Ok(Json(StakeAndMultipliers {
+    let result = StakeAndMultipliers {
         coal_multiplier,
         coal_stake,
         guild_multiplier,
         guild_stake,
         tool_multiplier,
         ore_stake,
-    }));
+    };
+
+    // Update cache with new data
+    let mut cache_writer = cache.pool_stakes_and_multipliers.write().await;
+    *cache_writer = Some(CacheEntry {
+        data: result.clone(),
+        last_updated: Instant::now(),
+    });
+
+    return Ok(Json(result));
 }
 
 async fn get_miner_guild_stake(

@@ -3515,10 +3515,10 @@ pub async fn get_guild_lp_staking_rewards_stats(
     let now = Utc::now();
     let one_day = Duration::from_secs(60 * 60 * 24 * 1);
     let seven_days = Duration::from_secs(60 * 60 * 24 * 7);
-    let thirty_days = Duration::from_secs(60 * 60 * 24 * 30);
+    // let thirty_days = Duration::from_secs(60 * 60 * 24 * 30);
     let yesterday = now - one_day;
     let last_week = now - seven_days;
-    let last_month = now - thirty_days;
+    // let last_month = now - thirty_days;
 
     let db_rewards_yesterday = app_rr_database
         .get_extra_resources_rewards_in_period(
@@ -3534,13 +3534,13 @@ pub async fn get_guild_lp_staking_rewards_stats(
             now.naive_utc(),
         )
         .await;
-    let db_rewards_month = app_rr_database
-        .get_extra_resources_rewards_in_period(
-            ExtraResourcesGenerationType::CoalGuildStakingRewards,
-            last_month.naive_utc(),
-            now.naive_utc(),
-        )
-        .await;
+    /*let db_rewards_month = app_rr_database
+    .get_extra_resources_rewards_in_period(
+        ExtraResourcesGenerationType::CoalGuildStakingRewards,
+        last_month.naive_utc(),
+        now.naive_utc(),
+    )
+    .await;*/
 
     let config = coal_guilds_api::state::config_pda();
     let member = member_pda(app_wallet.miner_wallet.pubkey());
@@ -3612,8 +3612,8 @@ pub async fn get_guild_lp_staking_rewards_stats(
         return Err("Error fetching Guild Info".to_string());
     }
 
-    match (db_rewards_yesterday, db_rewards_week, db_rewards_month) {
-        (Ok(rewards_yesterday), Ok(rewards_week), Ok(rewards_month)) => {
+    match (db_rewards_yesterday, db_rewards_week) {
+        (Ok(rewards_yesterday), Ok(rewards_week)) => {
             // convert the total COAL rewards to UI amount
 
             println!(
@@ -3621,7 +3621,7 @@ pub async fn get_guild_lp_staking_rewards_stats(
                 rewards_yesterday.amount_coal, total_guild_stake
             );
             println!("Week: {}", rewards_week.amount_coal);
-            println!("Month: {}", rewards_month.amount_coal);
+            // println!("Month: {}", rewards_month.amount_coal);
 
             let avg_rewards = AvgGuildRewards {
                 last_24h: format!(
@@ -3632,10 +3632,11 @@ pub async fn get_guild_lp_staking_rewards_stats(
                     "{:.2}",
                     (rewards_week.amount_coal as f64) / (total_guild_stake as f64)
                 ),
-                last_30d: format!(
+                last_30d: 0.0.to_string(),
+                /*last_30d: format!(
                     "{:.2}",
                     (rewards_month.amount_coal as f64) / (total_guild_stake as f64)
-                ),
+                ),*/
             };
 
             // Update cache with new data
@@ -3647,7 +3648,7 @@ pub async fn get_guild_lp_staking_rewards_stats(
 
             return Ok(Json(avg_rewards));
         }
-        (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
+        (Err(e), _) | (_, Err(e)) => {
             error!(target: "server_log", "Error fetching Guild Stake Info: {:?}", e);
             return Err("Error fetching Guild Stake Info".to_string());
         }

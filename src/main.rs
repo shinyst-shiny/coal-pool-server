@@ -277,7 +277,7 @@ struct Args {
         long,
         value_name = "jito tip",
         help = "Number of lamports to pay as jito tip per transaction",
-        default_value = "1000",
+        default_value = "2000",
         global = true
     )]
     jito_tip: u64,
@@ -324,8 +324,113 @@ impl QueryCache {
             challenges: RwLock::new(None),
             guild_lp_staking_rewards_stats: RwLock::new(None),
             pool_stakes_and_multipliers: RwLock::new(None),
-            cache_duration: Duration::from_secs(3600), // 1 hour in seconds
+            cache_duration: Duration::from_secs(3600 * 2), // 2 hour in seconds
         }
+    }
+}
+
+async fn cache_refresh_system(
+    app_rr_database: Arc<AppRRDatabase>,
+    rpc_clients: Arc<Vec<RpcClient>>,
+    wallet_extension: Arc<WalletExtension>,
+    app_config: Arc<Config>,
+    cache: Arc<QueryCache>,
+) {
+    info!(target: "server_log", "Starting cache refresh system");
+
+    loop {
+        info!(target: "server_log", "Refreshing all cached data");
+
+        // Clear and refresh difficulty_distribution cache
+        {
+            let mut writer = cache.difficulty_distribution.write().await;
+            *writer = None;
+            drop(writer);
+
+            // Call the function to refresh this cache
+            get_difficulty_distribution_24h(
+                Extension(app_rr_database.clone()),
+                Extension(app_config.clone()),
+                Extension(cache.clone()),
+            )
+            .await;
+        }
+
+        // Clear and refresh best_difficulty_distribution cache
+        {
+            let mut writer = cache.best_difficulty_distribution.write().await;
+            *writer = None;
+            drop(writer);
+
+            // Call the function to refresh this cache
+            get_best_difficulty_distribution_24h(
+                Extension(app_rr_database.clone()),
+                Extension(app_config.clone()),
+                Extension(cache.clone()),
+            )
+            .await;
+        }
+
+        // Clear and refresh average_miners cache
+        {
+            let mut writer = cache.average_miners.write().await;
+            *writer = None;
+            drop(writer);
+
+            // Call the function to refresh this cache
+            get_average_connected_miners_24h(
+                Extension(app_rr_database.clone()),
+                Extension(app_config.clone()),
+                Extension(cache.clone()),
+            )
+            .await;
+        }
+
+        // Clear and refresh challenges cache
+        {
+            let mut writer = cache.challenges.write().await;
+            *writer = None;
+            drop(writer);
+
+            // Call the function to refresh this cache
+            get_challenges(Extension(app_rr_database.clone()), Extension(cache.clone())).await;
+        }
+
+        // Clear and refresh guild_lp_staking_rewards_stats cache
+        {
+            let mut writer = cache.guild_lp_staking_rewards_stats.write().await;
+            *writer = None;
+            drop(writer);
+
+            // Call the function to refresh this cache
+            get_guild_lp_staking_rewards_stats(
+                Extension(app_rr_database.clone()),
+                Extension(rpc_clients.clone()),
+                Extension(wallet_extension.clone()),
+                Extension(cache.clone()),
+            )
+            .await;
+        }
+
+        // Clear and refresh pool_stakes_and_multipliers cache
+        {
+            let mut writer = cache.pool_stakes_and_multipliers.write().await;
+            *writer = None;
+            drop(writer);
+
+            // Call the function to refresh this cache
+            get_pool_stakes_and_multipliers(
+                Extension(rpc_clients.clone()),
+                Extension(wallet_extension.clone()),
+                Extension(cache.clone()),
+            )
+            .await;
+        }
+
+        info!(target: "server_log", "All caches refreshed successfully");
+
+        // Sleep for 1 hour before the next refresh
+        tokio::time::sleep(Duration::from_secs(3600)).await;
     }
 }
 
@@ -1057,6 +1162,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .allow_origin(tower_http::cors::Any);
 
     let query_cache = Arc::new(QueryCache::new());
+
+    // Start the cache refresh system
+    let app_rr_database_clone = app_rr_database.clone();
+    let rpc_clients_clone = rpc_clients.clone();
+    let wallet_extension_clone = wallet_extension.clone();
+    let app_config_clone = config.clone();
+    let query_cache_clone = query_cache.clone();
+
+    tokio::spawn(async move {
+        cache_refresh_system(
+            app_rr_database_clone,
+            rpc_clients_clone,
+            wallet_extension_clone,
+            app_config_clone,
+            query_cache_clone,
+        )
+        .await;
+    });
 
     let client_channel = client_message_sender.clone();
     let app_shared_state = shared_state.clone();

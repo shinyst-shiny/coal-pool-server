@@ -277,7 +277,7 @@ struct Args {
         long,
         value_name = "jito tip",
         help = "Number of lamports to pay as jito tip per transaction",
-        default_value = "2000",
+        default_value = "5000",
         global = true
     )]
     jito_tip: u64,

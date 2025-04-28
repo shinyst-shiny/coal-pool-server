@@ -39,7 +39,7 @@ solana-transaction-status = "=2.1"
 uuid = { version = "1.10.0", features = ["v4"] }
 steel = "4.0.0"
 b64 = "0.4.0"
-jito-sdk-rust = "0.1.0"
+jito-sdk-rust = "0.2.0"
 rpassword = "7.3.1"
 openssl = { version = "0.10.69", features = ["vendored"] }
 static_assertions = "1.1.0"

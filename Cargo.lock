@@ -2419,11 +2419,12 @@ checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 
 [[package]]
 name = "jito-sdk-rust"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6db230a3c6c255775431517c1da38760b748490210ba1801a36190349af64c1c"
+checksum = "1a62df066a786446278a1ae796105ba16e2e889bf8d2e7e4b4f2b79fa8af5a6d"
 dependencies = [
  "anyhow",
+ "base64 0.21.7",
  "bincode",
  "bs58 0.4.0",
  "rand 0.8.5",

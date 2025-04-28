@@ -1,5 +1,4 @@
 use b64::FromBase64;
-use bs58;
 use serde_json::json;
 use std::{
     collections::HashMap,
@@ -30,7 +29,7 @@ use crate::{
     Config, EpochHashes, InsertChallenge, InsertEarning, InsertTxn, MessageInternalAllClients,
     MessageInternalMineSuccess, PoolGuildMember, SubmissionWindow, UpdateReward, WalletExtension,
 };
-use base64::{prelude::BASE64_STANDARD, Engine};
+use base64::{engine::general_purpose, prelude::BASE64_STANDARD, Engine};
 use futures::future::try_join;
 use jito_sdk_rust::JitoJsonRpcSDK;
 use ore_api::consts::BUS_COUNT;
@@ -431,8 +430,8 @@ pub async fn pool_submission_system(
                             Option::from(guild_address),
                         );
 
-                        /*let coal_mine_ix =
-                        get_mine_ix(signer.pubkey(), best_solution, bus, None, None, None);*/
+                        let coal_mine_ix =
+                            get_mine_ix(signer.pubkey(), best_solution, bus, None, None, None);
 
                         ixs_coal.push(coal_mine_ix);
 
@@ -487,7 +486,7 @@ pub async fn pool_submission_system(
                             tx_ore.sign(&[&signer], hash);
 
                             let serialized_tx_coal = match bincode::serialize(&tx_coal) {
-                                Ok(serialized) => bs58::encode(serialized).into_string(),
+                                Ok(serialized) => general_purpose::STANDARD.encode(serialized),
                                 Err(e) => {
                                     error!(target: "server_log", "Failed to serialize tx_coal: {:?}", e);
                                     continue;
@@ -495,7 +494,7 @@ pub async fn pool_submission_system(
                             };
 
                             let serialized_tx_ore = match bincode::serialize(&tx_ore) {
-                                Ok(serialized) => bs58::encode(serialized).into_string(),
+                                Ok(serialized) => general_purpose::STANDARD.encode(serialized),
                                 Err(e) => {
                                     error!(target: "server_log", "Failed to serialize tx_ore: {:?}", e);
                                     continue;
@@ -606,6 +605,14 @@ pub async fn pool_submission_system(
 
                             // Prepare bundle for submission (array of transactions)
                             let bundle = json!([serialized_tx_coal, serialized_tx_ore]);
+
+                            // Create parameters with encoding specification
+                            let bundle_params = json!([
+                                bundle,
+                                {
+                                    "encoding": "base64"
+                                }
+                            ]);
 
                             info!(target: "server_log", "Sending bundle tx...");
                             info!(target: "server_log", "attempt: {}", i + 1);
@@ -812,20 +819,21 @@ pub async fn pool_submission_system(
                                 let uuid = None;
 
                                 // Send bundle using Jito SDK
-                                let jito_send_response =
-                                    match jito_client.send_bundle(Some(bundle.clone()), uuid).await
-                                    {
-                                        Ok(response) => response,
-                                        Err(_) => {
-                                            error!(target: "server_log", "Failed to get bundle id");
-                                            bundle_send_attempt += 1;
-                                            if bundle_send_attempt >= 5 {
-                                                break Err("Failed to send tx");
-                                            } else {
-                                                continue;
-                                            }
+                                let jito_send_response = match jito_client
+                                    .send_bundle(Some(bundle_params.clone()), uuid)
+                                    .await
+                                {
+                                    Ok(response) => response,
+                                    Err(_) => {
+                                        error!(target: "server_log", "Failed to get bundle id");
+                                        bundle_send_attempt += 1;
+                                        if bundle_send_attempt >= 5 {
+                                            break Err("Failed to send tx");
+                                        } else {
+                                            continue;
                                         }
-                                    };
+                                    }
+                                };
 
                                 // Extract bundle UUID from response
                                 let bundle_uuid = match jito_send_response["result"].as_str() {

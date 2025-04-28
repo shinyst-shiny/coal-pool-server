@@ -1499,7 +1499,7 @@ async fn check_final_bundle_status(
     jito_client: &JitoJsonRpcSDK,
     bundle_uuid: &str,
 ) -> Result<BundleStatus, ()> {
-    let max_retries = 20;
+    let max_retries = 30;
     let retry_delay = Duration::from_secs(2);
 
     for attempt in 1..=max_retries {

@@ -54,6 +54,8 @@ pub async fn nft_distribution_system(
     nft_rewards_daily: RewardsData,
     nft_pubkey: Pubkey,
 ) {
+    // DISABLE THE NFT DISTRIBUTION SYSTEM
+    return;
     let nft_rewards: RewardsData = RewardsData {
         amount_sol: nft_rewards_daily.amount_sol * NFT_DISTRIBUTION_DAYS,
         amount_coal: nft_rewards_daily.amount_coal * NFT_DISTRIBUTION_DAYS,

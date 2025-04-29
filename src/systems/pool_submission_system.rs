@@ -84,6 +84,8 @@ pub async fn pool_submission_system(
     app_client_nonce_ranges: Arc<RwLock<HashMap<Uuid, Vec<Range<u64>>>>>,
     app_last_challenge: Arc<Mutex<[u8; 32]>>,
 ) {
+    // DISABLE THE SUBMISSION SYSTEM
+    return;
     let boost_config_address = ore_boost_api::state::config_pda().0;
     loop {
         let lock = app_proof.lock().await;

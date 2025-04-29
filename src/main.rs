@@ -1244,8 +1244,9 @@ async fn get_proof(
 
 fn create_router() -> Router<Arc<RwLock<AppState>>> {
     Router::new()
-        .route("/v2/ws", get(ws_handler_v2))
-        .route("/v2/ws-pubkey", get(ws_handler_pubkey))
+        // DISABLE WEBSOCKET
+        // .route("/v2/ws", get(ws_handler_v2))
+        // .route("/v2/ws-pubkey", get(ws_handler_pubkey))
         //.route("/pause", post(post_pause))
         .route("/latest-blockhash", get(get_latest_blockhash))
         .route("/pool/authority/pubkey", get(get_pool_authority_pubkey))

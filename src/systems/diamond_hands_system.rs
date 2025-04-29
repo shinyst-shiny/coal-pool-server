@@ -32,6 +32,8 @@ pub async fn diamond_hands_system(
     app_rr_database: Arc<AppRRDatabase>,
     app_diamond_hands_extra_rewards_daily: RewardsData,
 ) {
+    // DISABLE THE DIAMOND HANDS SYSTEM
+    return;
     let extra_rewards: RewardsData = RewardsData {
         amount_sol: app_diamond_hands_extra_rewards_daily.amount_sol * DIAMOND_HANDS_DAYS,
         amount_coal: app_diamond_hands_extra_rewards_daily.amount_coal * DIAMOND_HANDS_DAYS,
